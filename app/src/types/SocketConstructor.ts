@@ -20,10 +20,4 @@ export type SocketConstructor = {
    * @default 1000
    */
   retryDelay?: number;
-  /**
-   * The base URL to use for the WebSocket connection
-   *
-   * @default ""
-   */
-  baseURL?: string;
 } & SocketCache;
