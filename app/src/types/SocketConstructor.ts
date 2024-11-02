@@ -1,23 +1,19 @@
 import type { SocketCache } from "./SocketCache";
 import type { SocketEvent } from "./SocketEvent";
+import type { SocketRetrial } from "./SocketRetrial";
 
-export type SocketConstructor = {
+export interface SocketConstructor extends SocketRetrial, SocketCache {
   /**
    * The events to log in the console
    *
    * @default ["open", "close", "error"]
    */
   log?: SocketEvent[];
+
   /**
-   * Whether to retry the WebSocket connection or not
+   * A custom condition for logging
    *
-   * @default false
+   * @default (logType) => process.env.NODE_ENV === "development"
    */
-  retry?: boolean;
-  /**
-   * The delay in milliseconds before retrying the WebSocket connection
-   *
-   * @default 1000
-   */
-  retryDelay?: number;
-} & SocketCache;
+  logCondition?: (logType: SocketEvent) => boolean;
+}

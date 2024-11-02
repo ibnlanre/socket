@@ -1,4 +1,4 @@
-export enum WebSocketCloseCode {
+export enum SocketCloseCode {
   NORMAL_CLOSURE = 1000,
   GOING_AWAY = 1001,
   PROTOCOL_ERROR = 1002,

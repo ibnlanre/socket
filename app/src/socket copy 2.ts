@@ -68,21 +68,6 @@ class SocketManager<Get = unknown, Post = never> {
 
     return this.close;
   };
-
-  use = (url: string, params?: SocketParams) => {
-    const [data, setData] = useState<Get>();
-    const parameters = this.#getDependencies(params);
-
-    useEffect(() => {
-      return this.connect(url, setData, params);
-    }, [url, ...parameters]);
-
-    return {
-      data,
-      status: this.status,
-      fetchStatus: this.fetchStatus,
-    };
-  };
 }
 
 interface SocketArgs {
@@ -90,6 +75,12 @@ interface SocketArgs {
   log: SocketEvent[];
   retry: boolean;
   baseURL?: string;
+}
+
+interface SocketConnect {
+  url: string;
+  protocols?: string | string[];
+  params?: SocketParams;
 }
 
 class Socket<Get = unknown, Post = never> {
@@ -105,8 +96,6 @@ class Socket<Get = unknown, Post = never> {
   // getSocket = (baseURL: string) => {
   //   return this.#sockets.get(baseURL);
   // };
-
-  url: string;
 
   #currentState: Get | null = null;
   #timerId: Timer | null = null;
@@ -129,8 +118,14 @@ class Socket<Get = unknown, Post = never> {
   fetchStatus: SocketFetchStatus = "idle";
   status: SocketStatus = "pending";
 
-  #connect = () => {
-    this.instance = new WebSocket(this.url);
+  #connect = ({ url, protocols, params = {} }: SocketConnect) => {
+    const uri = getUri({
+      url,
+      baseURL: this.#baseURL,
+      params,
+    });
+
+    this.instance = new WebSocket(uri, protocols);
     this.fetchStatus = "connecting";
 
     this.instance.onopen = (ev: Event) => {
@@ -220,6 +215,38 @@ class Socket<Get = unknown, Post = never> {
 
   #publish = (value: Get) => this.#subscribers.forEach((fn) => fn(value));
 
+  close = () => {
+    if (this.instance?.readyState !== WebSocket.CLOSED) {
+      this.instance?.close();
+    }
+  };
+
+  send = (data: Post) => {
+    if (this.instance?.readyState === WebSocket.OPEN) {
+      this.instance.send(JSON.stringify(data));
+    }
+  };
+
+  on = (event: SocketEvent, callback: (ev: Event) => void) => {
+    this.instance?.addEventListener(event, callback);
+  };
+
+  use = (url: string, params?: SocketParams) => {
+    const [data, setData] = useState<Get>();
+    const parameters = this.#getDependencies(params);
+
+    useEffect(() => {
+      return this.connect(url, setData, params);
+    }, [url, ...parameters]);
+
+    return {
+      data,
+      status: this.status,
+      fetchStatus: this.fetchStatus,
+      send: this.send,
+    };
+  };
+
   subscribe = (observer: (value: Get) => void, immediate = true) => {
     if (!this.#subscribers.has(observer)) {
       this.#subscribers.add(observer);
@@ -246,22 +273,6 @@ class Socket<Get = unknown, Post = never> {
     this.#log = log;
     this.#retry = retry;
   }
-
-  close = () => {
-    if (this.instance?.readyState !== WebSocket.CLOSED) {
-      this.instance?.close();
-    }
-  };
-
-  send = (data: Post) => {
-    if (this.instance?.readyState === WebSocket.OPEN) {
-      this.instance.send(JSON.stringify(data));
-    }
-  };
-
-  on = (event: SocketEvent, callback: (ev: Event) => void) => {
-    this.instance?.addEventListener(event, callback);
-  };
 }
 
 type CreateSocket = SocketConstructor & {
@@ -292,11 +303,12 @@ function createSocket<Get = unknown, Post = never>({
     return socketManager.get(key);
   }
 
-  return useSocket;
+  return socket;
 }
 
-const useOvsSocket = createSocket<SecurityList>({
+const ovs = createSocket<SecurityList>({
   log: ["close"],
+  paths: ["v2/api/orders"],
   baseURL: "ws://localhost:8080",
   cache: true,
   cacheKey: "ovs-socket",
@@ -320,5 +332,5 @@ function App() {
     board_code: boardCode,
   };
 
-  const { data } = useOvsSocket("v2/api/orders", params);
+  const { data } = ovs.use("", params);
 }

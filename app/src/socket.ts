@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { combineURLs } from "./combine-urls";
 
-import { WebSocketCloseCode } from "./constants/web-socket-close-code";
-import { WebSocketCloseReason } from "./constants/web-socket-close-reason";
+import { SocketCloseCode } from "./constants/SocketCloseCode";
+import { SocketCloseReason } from "./constants/SocketCloseReason";
 import { isAbsoluteURL } from "./is-absolute-url";
 
 import type { SocketConstructor } from "./types/SocketConstructor";
@@ -40,7 +40,6 @@ class Socket<Get = unknown, Post = never> {
   fetchStatus: SocketFetchStatus = "idle";
 
   constructor({
-    baseURL = "",
     log = ["open", "close", "error"],
     retryDelay = 1000,
     retry = false,
@@ -143,18 +142,18 @@ class Socket<Get = unknown, Post = never> {
 
       if (this.#log.includes("close")) {
         const target = ev.target as WebSocket;
-        const errorCode = ev.code as WebSocketCloseCode;
+        const errorCode = ev.code as SocketCloseCode;
 
         console.info("WebSocket disconnected", {
           url: target.url,
-          reason: WebSocketCloseCode[errorCode],
-          explanation: WebSocketCloseReason[errorCode],
+          reason: SocketCloseCode[errorCode],
+          explanation: SocketCloseReason[errorCode],
           code: errorCode,
         });
       }
 
       if (this.#retry) {
-        if (ev.code === WebSocketCloseCode.ABNORMAL_CLOSURE) {
+        if (ev.code === SocketCloseCode.ABNORMAL_CLOSURE) {
           this.#reconnect(url, setMessage);
         }
       } else {
@@ -217,7 +216,7 @@ function createSocket<Get = unknown, Post = never>(config: SocketConstructor) {
 }
 
 const ws = createSocket<SecurityList>({
-  baseURL: "ws://localhost:8080",
+  retry: false,
 });
 
 ws.connect("v2/api/orders", (data) => {
