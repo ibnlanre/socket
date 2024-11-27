@@ -1,4 +1,4 @@
-import { SocketCloseCode } from "@/constants/SocketCloseCode";
+import { SocketCloseCode } from "@/constants/socket-close-code";
 
 export type SocketRetrial = {
   /**
@@ -57,5 +57,19 @@ export type SocketRetrial = {
    *
    * @default undefined
    */
-  retryOnCustomCondition?: (error: any, response?: Response) => boolean;
+  retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
+
+  /**
+   * The minimum value for the jitter
+   *
+   * @default 0.8
+   */
+  minJitterValue?: number;
+
+  /**
+   * The maximum value for the jitter
+   *
+   * @default 1.2
+   */
+  maxJitterValue?: number;
 };
