@@ -6,7 +6,7 @@ import type { SocketParams } from "./types/socket-params";
 
 export function createSocket<
   Get = unknown,
-  Params extends SocketParams = {},
+  Params extends SocketParams = never,
   Post = never
 >(configuration: SocketConstructor) {
   return new SocketClient<Get, Params, Post>(configuration);
@@ -15,7 +15,6 @@ export function createSocket<
 const client = createSocket<SecurityList>({
   url: "/v2/api/orders",
   baseURL: "ws://localhost:8080",
-  cacheName: "ovs-socket",
 });
 
 type SecurityList = {
@@ -30,11 +29,11 @@ type SecurityList = {
   board_name: string;
 };
 
-client.open({
-  currency_code: "NGN",
-  security_code: "AAPL",
-  board_code: "NGSE",
-});
+type params = {
+  currency_code: "NGN";
+  security_code: "AAPL";
+  board_code: "NGSE";
+};
 
 interface OvsSocket {
   currency_code: string | null;

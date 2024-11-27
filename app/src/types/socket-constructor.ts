@@ -1,8 +1,7 @@
-import type { SocketCache } from "./socket-cache";
 import type { SocketEvent } from "./socket-event";
 import type { SocketRetrial } from "./socket-retrial";
 
-export interface SocketConstructor extends SocketRetrial, SocketCache {
+export interface SocketConstructor extends SocketRetrial {
   /**
    * The URL to connect to
    */
