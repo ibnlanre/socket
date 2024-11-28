@@ -34,7 +34,7 @@ export function createSocketClient<
     const [, forceUpdate] = useState({});
 
     const key = getUri({ baseURL, url, params });
-    const client = useMemo(() => initialize(params), [key]);
+    const client = useMemo<Socket>(() => initialize(params), [key]);
 
     useEffect(() => {
       const unsubscribe = client.subscribe(forceUpdate);

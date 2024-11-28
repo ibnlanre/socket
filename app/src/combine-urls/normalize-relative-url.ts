@@ -4,6 +4,7 @@
  * @example
  * "/api" => "api"
  */
-export function normalizeRelativeURL(relativeURL: string): string {
+export function normalizeRelativeURL(relativeURL?: string): string {
+  if (!relativeURL) return "";
   return relativeURL.replace(/^\/+/, "");
 }

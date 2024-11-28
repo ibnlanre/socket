@@ -4,6 +4,7 @@
  * @example
  * "https://example.com/" => "https://example.com"
  */
-export function normalizeBaseURL(baseURL: string): string {
+export function normalizeBaseURL(baseURL?: string): string {
+  if (!baseURL) return "";
   return baseURL.replace(/\/+$/, "");
 }

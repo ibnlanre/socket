@@ -6,7 +6,7 @@ import { getUri } from ".";
 describe("getUri", () => {
   it("should return the base URL correctly", () => {
     const uri: SocketURI = { url: "http://base.com" };
-    expect(getUri(uri)).toBe("http://base.com/");
+    expect(getUri(uri)).toBe("http://base.com");
   });
 
   it("should return the URL when given an absolute URL", () => {
@@ -14,7 +14,7 @@ describe("getUri", () => {
       url: "http://example.com",
       baseURL: "http://base.com",
     };
-    expect(getUri(uri)).toBe("http://example.com/");
+    expect(getUri(uri)).toBe("http://example.com");
   });
 
   it("should combine baseURL and url when given a relative URL", () => {

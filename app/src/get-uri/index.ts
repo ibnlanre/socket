@@ -1,11 +1,10 @@
 import type { SocketURI } from "@/types/socket-uri";
 
-import { combineURLs } from "@/combine-urls";
-import { isAbsoluteURL } from "@/is-absolute-url";
-import { paramsSerializer } from "@/params-serializer";
+import { combineURLs } from "../combine-urls";
+import { paramsSerializer } from "../params-serializer";
 
 export function getUri({ url, baseURL = "", params }: SocketURI): string {
-  const fullPath = isAbsoluteURL(url) ? url : combineURLs(baseURL, url);
+  const fullPath = combineURLs(baseURL, url);
   if (!params) return fullPath;
 
   const serializedParams = paramsSerializer(params);

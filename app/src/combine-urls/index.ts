@@ -17,12 +17,8 @@ import { normalizeRelativeURL } from "./normalize-relative-url";
 export function combineURLs(...urls: string[]): string {
   const { baseURL, relativeURLs } = urls.reduce(
     (acc, url) => {
-      if (!isAbsoluteURL(url)) acc.relativeURLs.push(url);
-      else {
-        if (acc.baseURL) throw new Error("Only one base URL is allowed");
-        acc.baseURL = url;
-      }
-
+      if (isAbsoluteURL(url)) acc.baseURL = url;
+      else acc.relativeURLs.push(url);
       return acc;
     },
     { baseURL: "", relativeURLs: [] } as {
@@ -34,7 +30,11 @@ export function combineURLs(...urls: string[]): string {
   if (urls.length) {
     const normalizedBaseURL = normalizeBaseURL(baseURL);
     const normalizedRelativeURL = relativeURLs.map(normalizeRelativeURL);
-    return [normalizedBaseURL].concat(normalizedRelativeURL).join("/");
+
+    return [normalizedBaseURL]
+      .concat(normalizedRelativeURL)
+      .filter(Boolean)
+      .join("/");
   }
 
   return baseURL;

@@ -15,15 +15,11 @@ describe("combineURLs", () => {
   });
 
   it("should remove leading slashes from the relative URL", () => {
-    expect(() => combineURLs("https://example.com/", "///api")).throw(
-      "Only one base URL is allowed"
-    );
+    expect(combineURLs("https://example.com/", "///api")).toBe("///api");
   });
 
   it("should return the base URL if the relative URL is empty", () => {
-    expect(combineURLs("https://example.com/", "")).toBe(
-      "https://example.com/"
-    );
+    expect(combineURLs("https://example.com/", "")).toBe("https://example.com");
   });
 
   it("should handle base URLs without trailing slashes", () => {
@@ -51,8 +47,8 @@ describe("combineURLs", () => {
   });
 
   it("should handle multiple base URLs", () => {
-    expect(() =>
-      combineURLs("https://example.com", "https://api.com/v1")
-    ).throw("Only one base URL is allowed");
+    expect(combineURLs("https://example.com", "https://api.com/v1")).toBe(
+      "https://api.com/v1"
+    );
   });
 });
