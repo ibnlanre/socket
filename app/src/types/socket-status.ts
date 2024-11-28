@@ -1,1 +1,1 @@
-export type SocketStatus = "idle" | "loading" | "success" | "error";
+export type SocketStatus = "idle" | "stale" | "loading" | "success" | "error";

@@ -1,4 +1,3 @@
-export { CacheManager } from "./cache-manager";
 export { SocketCloseCode } from "./constants/socket-close-code";
 export { SocketCache } from "./socket-cache";
 export { SocketClient } from "./socket-client";

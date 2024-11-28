@@ -30,7 +30,14 @@ export type SocketRetrial = {
    *
    * @default true
    * @description If set to true, the connection will be retried when the network is restored even if the retry count has been reached   */
-  retryOnNetworkRestore?: boolean;
+  reconnectOnNetworkRestore?: boolean;
+
+  /**
+   * Whether to retry the connection when the window regains focus
+   *
+   * @default true
+   */
+  reconnectOnWindowFocus?: boolean;
 
   /**
    * The strategy for increasing the delay between retries (e.g., fixed, exponential)

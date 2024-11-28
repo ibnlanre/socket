@@ -1,7 +1,8 @@
-import type { SocketEvent } from "./socket-event";
+import type { SocketCacheError, SocketEvent } from "./socket-event";
 import type { SocketRetrial } from "./socket-retrial";
 
-export interface SocketConstructor extends SocketRetrial {
+export interface SocketConstructor<Get = unknown, Post = never>
+  extends SocketRetrial {
   /**
    * The URL to connect to
    */
@@ -16,10 +17,24 @@ export interface SocketConstructor extends SocketRetrial {
   log?: SocketEvent[];
 
   /**
-   * A custom condition for logging
+   * The events to log in the cache
    *
    * @default
-   * (logType) => process.env.NODE_ENV === "development"
+   * ["initialization"]
+   */
+  cacheLog?: SocketCacheError[];
+
+  /**
+   * Whether to cache the data or not
+   *
+   * @default false
+   */
+  clearCacheOnClose?: boolean;
+
+  /**
+   * A custom condition for logging
+   *
+   * @default (logType) => process.env.NODE_ENV === "development"
    */
   logCondition?: (logType: SocketEvent) => boolean;
 
@@ -29,4 +44,18 @@ export interface SocketConstructor extends SocketRetrial {
    * @default ""
    */
   baseURL?: string;
+
+  /**
+   * A custom function to encrypt the data before sending it
+   *
+   * @default (payload) => payload
+   */
+  encryptPayload?: (data: Post) => Post;
+
+  /**
+   * A custom function to decrypt the data after receiving it
+   *
+   * @default (data) => data
+   */
+  decryptData?: (data: Get) => Get;
 }
