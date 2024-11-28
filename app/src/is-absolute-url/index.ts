@@ -6,10 +6,11 @@
  *
  * @example
  * isAbsoluteURL("https://example.com") => true
- * isAbsoluteURL("example.com") => false
- * isAbsoluteURL("//example.com") => true
- * isAbsoluteURL("example") => false
  * isAbsoluteURL("ftp://example.com") => true
+ *
+ * isAbsoluteURL("//example.com") => false
+ * isAbsoluteURL("example.com") => false
+ * isAbsoluteURL("example") => false
  */
 export function isAbsoluteURL(url: string): boolean {
   return /^([a-z][a-z\d+\-.]*:)?\/\//i.test(url);

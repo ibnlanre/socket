@@ -4,7 +4,7 @@ export type SocketRetrial = {
   /**
    * Whether to retry the WebSocket connection or not
    *
-   * @default true
+   * @default false
    */
   retry?: boolean;
 
@@ -18,9 +18,10 @@ export type SocketRetrial = {
   /**
    * The number of times to retry the WebSocket connection
    *
-   * @default 0
    * @description If set to 0, the connection will not be retried
    * @description If set to -1, the connection will be retried indefinitely
+   *
+   * @default 3
    */
   retryCount?: number;
 

@@ -2,16 +2,15 @@ import { CacheManager } from "@/cache-manager";
 import type { SocketEvent } from "@/types/socket-event";
 
 export class SocketCache<State> {
-  static isAvailable: boolean = "caches" in self;
+  subscribers: Set<Function>;
 
   #state: State | undefined;
-  #subscribers: Set<Function>;
   #cacheManager: CacheManager<State>;
   #logError: SocketEvent[];
   #path: string;
 
   constructor(url: string, path: string, logError: SocketEvent[] = []) {
-    this.#subscribers = new Set();
+    this.subscribers = new Set();
     this.#cacheManager = new CacheManager<State>(url);
     this.#logError = logError;
     this.#path = path;
@@ -22,7 +21,7 @@ export class SocketCache<State> {
    * @protected
    */
   #notifySubscribers = () => {
-    this.#subscribers.forEach((callback) => {
+    this.subscribers.forEach((callback) => {
       try {
         callback(this.#state);
       } catch (error) {
@@ -79,13 +78,13 @@ export class SocketCache<State> {
     observer: (value: State | undefined) => unknown,
     immediate: boolean = true
   ) => {
-    if (!this.#subscribers.has(observer)) {
-      this.#subscribers.add(observer);
+    if (!this.subscribers.has(observer)) {
+      this.subscribers.add(observer);
       if (immediate) observer(this.#state);
     }
 
     return () => {
-      this.#subscribers.delete(observer);
+      this.subscribers.delete(observer);
     };
   };
 
@@ -93,6 +92,6 @@ export class SocketCache<State> {
    * Unsubscribes all subscribers from the subject.
    */
   unsubscribe = (): void => {
-    this.#subscribers.clear();
+    this.subscribers.clear();
   };
 }

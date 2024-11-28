@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { combineURLs } from ".";
 
 describe("combineURLs", () => {
@@ -15,8 +15,8 @@ describe("combineURLs", () => {
   });
 
   it("should remove leading slashes from the relative URL", () => {
-    expect(combineURLs("https://example.com/", "///api")).toBe(
-      "https://example.com/api"
+    expect(() => combineURLs("https://example.com/", "///api")).throw(
+      "Only one base URL is allowed"
     );
   });
 
@@ -42,5 +42,17 @@ describe("combineURLs", () => {
     expect(combineURLs("https://example.com", "api")).toBe(
       "https://example.com/api"
     );
+  });
+
+  it("should handle multiple relative URLs", () => {
+    expect(combineURLs("https://example.com", "api", "v1")).toBe(
+      "https://example.com/api/v1"
+    );
+  });
+
+  it("should handle multiple base URLs", () => {
+    expect(() =>
+      combineURLs("https://example.com", "https://api.com/v1")
+    ).throw("Only one base URL is allowed");
   });
 });

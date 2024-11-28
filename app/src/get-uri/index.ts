@@ -5,8 +5,7 @@ import { isAbsoluteURL } from "@/is-absolute-url";
 import { paramsSerializer } from "@/params-serializer";
 
 export function getUri({ url, baseURL = "", params }: SocketURI): string {
-  const base = isAbsoluteURL(url) ? "" : baseURL;
-  const fullPath = combineURLs(base, url);
+  const fullPath = isAbsoluteURL(url) ? url : combineURLs(baseURL, url);
   if (!params) return fullPath;
 
   const serializedParams = paramsSerializer(params);

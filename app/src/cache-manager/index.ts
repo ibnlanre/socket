@@ -1,5 +1,5 @@
 export class CacheManager<State> {
-  static isAvailable: boolean = "caches" in self;
+  static isAvailable: boolean = "caches" in globalThis;
 
   #cacheName: string;
   #cache?: Cache;

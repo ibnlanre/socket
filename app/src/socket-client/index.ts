@@ -297,10 +297,6 @@ export class SocketClient<
     this.#eventListeners.set(event, callback);
   };
 
-  get data() {
-    return this.cache.value;
-  }
-
   get isPending(): boolean {
     return ["idle", "loading"].includes(this.status);
   }

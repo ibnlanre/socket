@@ -1,3 +1,7 @@
+import { isAbsoluteURL } from "../is-absolute-url";
+import { normalizeBaseURL } from "./normalize-base-url";
+import { normalizeRelativeURL } from "./normalize-relative-url";
+
 /**
  * Combine a base URL and a relative URL
  *
@@ -10,31 +14,28 @@
  * combineURLs("https://example.com/", "/api") => "https://example.com/api"
  * combineURLs("https://example.com", "api") => "https://example.com/api"
  */
-export function combineURLs(baseURL: string, relativeURL: string): string {
-  if (relativeURL) {
-    /**
-     * Remove trailing slashes from the baseURL
-     *
-     * @example
-     * "https://example.com/" => "https://example.com"
-     */
-    const cleanedBaseURL = baseURL.replace(/\/+$/, "");
+export function combineURLs(...urls: string[]): string {
+  const { baseURL, relativeURLs } = urls.reduce(
+    (acc, url) => {
+      if (!isAbsoluteURL(url)) acc.relativeURLs.push(url);
+      else {
+        if (acc.baseURL) throw new Error("Only one base URL is allowed");
+        acc.baseURL = url;
+      }
 
-    /**
-     * Remove leading slashes from the relativeURL
-     *
-     * @example
-     * "/api" => "api"
-     */
-    const cleanedRelativeURL = relativeURL.replace(/^\/+/, "");
+      return acc;
+    },
+    { baseURL: "", relativeURLs: [] } as {
+      baseURL: string;
+      relativeURLs: string[];
+    }
+  );
 
-    /**
-     * Join the cleanedBaseURL and cleanedRelativeURL
-     *
-     * @example
-     * combineURLs("https://example.com/", "/api") => "https://example.com/api"
-     */
-    return [cleanedBaseURL, cleanedRelativeURL].join("/");
+  if (urls.length) {
+    const normalizedBaseURL = normalizeBaseURL(baseURL);
+    const normalizedRelativeURL = relativeURLs.map(normalizeRelativeURL);
+    return [normalizedBaseURL].concat(normalizedRelativeURL).join("/");
   }
+
   return baseURL;
 }
