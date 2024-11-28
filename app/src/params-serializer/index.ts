@@ -25,9 +25,7 @@ export function paramsSerializer(
       if (isUndefined(value, ignore)) return;
       if (isEmpty(value, ignore)) return;
 
-      console.log("value", value);
       const item = encodeURIComponent(value);
-      console.log("encoded", item);
       searchParams.append(key, item);
     };
   }

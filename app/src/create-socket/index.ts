@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { combineURLs } from "./combine-urls";
-import { getUri } from "./get-uri";
-import { isAbsoluteURL } from "./is-absolute-url";
-import { paramsSerializer } from "./params-serializer";
-import { SocketClient } from "./socket-client";
+import { combineURLs } from "@/combine-urls";
+import { getUri } from "@/get-uri";
+import { isAbsoluteURL } from "@/is-absolute-url";
+import { paramsSerializer } from "@/params-serializer";
+import { SocketClient } from "@/socket-client";
 
-import type { SocketConstructor } from "./types/socket-constructor";
-import type { SocketParams } from "./types/socket-params";
+import type { SocketConstructor } from "@/types/socket-constructor";
+import type { SocketParams } from "@/types/socket-params";
 
 export function createSocket<
   Get = unknown,
@@ -54,10 +54,3 @@ export function createSocket<
     getUri,
   };
 }
-
-const socket = createSocket({
-  url: "wss://example.com",
-  retryOnSpecificCloseCodes: [1006, 1015],
-  retryOnCustomCondition: (event, client) => event.code === 1006,
-  baseURL: "https://example.com",
-});

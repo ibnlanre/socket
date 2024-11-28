@@ -1,4 +1,5 @@
-import type { SocketEvent } from "./types/socket-event";
+import { CacheManager } from "@/cache-manager";
+import type { SocketEvent } from "@/types/socket-event";
 
 export class SocketCache<State> {
   static isAvailable: boolean = "caches" in self;

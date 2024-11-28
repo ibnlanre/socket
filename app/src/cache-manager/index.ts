@@ -1,4 +1,4 @@
-class CacheManager<State> {
+export class CacheManager<State> {
   static isAvailable: boolean = "caches" in self;
 
   #cacheName: string;

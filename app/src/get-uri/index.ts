@@ -1,8 +1,8 @@
 import type { SocketURI } from "@/types/socket-uri";
 
-import { combineURLs } from "../combine-urls";
-import { isAbsoluteURL } from "../is-absolute-url";
-import { paramsSerializer } from "../params-serializer";
+import { combineURLs } from "@/combine-urls";
+import { isAbsoluteURL } from "@/is-absolute-url";
+import { paramsSerializer } from "@/params-serializer";
 
 export function getUri({ url, baseURL = "", params }: SocketURI): string {
   const base = isAbsoluteURL(url) ? "" : baseURL;

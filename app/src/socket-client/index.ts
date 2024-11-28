@@ -1,15 +1,15 @@
-import { SocketCloseCode } from "./constants/socket-close-code";
-import { SocketCloseReason } from "./constants/socket-close-reason";
-import { getUri } from "./get-uri";
-import { SocketCache } from "./socket-cache";
+import { SocketCloseCode } from "@/constants/socket-close-code";
+import { SocketCloseReason } from "@/constants/socket-close-reason";
+import { getUri } from "@/get-uri";
+import { SocketCache } from "@/socket-cache";
 
-import type { SocketConstructor } from "./types/socket-constructor";
-import type { SocketEvent } from "./types/socket-event";
-import type { SocketFetchStatus } from "./types/socket-fetch-status";
-import type { SocketListener } from "./types/socket-listener";
-import type { SocketParams } from "./types/socket-params";
-import type { SocketStatus } from "./types/socket-status";
-import type { SocketTimeout } from "./types/socket-timeout";
+import type { SocketConstructor } from "@/types/socket-constructor";
+import type { SocketEvent } from "@/types/socket-event";
+import type { SocketFetchStatus } from "@/types/socket-fetch-status";
+import type { SocketListener } from "@/types/socket-listener";
+import type { SocketParams } from "@/types/socket-params";
+import type { SocketStatus } from "@/types/socket-status";
+import type { SocketTimeout } from "@/types/socket-timeout";
 
 export class SocketClient<
   Get = unknown,
