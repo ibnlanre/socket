@@ -17,6 +17,7 @@
     "isolatedModules": true,
     "noImplicitAny": false,
     "baseUrl": "./",
+    "verbatimModuleSyntax": true,
     "paths": {
       "@/*": ["app/src/*"]
     }

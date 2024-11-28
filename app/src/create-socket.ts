@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
 import { combineURLs } from "./combine-urls";
 import { getUri } from "./get-uri";
 import { isAbsoluteURL } from "./is-absolute-url";
@@ -29,19 +30,19 @@ export function createSocket<
   }
 
   function use(params: Params = {} as Params) {
-    const [data, setData] = useState<Get>();
+    const [, setData] = useState<Get>();
+
+    const key = getUri({ baseURL, url, params });
+    const client = useMemo(() => initialize(params), [key]);
 
     useEffect(() => {
-      const client = initialize(params);
       const unsubscribe = client.cache.subscribe(setData);
       client.open();
 
       return unsubscribe;
-    }, [getUri({ baseURL, url, params })]);
+    }, [key]);
 
-    return {
-      data,
-    };
+    return client;
   }
 
   return {
@@ -55,6 +56,8 @@ export function createSocket<
 }
 
 const socket = createSocket({
-  url: "/socket",
+  url: "wss://example.com",
+  retryOnSpecificCloseCodes: [1006, 1015],
+  retryOnCustomCondition: (event, client) => event.code === 1006,
   baseURL: "https://example.com",
 });

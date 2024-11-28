@@ -21,8 +21,14 @@ export class SocketClient<
   fetchStatus: SocketFetchStatus = "idle";
   status: SocketStatus = "loading";
   path: string = "";
+  dataUpdatedAt: number = 0;
+  error: Error | null = null;
+  errorUpdatedAt: number = 0;
+  failureCount: number = 0;
+  failureReason: string | null = null;
 
   #log: SocketEvent[];
+  #logCondition: (logType: SocketEvent) => boolean;
   #baseURL: string;
   #retry: boolean;
   #retryDelay: number;
@@ -44,6 +50,7 @@ export class SocketClient<
   constructor(
     {
       log = ["open", "close", "error"],
+      logCondition = () => process.env.NODE_ENV === "development",
       baseURL = "",
       retry = false,
       retryDelay = 1000,
@@ -64,6 +71,7 @@ export class SocketClient<
     params = {} as Params
   ) {
     this.#log = log;
+    this.#logCondition = logCondition;
     this.#baseURL = baseURL;
     this.#retry = retry;
     this.#retryDelay = retryDelay;
@@ -109,11 +117,17 @@ export class SocketClient<
     this.instance = null;
   }
 
+  #shouldLog(event: SocketEvent): boolean {
+    if (this.#logCondition(event)) return this.#log.includes(event);
+    return false;
+  }
+
   #shouldRetry(event: CloseEvent): boolean {
     const target = event.target as WebSocket;
     const errorCode = event.code as SocketCloseCode;
+    const reason = SocketCloseReason[errorCode];
 
-    if (this.#log.includes("close")) {
+    if (this.#shouldLog("close")) {
       console.info("WebSocket disconnected", {
         url: target.url,
         reason: SocketCloseCode[errorCode],
@@ -128,6 +142,12 @@ export class SocketClient<
     }
 
     if (this.#retry) {
+      this.fetchStatus = "idle";
+      this.status = "error";
+
+      this.failureCount++;
+      this.failureReason = event.reason || reason;
+
       if (this.#retryOnCustomCondition?.(event, target)) return true;
       if (this.#retryOnSpecificCloseCodes.includes(errorCode)) return true;
     }
@@ -157,8 +177,6 @@ export class SocketClient<
   }
 
   #reconnect = () => {
-    this.fetchStatus = "idle";
-
     this.#currentRetryAttempt++;
     const backoffDelay = this.#calculateBackoff();
     this.#timerId = setTimeout(this.#connect, backoffDelay);
@@ -167,13 +185,17 @@ export class SocketClient<
   #connect = () => {
     this.instance = new WebSocket(this.path);
     this.fetchStatus = "connecting";
+    this.status = "loading";
 
     this.instance.onopen = (ev: Event) => {
       this.#currentRetryAttempt = 0;
       this.#setupNetworkListener();
       this.fetchStatus = "connected";
+      this.failureCount = 0;
+      this.failureReason = null;
+      this.error = null;
 
-      if (this.#log.includes("open")) {
+      if (this.#shouldLog("open")) {
         const target = ev.target as WebSocket;
         console.info("WebSocket connected", {
           url: target.url,
@@ -183,12 +205,13 @@ export class SocketClient<
 
     this.instance.onmessage = (ev: MessageEvent) => {
       this.status = "success";
+      this.dataUpdatedAt = Date.now();
 
       try {
         const state = JSON.parse(ev.data);
-        this.cache.next(this.path, state);
+        this.cache.next(state);
 
-        if (this.#log.includes("message")) {
+        if (this.#shouldLog("message")) {
           const target = ev.target as WebSocket;
           console.info("WebSocket message received", {
             data: ev.data,
@@ -196,7 +219,7 @@ export class SocketClient<
           });
         }
       } catch (err) {
-        if (this.#log.includes("error")) {
+        if (this.#shouldLog("error")) {
           const target = ev.target as WebSocket;
           console.error("Error occurred while updating socket", {
             data: ev.data,
@@ -209,14 +232,18 @@ export class SocketClient<
 
     this.instance.onclose = (event: CloseEvent) => {
       this.fetchStatus = "disconnected";
+      this.status = "idle";
 
+      if (event.code === SocketCloseCode.NORMAL_CLOSURE) return;
       if (this.#shouldRetry(event)) this.#reconnect();
     };
 
     this.instance.onerror = (ev: Event) => {
       this.status = "error";
+      this.error = new Error("WebSocket connection error");
+      this.errorUpdatedAt = Date.now();
 
-      if (this.#log.includes("error")) {
+      if (this.#shouldLog("error")) {
         const target = ev.target as WebSocket;
         console.error("WebSocket error", {
           url: target.url,
@@ -244,22 +271,6 @@ export class SocketClient<
     });
   };
 
-  get data() {
-    return this.cache.value;
-  }
-
-  get isLoading() {
-    return this.status === "loading";
-  }
-
-  get isDisconnected() {
-    return this.fetchStatus === "disconnected";
-  }
-
-  get isConnected() {
-    return this.fetchStatus === "connected";
-  }
-
   open = () => {
     if (this.instance) return;
 
@@ -285,4 +296,32 @@ export class SocketClient<
     this.instance?.addEventListener(event, callback);
     this.#eventListeners.set(event, callback);
   };
+
+  get data() {
+    return this.cache.value;
+  }
+
+  get isPending(): boolean {
+    return ["idle", "loading"].includes(this.status);
+  }
+
+  get isLoading(): boolean {
+    return this.status === "loading";
+  }
+
+  get isError(): boolean {
+    return this.status === "error";
+  }
+
+  get isRefetching(): boolean {
+    return this.isLoading && this.#currentRetryAttempt > 0;
+  }
+
+  get isRefetchError(): boolean {
+    return this.isError && this.#currentRetryAttempt > 0;
+  }
+
+  get isSuccess(): boolean {
+    return this.status === "success";
+  }
 }

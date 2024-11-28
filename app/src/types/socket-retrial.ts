@@ -48,7 +48,12 @@ export type SocketRetrial = {
   /**
    * An array of specific close codes that should trigger a retry
    *
-   * @default [SocketCloseCode.ABNORMAL_CLOSURE]
+   * @default
+   * [
+   *   SocketCloseCode.ABNORMAL_CLOSURE,
+   *   SocketCloseCode.TRY_AGAIN_LATER,
+   *   SocketCloseCode.SERVICE_RESTART
+   * ]
    */
   retryOnSpecificCloseCodes?: SocketCloseCode[];
 
@@ -57,7 +62,7 @@ export type SocketRetrial = {
    *
    * @default undefined
    */
-  retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
+  retryOnCustomCondition?: (event: CloseEvent, socket: WebSocket) => boolean;
 
   /**
    * The minimum value for the jitter

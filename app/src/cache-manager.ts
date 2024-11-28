@@ -1,17 +1,17 @@
 class CacheManager<State> {
   static isAvailable: boolean = "caches" in self;
 
-  #url: string;
+  #cacheName: string;
   #cache?: Cache;
 
-  constructor(url: string) {
-    this.#url = url;
+  constructor(cacheName: string) {
+    this.#cacheName = cacheName;
     this.#initialize();
   }
 
   async #initialize(): Promise<void> {
     if (!CacheManager.isAvailable) return;
-    this.#cache = await caches.open(this.#url);
+    this.#cache = await caches.open(this.#cacheName);
   }
 
   set = async (path: string, data: State): Promise<void> => {
