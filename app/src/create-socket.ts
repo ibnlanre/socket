@@ -1,6 +1,10 @@
-import { useState } from "react";
-
+import { useEffect, useState } from "react";
+import { combineURLs } from "./combine-urls";
+import { getUri } from "./get-uri";
+import { isAbsoluteURL } from "./is-absolute-url";
+import { paramsSerializer } from "./params-serializer";
 import { SocketClient } from "./socket-client";
+
 import type { SocketConstructor } from "./types/socket-constructor";
 import type { SocketParams } from "./types/socket-params";
 
@@ -9,46 +13,48 @@ export function createSocket<
   Params extends SocketParams = never,
   Post = never
 >(configuration: SocketConstructor) {
-  return new SocketClient<Get, Params, Post>(configuration);
-}
+  const sockets = new Map<string, SocketClient<Get, Params, Post>>();
+  const { baseURL, url } = configuration;
 
-const client = createSocket<SecurityList>({
-  url: "/v2/api/orders",
-  baseURL: "ws://localhost:8080",
-});
+  function initialize(params: Params = {} as Params) {
+    const key = getUri({ baseURL, url, params });
 
-type SecurityList = {
-  code: string;
-  name: string;
-  image_link: string;
-  security_type: string;
-  board_code: string;
-  is_tradable: string;
-  can_be_sold: string;
-  can_be_bought: string;
-  board_name: string;
-};
+    if (sockets.has(key)) {
+      return sockets.get(key) as SocketClient<Get, Params, Post>;
+    }
 
-type params = {
-  currency_code: "NGN";
-  security_code: "AAPL";
-  board_code: "NGSE";
-};
+    const client = new SocketClient<Get, Params, Post>(configuration, params);
+    sockets.set(key, client);
+    return client;
+  }
 
-interface OvsSocket {
-  currency_code: string | null;
-  security_code: string | null;
-  board_code: string | null;
-}
+  function use(params: Params = {} as Params) {
+    const [data, setData] = useState<Get>();
 
-function useOvsSocket() {
-  const [currencyCode, setCurrencyCode] = useState<string>("NGN");
-  const [securityCode, setSecurityCode] = useState<string | null>(null);
-  const [boardCode, setBoardCode] = useState<string | null>(null);
+    useEffect(() => {
+      const client = initialize(params);
+      const unsubscribe = client.cache.subscribe(setData);
+      client.open();
 
-  const params = {
-    currency_code: currencyCode,
-    security_code: securityCode,
-    board_code: boardCode,
+      return unsubscribe;
+    }, [getUri({ baseURL, url, params })]);
+
+    return {
+      data,
+    };
+  }
+
+  return {
+    use,
+    initialize,
+    isAbsoluteURL,
+    paramsSerializer,
+    combineURLs,
+    getUri,
   };
 }
+
+const socket = createSocket({
+  url: "/socket",
+  baseURL: "https://example.com",
+});

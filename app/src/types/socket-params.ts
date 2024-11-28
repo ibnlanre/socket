@@ -1,3 +1,4 @@
 import type { SocketPrimitives } from "./socket-primitives";
 
-export type SocketParams = Record<string, SocketPrimitives>;
+export type SocketParamValue = SocketPrimitives | SocketPrimitives[];
+export type SocketParams = Record<string, SocketParamValue>;
