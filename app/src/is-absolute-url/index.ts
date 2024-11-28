@@ -7,8 +7,8 @@
  * @example
  * isAbsoluteURL("https://example.com") => true
  * isAbsoluteURL("ftp://example.com") => true
+ * isAbsoluteURL("//example.com") => true
  *
- * isAbsoluteURL("//example.com") => false
  * isAbsoluteURL("example.com") => false
  * isAbsoluteURL("example") => false
  */

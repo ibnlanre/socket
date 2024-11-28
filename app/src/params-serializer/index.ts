@@ -21,8 +21,8 @@ export function paramsSerializer(
 
   function createSetQueryParam(key: string) {
     return (value: SocketPrimitives) => {
-      if (isNull(value, ignore)) return;
       if (isUndefined(value, ignore)) return;
+      if (isNull(value, ignore)) return;
       if (isEmpty(value, ignore)) return;
 
       const item = encodeURIComponent(value);

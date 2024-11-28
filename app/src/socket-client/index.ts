@@ -17,82 +17,83 @@ export class SocketClient<
   Post = never
 > {
   cache: SocketCache<Get>;
-  ws: WebSocket | null = null;
-  fetchStatus: SocketFetchStatus = "idle";
-  status: SocketStatus = "idle";
-  path: string = "";
   dataUpdatedAt: number = 0;
   error: Error | null = null;
   errorUpdatedAt: number = 0;
   failureCount: number = 0;
   failureReason: string | null = null;
+  fetchStatus: SocketFetchStatus = "idle";
+  path: string = "";
+  status: SocketStatus = "idle";
+  ws: WebSocket | null = null;
 
-  #log: SocketEvent[];
   #clearCacheOnClose: boolean;
+  #eventListeners: Map<string, EventListener> = new Map();
+  #focusListener: (() => void) | null = null;
+  #log: SocketEvent[];
   #retry: boolean;
   #retryDelay: number;
   #minJitterValue: number;
   #maxJitterValue: number;
-  #retryCount: number;
-  #retryBackoffStrategy: "fixed" | "exponential";
+  #maxRetryDelay: number;
+  #networkRestoreListener: (() => void) | null = null;
   #reconnectOnNetworkRestore: boolean;
   #reconnectOnWindowFocus: boolean;
-  #maxRetryDelay: number;
+  #retryCount: number;
+  #retryBackoffStrategy: "fixed" | "exponential";
   #retryOnSpecificCloseCodes: SocketCloseCode[];
   #subscribers: Set<Function> = new Set();
-  #eventListeners: Map<string, EventListener> = new Map();
-  #networkRestoreListener: (() => void) | null = null;
-  #focusListener: (() => void) | null = null;
   #timerId: SocketTimeout = undefined;
 
+  #encryptPayload: (data: Post) => Post;
   #logCondition: (logType: SocketEvent) => boolean;
   #retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
-  #encryptPayload: (data: Post) => Post;
 
   constructor(
     {
+      baseURL = "",
+      clearCacheOnClose = false,
+      decryptData = (data: Get) => data,
+      encryptPayload = (payload: Post) => payload,
       log = ["open", "close", "error"],
       logCondition = () => process.env.NODE_ENV === "development",
-      clearCacheOnClose = false,
-      baseURL = "",
+      minJitterValue = 0.8,
+      maxJitterValue = 1.2,
+      maxRetryDelay = 30000,
+      reconnectOnNetworkRestore = true,
+      reconnectOnWindowFocus = true,
       retry = false,
       retryDelay = 1000,
       retryCount = 3,
-      minJitterValue = 0.8,
-      maxJitterValue = 1.2,
-      reconnectOnNetworkRestore = true,
-      reconnectOnWindowFocus = true,
       retryBackoffStrategy = "exponential",
-      maxRetryDelay = 30000,
       retryOnSpecificCloseCodes = [
         SocketCloseCode.ABNORMAL_CLOSURE,
         SocketCloseCode.TRY_AGAIN_LATER,
         SocketCloseCode.SERVICE_RESTART,
       ],
       retryOnCustomCondition,
-      encryptPayload = (payload: Post) => payload,
-      decryptData = (data: Get) => data,
       url,
     }: SocketConstructor<Get, Post>,
     params = {} as Params
   ) {
     if (retryCount === -1) this.#retryCount = Infinity;
 
+    this.#clearCacheOnClose = clearCacheOnClose;
+    this.#encryptPayload = encryptPayload;
     this.#log = log;
     this.#logCondition = logCondition;
-    this.#retry = retry;
-    this.#retryDelay = retryDelay;
-    this.#retryCount = retryCount;
     this.#minJitterValue = minJitterValue;
     this.#maxJitterValue = maxJitterValue;
+    this.#maxRetryDelay = maxRetryDelay;
     this.#reconnectOnNetworkRestore = reconnectOnNetworkRestore;
     this.#reconnectOnWindowFocus = reconnectOnWindowFocus;
+    this.#retry = retry;
     this.#retryBackoffStrategy = retryBackoffStrategy;
-    this.#maxRetryDelay = maxRetryDelay;
-    this.#retryOnSpecificCloseCodes = retryOnSpecificCloseCodes;
+    this.#retryCount = retryCount;
+    this.#retryDelay = retryDelay;
     this.#retryOnCustomCondition = retryOnCustomCondition;
-    this.#encryptPayload = encryptPayload;
-    this.#clearCacheOnClose = clearCacheOnClose;
+    this.#retryOnSpecificCloseCodes = retryOnSpecificCloseCodes;
+
     this.cache = new SocketCache<Get>(url, decryptData);
     this.path = getUri({ baseURL, url, params });
   }
@@ -130,49 +131,14 @@ export class SocketClient<
     this.#notifySubscribers();
   }
 
-  #shouldLog(event: SocketEvent): boolean {
-    if (this.#logCondition(event)) return this.#log.includes(event);
-    return false;
-  }
+  #cleanupEventListeners() {
+    if (!this.ws) return;
 
-  #shouldRetry(event: CloseEvent): boolean {
-    const target = event.target as WebSocket;
-    const errorCode = event.code as SocketCloseCode;
-    const reason = SocketCloseReason[errorCode];
+    this.#eventListeners.forEach((listener, event) => {
+      this.ws?.removeEventListener(event, listener);
+    });
 
-    if (this.#shouldLog("close")) {
-      console.info("WebSocket disconnected", {
-        url: target.url,
-        reason: SocketCloseCode[errorCode],
-        explanation: SocketCloseReason[errorCode],
-        code: errorCode,
-      });
-    }
-
-    if (this.#retry && this.failureCount < this.#retryCount) {
-      this.failureCount++;
-      this.failureReason = event.reason || reason;
-
-      this.#notifySubscribers();
-
-      if (this.#retryOnCustomCondition?.(event, target)) return true;
-      if (this.#retryOnSpecificCloseCodes.includes(errorCode)) return true;
-    }
-
-    this.#cleanup();
-    return false;
-  }
-
-  #setupNetworkListener() {
-    if (!this.#reconnectOnNetworkRestore) return;
-
-    this.#networkRestoreListener = () => {
-      if (this.fetchStatus === "disconnected") {
-        this.open();
-      }
-    };
-
-    window.addEventListener("online", this.#networkRestoreListener);
+    this.#eventListeners.clear();
   }
 
   #cleanupNetworkListener() {
@@ -182,29 +148,12 @@ export class SocketClient<
     }
   }
 
-  #setupWindowFocusListener() {
-    if (!this.#reconnectOnWindowFocus) return;
-
-    this.#focusListener = () => {
-      if (this.fetchStatus === "disconnected") {
-        this.open();
-      }
-    };
-
-    window.addEventListener("focus", this.#focusListener);
-  }
-
   #cleanupWindowFocusListener() {
     if (this.#focusListener) {
       window.removeEventListener("focus", this.#focusListener);
       this.#focusListener = null;
     }
   }
-
-  #reconnect = () => {
-    const backoffDelay = this.#calculateBackoff();
-    this.#timerId = setTimeout(this.#connect, backoffDelay);
-  };
 
   #connect = () => {
     this.ws = new WebSocket(this.path);
@@ -220,7 +169,6 @@ export class SocketClient<
       this.failureReason = null;
       this.error = null;
       this.errorUpdatedAt = 0;
-
       this.#notifySubscribers();
 
       if (this.#shouldLog("open")) {
@@ -285,38 +233,70 @@ export class SocketClient<
     };
   };
 
-  #cleanupEventListeners() {
-    if (!this.ws) return;
-
-    this.#eventListeners.forEach((listener, event) => {
-      this.ws?.removeEventListener(event, listener);
-    });
-
-    this.#eventListeners.clear();
-  }
-
   #notifySubscribers = () => {
     this.#subscribers.forEach((listener) => listener({}));
   };
 
-  subscribe = (listener: Function, immediate = true) => {
-    if (!this.#subscribers.has(listener)) {
-      this.#subscribers.add(listener);
-      if (immediate) listener(this);
+  #reconnect = () => {
+    const backoffDelay = this.#calculateBackoff();
+    this.#timerId = setTimeout(this.#connect, backoffDelay);
+  };
+
+  #setupNetworkListener() {
+    if (!this.#reconnectOnNetworkRestore) return;
+
+    this.#networkRestoreListener = () => {
+      if (this.fetchStatus === "disconnected") {
+        this.open();
+      }
+    };
+
+    window.addEventListener("online", this.#networkRestoreListener);
+  }
+
+  #setupWindowFocusListener() {
+    if (!this.#reconnectOnWindowFocus) return;
+
+    this.#focusListener = () => {
+      if (this.fetchStatus === "disconnected") {
+        this.open();
+      }
+    };
+
+    window.addEventListener("focus", this.#focusListener);
+  }
+
+  #shouldLog(event: SocketEvent): boolean {
+    if (this.#logCondition(event)) return this.#log.includes(event);
+    return false;
+  }
+
+  #shouldRetry(event: CloseEvent): boolean {
+    const target = event.target as WebSocket;
+    const errorCode = event.code as SocketCloseCode;
+    const reason = SocketCloseReason[errorCode];
+
+    if (this.#shouldLog("close")) {
+      console.info("WebSocket disconnected", {
+        url: target.url,
+        reason: SocketCloseCode[errorCode],
+        explanation: SocketCloseReason[errorCode],
+        code: errorCode,
+      });
     }
 
-    return () => {
-      this.#subscribers.delete(listener);
-    };
-  };
+    if (this.#retry && this.failureCount < this.#retryCount) {
+      this.failureCount++;
+      this.failureReason = event.reason || reason;
+      this.#notifySubscribers();
 
-  open = () => {
-    if (this.ws) return;
+      if (this.#retryOnCustomCondition?.(event, target)) return true;
+      if (this.#retryOnSpecificCloseCodes.includes(errorCode)) return true;
+    }
 
     this.#cleanup();
-    this.cache.initialize(this.path);
-    this.#connect();
-  };
+    return false;
+  }
 
   close = () => {
     if (this.ws?.readyState !== WebSocket.CLOSED) this.ws?.close();
@@ -330,6 +310,19 @@ export class SocketClient<
     this.ws = null;
   };
 
+  on: SocketListener = (event, callback) => {
+    this.ws?.addEventListener(event, callback);
+    this.#eventListeners.set(event, callback);
+  };
+
+  open = () => {
+    if (this.ws) return;
+
+    this.#cleanup();
+    this.cache.initialize(this.path);
+    this.#connect();
+  };
+
   send = (payload: Post) => {
     if (this.ws?.readyState === WebSocket.OPEN) {
       const data = this.#encryptPayload(payload);
@@ -337,17 +330,23 @@ export class SocketClient<
     }
   };
 
-  on: SocketListener = (event, callback) => {
-    this.ws?.addEventListener(event, callback);
-    this.#eventListeners.set(event, callback);
+  subscribe = (listener: Function, immediate = true) => {
+    if (!this.#subscribers.has(listener)) {
+      this.#subscribers.add(listener);
+      if (immediate) listener(this);
+    }
+
+    return () => {
+      this.#subscribers.delete(listener);
+    };
   };
 
-  get value() {
-    return this.cache.value;
+  get isError(): boolean {
+    return this.status === "error";
   }
 
-  get isStale(): boolean {
-    return this.status === "stale";
+  get isLoading(): boolean {
+    return this.status === "loading";
   }
 
   get isPending(): boolean {
@@ -356,23 +355,23 @@ export class SocketClient<
     return isLoadingOrIdle && hasUndefinedValue;
   }
 
-  get isLoading(): boolean {
-    return this.status === "loading";
-  }
-
-  get isError(): boolean {
-    return this.status === "error";
+  get isRefetchError(): boolean {
+    return this.isError && this.failureCount > 0;
   }
 
   get isRefetching(): boolean {
     return this.isLoading && this.failureCount > 0;
   }
 
-  get isRefetchError(): boolean {
-    return this.isError && this.failureCount > 0;
+  get isStale(): boolean {
+    return this.status === "stale";
   }
 
   get isSuccess(): boolean {
     return this.status === "success";
+  }
+
+  get value() {
+    return this.cache.value;
   }
 }
