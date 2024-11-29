@@ -158,85 +158,83 @@ export class SocketClient<
   };
 
   #connect = () => {
-    this.ws = new WebSocket(this.path);
-    this.#setState({
-      fetchStatus: "connecting",
-      status: "loading",
-    });
-
-    this.ws.onopen = (ev: Event) => {
-      this.#setupNetworkListener();
-      this.#setupWindowFocusListener();
-
+    try {
+      this.ws = new WebSocket(this.path);
       this.#setState({
-        fetchStatus: "connected",
-        failureCount: 0,
-        failureReason: null,
-        error: null,
-        errorUpdatedAt: 0,
+        fetchStatus: "connecting",
+        status: "loading",
       });
 
-      if (this.#shouldLog("open")) {
-        const target = ev.target as WebSocket;
-        console.info("WebSocket connected", {
-          url: target.url,
+      this.ws.onopen = (ev: Event) => {
+        this.#setState({
+          fetchStatus: "connected",
+          failureCount: 0,
+          failureReason: null,
+          error: null,
+          errorUpdatedAt: 0,
         });
-      }
-    };
 
-    this.ws.onmessage = (ev: MessageEvent) => {
-      this.#setState({
-        status: "success",
-        dataUpdatedAt: Date.now(),
-      });
-
-      try {
-        this.cache.set(this.path, ev.data);
-
-        if (this.#shouldLog("message")) {
+        if (this.#shouldLog("open")) {
           const target = ev.target as WebSocket;
-          console.info("WebSocket message received", {
-            data: ev.data,
+          console.info("WebSocket connected", {
             url: target.url,
           });
         }
-      } catch (err) {
-        if (this.#shouldLog("error")) {
-          const target = ev.target as WebSocket;
-          console.error("Error occurred while updating socket", {
-            data: ev.data,
-            url: target.url,
-            error: err,
-          });
+      };
+
+      this.ws.onmessage = (ev: MessageEvent) => {
+        this.#setState({
+          status: "success",
+          dataUpdatedAt: Date.now(),
+        });
+
+        try {
+          this.cache.set(this.path, ev.data);
+
+          if (this.#shouldLog("message")) {
+            const target = ev.target as WebSocket;
+            console.log("WebSocket message received", {
+              data: ev.data,
+              url: target.url,
+            });
+          }
+        } catch (err) {
+          if (this.#shouldLog("error")) {
+            const target = ev.target as WebSocket;
+            console.error("Error occurred while updating socket", {
+              data: ev.data,
+              url: target.url,
+              error: err,
+            });
+          }
         }
-      }
-    };
+      };
 
-    this.ws.onclose = (event: CloseEvent) => {
-      this.#setState({
-        fetchStatus: "disconnected",
-        status: "idle",
-      });
+      this.ws.onclose = (event: CloseEvent) => {
+        this.#setState({
+          fetchStatus: "disconnected",
+          status: "idle",
+        });
 
-      if (event.code === SocketCloseCode.NORMAL_CLOSURE) return;
-      if (this.#shouldRetry(event)) this.#reconnect();
-    };
+        if (event.code === SocketCloseCode.NORMAL_CLOSURE) return;
+        if (this.#shouldRetry(event)) this.#reconnect();
+      };
+    } catch (err) {
+      const error = err as Error;
 
-    this.ws.onerror = (ev: Event) => {
       this.#setState({
         status: "error",
-        error: new Error("WebSocket connection error"),
         errorUpdatedAt: Date.now(),
+        error,
       });
 
       if (this.#shouldLog("error")) {
-        const target = ev.target as WebSocket;
-        console.error("WebSocket error", {
-          url: target.url,
-          error: ev,
+        console.error("WebSocket connection error", {
+          url: this.path,
+          error,
         });
       }
-    };
+    }
   };
 
   #notifySubscribers = () => {
@@ -258,16 +256,14 @@ export class SocketClient<
     if (!this.#reconnectOnNetworkRestore) return;
 
     this.#networkRestoreListener = () => {
-      if (this.fetchStatus === "disconnected") {
-        this.open();
-      }
+      if (this.isInactive) this.#connect();
     };
 
     window.addEventListener("online", this.#networkRestoreListener);
   };
 
   #setValue = (value: Get) => {
-    const status = this.isConnected ? "success" : "stale";
+    const status = this.isActive ? "success" : "stale";
 
     this.#setState({ value, status });
     this.#notifySubscribers();
@@ -277,9 +273,7 @@ export class SocketClient<
     if (!this.#reconnectOnWindowFocus) return;
 
     this.#focusListener = () => {
-      if (this.fetchStatus === "disconnected") {
-        this.open();
-      }
+      if (this.isInactive) this.#connect();
     };
 
     window.addEventListener("focus", this.#focusListener);
@@ -296,7 +290,7 @@ export class SocketClient<
     const reason = SocketCloseReason[errorCode];
 
     if (this.#shouldLog("close")) {
-      console.info("WebSocket disconnected", {
+      console.warn("WebSocket disconnected", {
         url: target.url,
         reason: SocketCloseCode[errorCode],
         explanation: SocketCloseReason[errorCode],
@@ -342,6 +336,9 @@ export class SocketClient<
     this.#cleanup();
     this.cache.subscribe(this.#setValue);
     this.cache.initialize(this.path);
+
+    this.#setupNetworkListener();
+    this.#setupWindowFocusListener();
     this.#connect();
   };
 
@@ -391,7 +388,11 @@ export class SocketClient<
     return this.status === "success";
   }
 
-  get isConnected(): boolean {
+  get isActive(): boolean {
     return this.fetchStatus === "connected";
+  }
+
+  get isInactive(): boolean {
+    return ["disconnected", "idle"].includes(this.fetchStatus);
   }
 }

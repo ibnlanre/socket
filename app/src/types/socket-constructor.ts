@@ -1,4 +1,4 @@
-import type { SocketCacheError, SocketEvent } from "./socket-event";
+import type { SocketEvent } from "./socket-event";
 import type { SocketRetrial } from "./socket-retrial";
 
 export interface SocketConstructor<Get = unknown, Post = never>
@@ -15,14 +15,6 @@ export interface SocketConstructor<Get = unknown, Post = never>
    * ["open", "close", "error"]
    */
   log?: SocketEvent[];
-
-  /**
-   * The events to log in the cache
-   *
-   * @default
-   * ["initialization"]
-   */
-  cacheLog?: SocketCacheError[];
 
   /**
    * Whether to cache the data or not

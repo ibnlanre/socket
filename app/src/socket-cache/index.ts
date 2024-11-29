@@ -69,7 +69,10 @@ export class SocketCache<State> {
 
     if (!this.#cache) return;
     const response = new Response(data, {
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": data.length.toString(),
+      },
     });
 
     const supportedPath = this.#replacePath(path);
