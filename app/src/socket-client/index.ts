@@ -158,83 +158,75 @@ export class SocketClient<
   };
 
   #connect = () => {
-    try {
-      this.ws = new WebSocket(this.path);
+    this.ws = new WebSocket(this.path);
+    this.#setState({
+      fetchStatus: "connecting",
+      status: "loading",
+    });
+
+    this.ws.onopen = (ev: Event) => {
       this.#setState({
-        fetchStatus: "connecting",
-        status: "loading",
+        fetchStatus: "connected",
+        failureCount: 0,
+        failureReason: null,
+        error: null,
+        errorUpdatedAt: 0,
       });
 
-      this.ws.onopen = (ev: Event) => {
-        this.#setState({
-          fetchStatus: "connected",
-          failureCount: 0,
-          failureReason: null,
-          error: null,
-          errorUpdatedAt: 0,
+      if (this.#shouldLog("open")) {
+        const target = ev.target as WebSocket;
+        console.info("WebSocket connected", {
+          url: target.url,
         });
+      }
+    };
 
-        if (this.#shouldLog("open")) {
+    this.ws.onmessage = (ev: MessageEvent) => {
+      this.#setState({
+        status: "success",
+        dataUpdatedAt: Date.now(),
+      });
+
+      try {
+        this.cache.set(this.path, ev.data);
+
+        if (this.#shouldLog("message")) {
           const target = ev.target as WebSocket;
-          console.info("WebSocket connected", {
+          console.log("WebSocket message received", {
+            data: ev.data,
             url: target.url,
           });
         }
-      };
+      } catch (err) {
+        if (this.#shouldLog("error")) {
+          const target = ev.target as WebSocket;
 
-      this.ws.onmessage = (ev: MessageEvent) => {
-        this.#setState({
-          status: "success",
-          dataUpdatedAt: Date.now(),
-        });
-
-        try {
-          this.cache.set(this.path, ev.data);
-
-          if (this.#shouldLog("message")) {
-            const target = ev.target as WebSocket;
-            console.log("WebSocket message received", {
-              data: ev.data,
-              url: target.url,
-            });
-          }
-        } catch (err) {
-          if (this.#shouldLog("error")) {
-            const target = ev.target as WebSocket;
-            console.error("Error occurred while updating socket", {
-              data: ev.data,
-              url: target.url,
-              error: err,
-            });
-          }
+          console.error("WebSocket connection error", {
+            data: ev.data,
+            url: target.url,
+            error: err,
+          });
         }
-      };
+      }
+    };
 
-      this.ws.onclose = (event: CloseEvent) => {
-        this.#setState({
-          fetchStatus: "disconnected",
-          status: "idle",
-        });
+    this.ws.onclose = (event: CloseEvent) => {
+      this.#setState({
+        fetchStatus: "disconnected",
+        status: "idle",
+      });
 
-        if (event.code === SocketCloseCode.NORMAL_CLOSURE) return;
-        if (this.#shouldRetry(event)) this.#reconnect();
-      };
-    } catch (err) {
-      const error = err as Error;
+      if (event.code === SocketCloseCode.NORMAL_CLOSURE) return;
+      if (this.#shouldRetry(event)) this.#reconnect();
+    };
 
+    this.ws.onerror = () => {
       this.#setState({
         status: "error",
         errorUpdatedAt: Date.now(),
-        error,
+        error: new Error("WebSocket connection error"),
       });
-
-      if (this.#shouldLog("error")) {
-        console.error("WebSocket connection error", {
-          url: this.path,
-          error,
-        });
-      }
-    }
+    };
   };
 
   #notifySubscribers = () => {
