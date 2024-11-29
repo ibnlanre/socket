@@ -1,4 +1,4 @@
-import type { SocketClient } from "@/socket-client";
+import type { SocketClient } from "@/socket-client/index silly";
 import type { SocketParams } from "./socket-params";
 
 export interface UseSocketResult<

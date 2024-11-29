@@ -1,7 +1,8 @@
+import { Component } from "react";
+
 import { SocketCloseCode } from "@/constants/socket-close-code";
 import { SocketCloseReason } from "@/constants/socket-close-reason";
 import { getUri } from "@/get-uri";
-import { shallowClone } from "@/shallow-clone";
 import { SocketCache } from "@/socket-cache";
 
 import type { SocketConstructor } from "@/types/socket-constructor";
@@ -12,23 +13,24 @@ import type { SocketParams } from "@/types/socket-params";
 import type { SocketStatus } from "@/types/socket-status";
 import type { SocketTimeout } from "@/types/socket-timeout";
 
+type SocketState<Get> = {
+  cache: SocketCache<Get>;
+  dataUpdatedAt: number;
+  error: Error | null;
+  errorUpdatedAt: number;
+  failureCount: number;
+  failureReason: string | null;
+  fetchStatus: SocketFetchStatus;
+  path: string;
+  status: SocketStatus;
+  ws: WebSocket | null;
+};
+
 export class SocketClient<
   Get = unknown,
   Params extends SocketParams = never,
   Post = never
-> {
-  cache: SocketCache<Get>;
-  dataUpdatedAt: number = 0;
-  error: Error | null = null;
-  errorUpdatedAt: number = 0;
-  failureCount: number = 0;
-  failureReason: string | null = null;
-  fetchStatus: SocketFetchStatus = "idle";
-  path: string = "";
-  status: SocketStatus = "loading";
-  value: Get | undefined = undefined;
-  ws: WebSocket | null = null;
-
+> extends Component<{}, SocketState<Get>> {
   #clearCacheOnClose: boolean;
   #eventListeners: Map<string, EventListener> = new Map();
   #focusListener: (() => void) | null = null;
@@ -78,6 +80,21 @@ export class SocketClient<
     }: SocketConstructor<Get, Post>,
     params = {} as Params
   ) {
+    super({});
+
+    this.state = {
+      cache: new SocketCache<Get>(url, decryptData),
+      dataUpdatedAt: 0,
+      error: null,
+      errorUpdatedAt: 0,
+      failureCount: 0,
+      failureReason: null,
+      fetchStatus: "idle",
+      path: getUri({ baseURL, url, params }),
+      status: "idle",
+      ws: null,
+    };
+
     if (retryCount === -1) this.#retryCount = Infinity;
 
     this.#clearCacheOnClose = clearCacheOnClose;
@@ -95,12 +112,9 @@ export class SocketClient<
     this.#retryDelay = retryDelay;
     this.#retryOnCustomCondition = retryOnCustomCondition;
     this.#retryOnSpecificCloseCodes = retryOnSpecificCloseCodes;
-
-    this.cache = new SocketCache<Get>(url, decryptData);
-    this.path = getUri({ baseURL, url, params });
   }
 
-  #calculateBackoff = (): number => {
+  #calculateBackoff(): number {
     switch (this.#retryBackoffStrategy) {
       case "fixed": {
         return Math.min(this.#retryDelay, this.#maxRetryDelay);
@@ -108,7 +122,7 @@ export class SocketClient<
 
       case "exponential": {
         const delay = Math.min(
-          this.#retryDelay * Math.pow(2, this.failureCount),
+          this.#retryDelay * Math.pow(2, this.state.failureCount),
           this.#maxRetryDelay
         );
 
@@ -119,55 +133,57 @@ export class SocketClient<
         return delay * jitterFactor;
       }
     }
-  };
+  }
 
-  #cleanup = () => {
+  #cleanup() {
     clearTimeout(this.#timerId);
-
     this.#cleanupEventListeners();
-    this.#setState({
-      fetchStatus: "idle",
-      failureReason: null,
-      failureCount: 0,
-    });
-  };
 
-  #cleanupEventListeners = () => {
-    if (!this.ws) return;
+    this.setState({
+      failureCount: 0,
+      failureReason: null,
+      fetchStatus: "idle",
+      status: "loading",
+    });
+  }
+
+  #cleanupEventListeners() {
+    if (!this.state.ws) return;
 
     this.#eventListeners.forEach((listener, event) => {
-      this.ws?.removeEventListener(event, listener);
+      this.state.ws?.removeEventListener(event, listener);
     });
 
     this.#eventListeners.clear();
-  };
+  }
 
-  #cleanupNetworkListener = () => {
+  #cleanupNetworkListener() {
     if (this.#networkRestoreListener) {
       window.removeEventListener("online", this.#networkRestoreListener);
       this.#networkRestoreListener = null;
     }
-  };
+  }
 
-  #cleanupWindowFocusListener = () => {
+  #cleanupWindowFocusListener() {
     if (this.#focusListener) {
       window.removeEventListener("focus", this.#focusListener);
       this.#focusListener = null;
     }
-  };
+  }
 
   #connect = () => {
-    this.ws = new WebSocket(this.path);
-    this.#setState({
+    const ws = new WebSocket(this.state.path);
+
+    this.setState({
       fetchStatus: "connecting",
-      status: "loading",
+      status: this.value ? "stale" : "loading",
     });
 
-    this.ws.onopen = (ev: Event) => {
+    ws.onopen = (ev: Event) => {
       this.#setupNetworkListener();
       this.#setupWindowFocusListener();
 
-      this.#setState({
+      this.setState({
         fetchStatus: "connected",
         failureCount: 0,
         failureReason: null,
@@ -183,14 +199,15 @@ export class SocketClient<
       }
     };
 
-    this.ws.onmessage = (ev: MessageEvent) => {
-      this.#setState({
+    ws.onmessage = (ev: MessageEvent) => {
+      this.setState({
         status: "success",
         dataUpdatedAt: Date.now(),
       });
 
       try {
-        this.cache.set(this.path, ev.data);
+        this.state.cache.set(this.state.path, ev.data);
+        this.forceUpdate();
 
         if (this.#shouldLog("message")) {
           const target = ev.target as WebSocket;
@@ -211,18 +228,19 @@ export class SocketClient<
       }
     };
 
-    this.ws.onclose = (event: CloseEvent) => {
-      this.#setState({
+    ws.onclose = (event: CloseEvent) => {
+      this.setState({
         fetchStatus: "disconnected",
-        status: "stale",
+        status: "idle",
       });
 
       if (event.code === SocketCloseCode.NORMAL_CLOSURE) return;
       if (this.#shouldRetry(event)) this.#reconnect();
     };
 
-    this.ws.onerror = (ev: Event) => {
-      this.#setState({
+    ws.onerror = (ev: Event) => {
+      this.setState({
+        fetchStatus: "idle",
         status: "error",
         error: new Error("WebSocket connection error"),
         errorUpdatedAt: Date.now(),
@@ -236,11 +254,8 @@ export class SocketClient<
         });
       }
     };
-  };
 
-  #notifySubscribers = () => {
-    const state = shallowClone(this);
-    this.#subscribers.forEach((listener) => listener(state));
+    this.setState({ ws });
   };
 
   #reconnect = () => {
@@ -248,46 +263,36 @@ export class SocketClient<
     this.#timerId = setTimeout(this.#connect, backoffDelay);
   };
 
-  #setState = (newState: Partial<SocketClient<Get, Params, Post>>) => {
-    for (const key in newState) this[key] = newState[key];
-    this.#notifySubscribers();
-  };
-
-  #setupNetworkListener = () => {
+  #setupNetworkListener() {
     if (!this.#reconnectOnNetworkRestore) return;
 
     this.#networkRestoreListener = () => {
-      if (this.fetchStatus === "disconnected") {
+      if (this.state.fetchStatus === "disconnected") {
         this.open();
       }
     };
 
     window.addEventListener("online", this.#networkRestoreListener);
-  };
+  }
 
-  #setValue = (value: Get) => {
-    this.#setState({ value, status: "success" });
-    this.#notifySubscribers();
-  };
-
-  #setupWindowFocusListener = () => {
+  #setupWindowFocusListener() {
     if (!this.#reconnectOnWindowFocus) return;
 
     this.#focusListener = () => {
-      if (this.fetchStatus === "disconnected") {
+      if (this.state.fetchStatus === "disconnected") {
         this.open();
       }
     };
 
     window.addEventListener("focus", this.#focusListener);
-  };
+  }
 
-  #shouldLog = (event: SocketEvent): boolean => {
+  #shouldLog(event: SocketEvent): boolean {
     if (this.#logCondition(event)) return this.#log.includes(event);
     return false;
-  };
+  }
 
-  #shouldRetry = (event: CloseEvent): boolean => {
+  #shouldRetry(event: CloseEvent): boolean {
     const target = event.target as WebSocket;
     const errorCode = event.code as SocketCloseCode;
     const reason = SocketCloseReason[errorCode];
@@ -301,11 +306,11 @@ export class SocketClient<
       });
     }
 
-    if (this.#retry && this.failureCount < this.#retryCount) {
-      this.#setState({
-        failureCount: this.failureCount,
+    if (this.#retry && this.state.failureCount < this.#retryCount) {
+      this.setState((prevState) => ({
+        failureCount: prevState.failureCount + 1,
         failureReason: event.reason || reason,
-      });
+      }));
 
       if (this.#retryOnCustomCondition?.(event, target)) return true;
       if (this.#retryOnSpecificCloseCodes.includes(errorCode)) return true;
@@ -313,45 +318,44 @@ export class SocketClient<
 
     this.#cleanup();
     return false;
-  };
+  }
 
   close = () => {
-    if (this.ws?.readyState !== WebSocket.CLOSED) this.ws?.close();
-    if (this.#clearCacheOnClose) this.cache.remove(this.path);
+    if (this.state.ws?.readyState !== WebSocket.CLOSED) this.state.ws?.close();
+    if (this.#clearCacheOnClose) this.state.cache.remove(this.state.path);
 
     this.#cleanup();
     this.#cleanupNetworkListener();
     this.#cleanupWindowFocusListener();
     this.#subscribers.clear();
 
-    this.ws = null;
+    this.setState({ ws: null });
   };
 
   on: SocketListener = (event, callback) => {
-    this.ws?.addEventListener(event, callback);
+    this.state.ws?.addEventListener(event, callback);
     this.#eventListeners.set(event, callback);
   };
 
   open = () => {
-    if (this.ws) return;
+    if (this.state.ws) return;
 
     this.#cleanup();
-    this.cache.subscribe(this.#setValue);
-    this.cache.initialize(this.path);
+    this.state.cache.initialize(this.state.path);
     this.#connect();
   };
 
   send = (payload: Post) => {
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    if (this.state.ws?.readyState === WebSocket.OPEN) {
       const data = this.#encryptPayload(payload);
-      this.ws.send(JSON.stringify(data));
+      this.state.ws.send(JSON.stringify(data));
     }
   };
 
   subscribe = (listener: Function, immediate = true) => {
     if (!this.#subscribers.has(listener)) {
-      if (immediate) listener(this);
       this.#subscribers.add(listener);
+      if (immediate) listener(this);
     }
 
     return () => {
@@ -360,26 +364,36 @@ export class SocketClient<
   };
 
   get isError(): boolean {
-    return this.status === "error";
+    return this.state.status === "error";
   }
 
   get isLoading(): boolean {
-    return this.status === "loading";
+    return this.state.status === "loading";
+  }
+
+  get isPending(): boolean {
+    const hasUndefinedValue = typeof this.value == undefined;
+    const isLoadingOrIdle = ["idle", "loading"].includes(this.state.status);
+    return isLoadingOrIdle && hasUndefinedValue;
   }
 
   get isRefetchError(): boolean {
-    return this.isError && this.failureCount > 0;
+    return this.isError && this.state.failureCount > 0;
   }
 
   get isRefetching(): boolean {
-    return this.isLoading && this.failureCount > 0;
+    return this.isLoading && this.state.failureCount > 0;
   }
 
   get isStale(): boolean {
-    return this.status === "stale";
+    return this.state.status === "stale";
   }
 
   get isSuccess(): boolean {
-    return this.status === "success";
+    return this.state.status === "success";
+  }
+
+  get value() {
+    return this.state.cache.value;
   }
 }

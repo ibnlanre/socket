@@ -1,6 +1,7 @@
 export class SocketCache<State> {
   static isAvailable: boolean = "caches" in globalThis;
 
+  #observers: Set<Function> = new Set();
   #cache: Cache | undefined;
   #decryptData: (data: State) => State;
   #state: State | undefined;
@@ -10,6 +11,12 @@ export class SocketCache<State> {
     this.#decryptData = decryptData;
     this.#url = url;
   }
+
+  #notifyObservers = (): void => {
+    for (const observer of this.#observers) {
+      observer(this.#state);
+    }
+  };
 
   #replacePath = (path: string): string => {
     return path.replace(/^ws+:/, "https:");
@@ -41,6 +48,11 @@ export class SocketCache<State> {
 
     this.#cache = await caches.open(this.#url);
     this.#state = await this.get(path);
+    this.#notifyObservers();
+  };
+
+  subscribe = (observer: Function): void => {
+    this.#observers.add(observer);
   };
 
   remove = async (path: string): Promise<boolean> => {
@@ -53,6 +65,7 @@ export class SocketCache<State> {
   set = async (path: string, data: string): Promise<void> => {
     const value = JSON.parse(data);
     this.#state = this.#decryptData(value);
+    this.#notifyObservers();
 
     if (!this.#cache) return;
     const response = new Response(data, {
