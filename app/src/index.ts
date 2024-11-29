@@ -1,6 +1,6 @@
 export { SocketCloseCode } from "./constants/socket-close-code";
 export { SocketCache } from "./socket-cache";
-export { SocketClient } from "./socket-client/index silly";
+export { SocketClient } from "./socket-client";
 
 export { combineURLs } from "./combine-urls";
 export { createSocketClient } from "./create-socket-client";

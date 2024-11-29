@@ -58,4 +58,11 @@ export interface SocketConstructor<Get = unknown, Post = never>
    * @default (data) => data
    */
   decryptData?: (data: Get) => Get;
+
+  /**
+   * Whether to use the cache or not
+   *
+   * @default false
+   */
+  debug?: boolean;
 }

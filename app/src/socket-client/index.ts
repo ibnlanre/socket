@@ -74,6 +74,7 @@ export class SocketClient<
         SocketCloseCode.SERVICE_RESTART,
       ],
       retryOnCustomCondition,
+      debug = false,
       url,
     }: SocketConstructor<Get, Post>,
     params = {} as Params
@@ -266,7 +267,9 @@ export class SocketClient<
   };
 
   #setValue = (value: Get) => {
-    this.#setState({ value, status: "success" });
+    const status = this.isConnected ? "success" : "stale";
+
+    this.#setState({ value, status });
     this.#notifySubscribers();
   };
 
@@ -381,5 +384,9 @@ export class SocketClient<
 
   get isSuccess(): boolean {
     return this.status === "success";
+  }
+
+  get isConnected(): boolean {
+    return this.fetchStatus === "connected";
   }
 }

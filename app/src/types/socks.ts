@@ -1,4 +1,4 @@
-import { SocketClient } from "@/socket-client/index silly";
+import { SocketClient } from "@/socket-client";
 
 /**
  * A map of previous connections
