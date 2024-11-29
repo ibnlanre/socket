@@ -60,9 +60,9 @@ export interface SocketConstructor<Get = unknown, Post = never>
   decryptData?: (data: Get) => Get;
 
   /**
-   * Whether to use the cache or not
+   * Whether to enable the WebSocket connection or not
    *
-   * @default false
+   * @default true
    */
-  debug?: boolean;
+  enabled?: boolean;
 }

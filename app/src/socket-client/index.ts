@@ -30,9 +30,11 @@ export class SocketClient<
   ws: WebSocket | null = null;
 
   #clearCacheOnClose: boolean;
+  #encryptPayload: (data: Post) => Post;
   #eventListeners: Map<string, EventListener> = new Map();
   #focusListener: (() => void) | null = null;
   #log: SocketEvent[];
+  #logCondition: (logType: SocketEvent) => boolean;
   #retry: boolean;
   #retryDelay: number;
   #minJitterValue: number;
@@ -43,19 +45,18 @@ export class SocketClient<
   #reconnectOnWindowFocus: boolean;
   #retryCount: number;
   #retryBackoffStrategy: "fixed" | "exponential";
+  #retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
   #retryOnSpecificCloseCodes: SocketCloseCode[];
   #subscribers: Set<Function> = new Set();
   #timerId: SocketTimeout = undefined;
-
-  #encryptPayload: (data: Post) => Post;
-  #logCondition: (logType: SocketEvent) => boolean;
-  #retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
+  #enabled: boolean;
 
   constructor(
     {
       baseURL = "",
       clearCacheOnClose = false,
       decryptData = (data: Get) => data,
+      enabled = true,
       encryptPayload = (payload: Post) => payload,
       log = ["open", "close", "error"],
       logCondition = () => process.env.NODE_ENV === "development",
@@ -74,20 +75,22 @@ export class SocketClient<
         SocketCloseCode.SERVICE_RESTART,
       ],
       retryOnCustomCondition,
-      debug = false,
       url,
     }: SocketConstructor<Get, Post>,
     params = {} as Params
   ) {
     if (retryCount === -1) this.#retryCount = Infinity;
 
+    this.cache = new SocketCache<Get>(url, decryptData);
     this.#clearCacheOnClose = clearCacheOnClose;
+    this.#enabled = enabled;
     this.#encryptPayload = encryptPayload;
     this.#log = log;
     this.#logCondition = logCondition;
     this.#minJitterValue = minJitterValue;
     this.#maxJitterValue = maxJitterValue;
     this.#maxRetryDelay = maxRetryDelay;
+    this.path = getUri({ baseURL, url, params });
     this.#reconnectOnNetworkRestore = reconnectOnNetworkRestore;
     this.#reconnectOnWindowFocus = reconnectOnWindowFocus;
     this.#retry = retry;
@@ -96,9 +99,6 @@ export class SocketClient<
     this.#retryDelay = retryDelay;
     this.#retryOnCustomCondition = retryOnCustomCondition;
     this.#retryOnSpecificCloseCodes = retryOnSpecificCloseCodes;
-
-    this.cache = new SocketCache<Get>(url, decryptData);
-    this.path = getUri({ baseURL, url, params });
   }
 
   #calculateBackoff = (): number => {
@@ -215,7 +215,7 @@ export class SocketClient<
     this.ws.onclose = (event: CloseEvent) => {
       this.#setState({
         fetchStatus: "disconnected",
-        status: "stale",
+        status: "idle",
       });
 
       if (event.code === SocketCloseCode.NORMAL_CLOSURE) return;
@@ -336,6 +336,7 @@ export class SocketClient<
   };
 
   open = () => {
+    if (!this.#enabled) return;
     if (this.ws) return;
 
     this.#cleanup();
@@ -368,6 +369,10 @@ export class SocketClient<
 
   get isLoading(): boolean {
     return this.status === "loading";
+  }
+
+  get isPending(): boolean {
+    return this.value === undefined;
   }
 
   get isRefetchError(): boolean {
