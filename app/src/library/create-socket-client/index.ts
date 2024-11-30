@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 
-import { getUri } from "@/get-uri";
-import { SocketClient } from "@/socket-client/index";
+import { SocketClient } from "@/class/socket-client";
+import { getUri } from "@/functions/get-uri";
+import { shallowMerge } from "@/functions/shallow-merge";
 
-import { shallowMerge } from "@/shallow-merge";
 import type { SocketConstructor } from "@/types/socket-constructor";
 import type { SocketParams } from "@/types/socket-params";
 import type { SocketSelector } from "@/types/socket-selector";
+import type { UseSocketResult } from "@/types/use-socket-result";
 
 export function createSocketClient<
   Get = unknown,
@@ -31,7 +32,7 @@ export function createSocketClient<
   function use<State>(
     params: Params = {} as Params,
     select: SocketSelector<Get, State> = (data) => data as State
-  ) {
+  ): UseSocketResult<Get, Params, Post, State> {
     const [client, setClient] = useState(() => initialize(params));
     const key = getUri({ baseURL, url, params });
 

@@ -1,6 +1,6 @@
 import { SocketCloseCode } from "@/constants/socket-close-code";
 
-export type SocketRetrial = {
+export type SocketReconnectOptions = {
   /**
    * Whether to retry the WebSocket connection or not
    *
@@ -18,8 +18,8 @@ export type SocketRetrial = {
   /**
    * The number of times to retry the WebSocket connection
    *
-   * @description If set to 0, the connection will not be retried
-   * @description If set to -1, the connection will be retried indefinitely
+   * @description If set to `0`, the connection will not be retried
+   * @description If set to `Infinity`, the connection will be retried indefinitely
    *
    * @default 3
    */

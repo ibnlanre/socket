@@ -1,14 +1,30 @@
+type SocketCacheConstructor<State> = {
+  url: string;
+  decryptData: (data: State) => State;
+  disableCache: boolean;
+  maxCacheAge: number;
+};
+
 export class SocketCache<State> {
   static isAvailable: boolean = "caches" in globalThis;
 
   #observers: Set<Function> = new Set();
   #cache: Cache | undefined;
   #decryptData: (data: State) => State;
+  #disableCache: boolean;
   #state: State | undefined;
+  #maxCacheAge: number;
   #url: string;
 
-  constructor(url: string, decryptData: (data: State) => State) {
+  constructor({
+    decryptData,
+    disableCache,
+    maxCacheAge,
+    url,
+  }: SocketCacheConstructor<State>) {
     this.#decryptData = decryptData;
+    this.#disableCache = disableCache;
+    this.#maxCacheAge = maxCacheAge;
     this.#url = url;
   }
 
@@ -22,6 +38,13 @@ export class SocketCache<State> {
     return path.replace(/^ws+:/, "https:");
   };
 
+  clear = async (): Promise<void> => {
+    if (!this.#cache) return;
+
+    const keys = await this.#cache.keys();
+    for (const request of keys) this.#cache.delete(request);
+  };
+
   get = async (path: string): Promise<State | undefined> => {
     if (!this.#cache) return;
 
@@ -29,6 +52,13 @@ export class SocketCache<State> {
     const response = await this.#cache.match(supportedPath);
 
     if (response) {
+      const timestamp = response.headers.get("Expires") || 0;
+
+      if (new Date(timestamp).getTime() < Date.now()) {
+        await this.#cache.delete(supportedPath);
+        return;
+      }
+
       const data = await response.json();
       return this.#decryptData(data);
     }
@@ -67,12 +97,20 @@ export class SocketCache<State> {
     this.#state = this.#decryptData(value);
     this.#notifyObservers();
 
+    if (this.#disableCache) return;
     if (!this.#cache) return;
+
+    const timestamp = new Date(Date.now() + this.#maxCacheAge);
+    const size = new TextEncoder().encode(data).length;
+    const headers = new Headers();
+
+    headers.set("Cache-Control", "private");
+    headers.set("Content-Type", "application/json");
+    headers.set("Expires", timestamp.toUTCString());
+    headers.set("Content-Length", size.toString());
+
     const response = new Response(data, {
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": data.length.toString(),
-      },
+      headers,
     });
 
     const supportedPath = this.#replacePath(path);

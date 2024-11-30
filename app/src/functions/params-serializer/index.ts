@@ -2,28 +2,28 @@ import { isEmpty } from "./is-empty";
 import { isNull } from "./is-null";
 import { isUndefined } from "./is-undefined";
 
-import type { Ignore } from "@/types/ignore";
+import type { ExcludedValues } from "@/types/excluded-values";
 import type { SocketParams } from "@/types/socket-params";
-import type { SocketPrimitives } from "@/types/socket-primitives";
+import type { SocketPrimitiveType } from "@/types/socket-primitive-type";
 
 /**
  * Serializes the parameters object into a query string
  *
  * @param {SocketParams} params The parameters object to serialize
- * @param {Ignore[]} ignore An array of values to filter from the query string
+ * @param {ExcludedValues[]} exclude An array of values to filter from the query string
  * @returns The serialized query string
  */
 export function paramsSerializer(
   params: SocketParams,
-  ignore: Ignore[] = ["empty", "null", "undefined"]
+  exclude: ExcludedValues[] = ["empty", "null", "undefined"]
 ): string {
   const searchParams = new URLSearchParams();
 
   function createSetQueryParam(key: string) {
-    return (value: SocketPrimitives) => {
-      if (isUndefined(value, ignore)) return;
-      if (isNull(value, ignore)) return;
-      if (isEmpty(value, ignore)) return;
+    return (value: SocketPrimitiveType) => {
+      if (isUndefined(value, exclude)) return;
+      if (isNull(value, exclude)) return;
+      if (isEmpty(value, exclude)) return;
 
       const item = encodeURIComponent(value);
       searchParams.append(key, item);
