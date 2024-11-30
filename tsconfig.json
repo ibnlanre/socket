@@ -18,7 +18,8 @@
     "baseUrl": "./",
     "verbatimModuleSyntax": true,
     "paths": {
-      "@/*": ["app/src/*"]
+      "@/*": ["app/src/*"],
+      "~/*": ["./*"]
     }
   }
 }

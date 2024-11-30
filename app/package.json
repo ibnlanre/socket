@@ -1,6 +1,6 @@
 {
   "name": "@ibnlanre/socket",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "A simple state management library for react using websockets and server-sent events",
   "type": "module",
   "scripts": {
