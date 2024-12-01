@@ -24,8 +24,8 @@ export class SocketClient<
   failureCount: number = 0;
   failureReason: string | null = null;
   fetchStatus: SocketFetchStatus = "idle";
+  isPlaceholderData: boolean = false;
   path: string = "";
-  placeholderData?: Get;
   status: SocketStatus = "loading";
   value: Get | undefined = undefined;
   ws: WebSocket | null = null;
@@ -103,7 +103,6 @@ export class SocketClient<
     this.#maxRetryDelay = maxRetryDelay;
     this.#minJitterValue = minJitterValue;
     this.path = getUri({ baseURL, url, params });
-    this.placeholderData = placeholderData;
     this.#protocols = protocols;
     this.#reconnectOnNetworkRestore = reconnectOnNetworkRestore;
     this.#reconnectOnWindowFocus = reconnectOnWindowFocus;
@@ -114,8 +113,8 @@ export class SocketClient<
     this.#retryOnCustomCondition = retryOnCustomCondition;
     this.#retryOnSpecificCloseCodes = retryOnSpecificCloseCodes;
 
-    if (this.placeholderData) {
-      this.#setState({ value: this.placeholderData });
+    if (placeholderData) {
+      this.#setState({ value: placeholderData, isPlaceholderData: true });
     }
   }
 
@@ -276,7 +275,7 @@ export class SocketClient<
 
   #setValue = (value: Get) => {
     const status = this.isActive ? "success" : "stale";
-    this.#setState({ value, status });
+    this.#setState({ value, status, isPlaceholderData: false });
   };
 
   #setupWindowFocusListener = () => {
@@ -405,9 +404,5 @@ export class SocketClient<
 
   get isStaleData(): boolean {
     return this.status === "stale";
-  }
-
-  get isPlaceholderData(): boolean {
-    return this.value === this.placeholderData;
   }
 }

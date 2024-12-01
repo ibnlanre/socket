@@ -29,13 +29,13 @@ npm install @ibnlanre/socket
 
 You can configure the socket client by providing the following options:
 
-### General Configuration
+#### General Configuration
 
 - `baseURL`: The base URL of the WebSocket server.
 - `url`: The endpoint URL for the WebSocket connection.
 - `enabled`: Whether to enable the WebSocket connection or not.
 
-### Data Handling Configuration
+#### Data Handling Configuration
 
 - `decryptData`: A function to decrypt the received data.
 - `encryptPayload`: A function to encrypt the data before sending it.
@@ -43,12 +43,12 @@ You can configure the socket client by providing the following options:
 - `initialPayload`: The initial payload to send when connecting.
 - `placeholderData`: The placeholder data to use while loading.
 
-### Logging Configuration
+#### Logging Configuration
 
 - `log`: The events to log in the console.
 - `logCondition`: A custom condition for logging.
 
-### Retrial Configuration
+#### Retrial Configuration
 
 - `retry`: Whether to retry the WebSocket connection or not.
 - `retryDelay`: The delay in milliseconds before retrying the WebSocket connection.
@@ -61,6 +61,55 @@ You can configure the socket client by providing the following options:
 - `retryOnCustomCondition`: A custom function to determine whether to retry based on the error or response.
 - `minJitterValue`: The minimum value for the jitter.
 - `maxJitterValue`: The maximum value for the jitter.
+
+## Hooks
+
+`@ibnlanre/socket` provides the following hook to interact with the WebSocket connection and manage data subscriptions in your components.e:
+
+- `use`: Subscribes to a data stream and returns the data, loading state, and error.
+
+### Return Values
+
+#### Hooks
+
+- `subscribe`: Subscribes to data changes and updates the component.
+- `on`: Subscribes to a specific WebSocket event.
+
+#### Data
+
+- `value`: The data received from the WebSocket server.
+- `data`: The data received after transformation by the `select` function.
+
+#### Status
+
+- `isPending`: A boolean indicating whether the data is loading or not.
+- `isError`: A boolean indicating whether an error occurred or not.
+- `isSuccess`: A boolean indicating whether the data was successfully fetched or not.
+- `isStaleData`: A boolean indicating whether the data is stale or not.
+- `isPlaceholderData`: A boolean indicating whether the data is a placeholder or not.
+- `isRefetching`: A boolean indicating whether the data is being refetched or not.
+- `isRefetchError`: A boolean indicating whether an error occurred during refetching or not.
+- `isActive`: A boolean indicating whether the WebSocket connection is active or not.
+- `isInactive`: A boolean indicating whether the WebSocket connection is inactive or not.
+
+#### Actions
+
+- `close`: A function to close the WebSocket connection.
+- `open`: A function to open the WebSocket connection.
+- `send`: A function to send a message to the WebSocket server.
+
+#### Metadata
+
+- `cache`: The cache object containing the data and metadata.
+- `error`: The error object containing the error message and details.
+- `fetchStatus`: The fetch status indicating the state of the data fetch.
+- `failureCount`: The number of times the data fetch has failed.
+- `failureReason`: The reason for the data fetch failure.
+- `path`: The path of the WebSocket connection.
+- `status`: The status of the WebSocket connection.
+- `ws`: The WebSocket object representing the connection.
+- `dataUpdatedAt`: The timestamp when the data was last updated.
+- `errorUpdatedAt`: The timestamp when the error occurred.
 
 ## Usage
 
