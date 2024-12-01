@@ -7,5 +7,5 @@ export type SocketPlaceholderOptions<Get = unknown, Post = never> = {
   /**
    * The initial state of the WebSocket connection
    */
-  placeholderData: Get;
+  placeholderData?: Get;
 };

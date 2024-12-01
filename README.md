@@ -1,4 +1,4 @@
-<h1 align="center">@ibnlanre/socket ✨</h1>
+<h1 align="center">@ibnlanre/socket 🚀</h1>
 
 <div align="center">
 
@@ -8,6 +8,8 @@
 [![downloads](https://img.shields.io/npm/dt/@ibnlanre/socket)](https://www.npmjs.com/package/@ibnlanre/socket)
 
 </div>
+
+`@ibnlanre/socket` is a fast, lightweight, type-safe WebSocket client designed to supercharge your developer experience (DX). With its cache-first approach, it provides a seamless and efficient way to manage WebSocket connections, subscribe to data streams, and handle real-time updates in React applications. Easily integrate live data streaming into your projects and deliver a superior user experience with `@ibnlanre/socket`.
 
 ## Getting Started
 
@@ -31,12 +33,20 @@ You can configure the socket client by providing the following options:
 
 - `baseURL`: The base URL of the WebSocket server.
 - `url`: The endpoint URL for the WebSocket connection.
+- `enabled`: Whether to enable the WebSocket connection or not.
+
+### Data Handling Configuration
+
 - `decryptData`: A function to decrypt the received data.
 - `encryptPayload`: A function to encrypt the data before sending it.
-- `enabled`: Whether to enable the WebSocket connection or not.
+- `clearCacheOnClose`: Whether to cache the data or not.
+- `initialPayload`: The initial payload to send when connecting.
+- `placeholderData`: The placeholder data to use while loading.
+
+### Logging Configuration
+
 - `log`: The events to log in the console.
 - `logCondition`: A custom condition for logging.
-- `clearCacheOnClose`: Whether to cache the data or not.
 
 ### Retrial Configuration
 
@@ -133,6 +143,16 @@ export function App() {
 }
 ```
 
+## API Reference
+
+- `createSocketClient`: Creates a socket client with the specified configuration options.
+- `SocketCloseCode`: An enum representing the WebSocket close codes.
+- `SocketCloseReason`: An object representing the WebSocket close reasons.
+- `combineURLs`: A function to combine multiple URLs into a single URL.
+- `getUri`: A function to get the URI of the WebSocket connection.
+- `isAbsoluteURL`: A function to check if a URL is absolute or relative.
+- `paramsSerializer`: A function to serialize query parameters for a URL.
+
 ## Key Features
 
 ### Caching Mechanism
@@ -152,13 +172,7 @@ One of the standout features of `@ibnlanre/socket` is its caching mechanism. Thi
 `@ibnlanre/socket` creates a socket client using the `createSocketClient` function. This client handles the connection to the WebSocket server, manages data subscriptions, and provides hooks for accessing the streamed data in your components.
 
 ### What are the key features of `@ibnlanre/socket`?
-Key features include real-time data streaming, easy subscription management, efficient data handling, flexible configuration, and type safety. These features make it easier to integrate live data updates into your application, improving user experience and responsiveness.
-
-### How can I customize the socket client with `@ibnlanre/socket`?
-You can customize the socket client by providing configuration options such as the base URL, endpoint URL, and more. These options allow you to tailor the client to your specific use case and data requirements.
-
-### Does `@ibnlanre/socket` support caching?
-Yes, `@ibnlanre/socket` supports caching. You can configure the client to cache data and clear the cache when the connection is closed. This feature helps reduce the load on the server and improve the performance of your application.
+Key features include data caching, real-time data streaming, easy subscription management, efficient data handling, flexible configuration, and type safety. These features make it easier to integrate live data updates into your application, improving user experience and responsiveness.
 
 ## License
 

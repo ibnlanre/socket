@@ -24,7 +24,7 @@ export type SocketCacheOptions = {
    * The maximum age in milliseconds of the cached items
    *
    *
-   * @default 90_0000 (15 minutes)
+   * @default 90000 (15 minutes)
    */
   maxCacheAge?: number;
 };

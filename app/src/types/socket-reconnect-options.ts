@@ -11,7 +11,7 @@ export type SocketReconnectOptions = {
   /**
    * The delay in milliseconds before retrying the WebSocket connection
    *
-   * @default 1000
+   * @default 1000 (1 second)
    */
   retryDelay?: number;
 
@@ -49,7 +49,7 @@ export type SocketReconnectOptions = {
   /**
    * The maximum delay in milliseconds between retries
    *
-   * @default 30000
+   * @default 60000 (1 minute)
    */
   maxRetryDelay?: number;
 

@@ -25,6 +25,7 @@ export class SocketClient<
   failureReason: string | null = null;
   fetchStatus: SocketFetchStatus = "idle";
   path: string = "";
+  placeholderData?: Get;
   status: SocketStatus = "loading";
   value: Get | undefined = undefined;
   ws: WebSocket | null = null;
@@ -42,7 +43,6 @@ export class SocketClient<
   #maxJitterValue: number;
   #maxRetryDelay: number;
   #networkRestoreListener: (() => void) | null = null;
-  #placeholderData: Get;
   #protocols: string | string[];
   #reconnectOnNetworkRestore: boolean;
   #reconnectOnWindowFocus: boolean;
@@ -65,9 +65,9 @@ export class SocketClient<
       initialPayload,
       log = ["open", "close", "error"],
       logCondition = () => process.env.NODE_ENV === "development",
-      maxCacheAge = 60000,
+      maxCacheAge = 90000,
       maxJitterValue = 1.2,
-      maxRetryDelay = 30000,
+      maxRetryDelay = 60000,
       minJitterValue = 0.8,
       placeholderData,
       protocols = [],
@@ -103,7 +103,7 @@ export class SocketClient<
     this.#maxRetryDelay = maxRetryDelay;
     this.#minJitterValue = minJitterValue;
     this.path = getUri({ baseURL, url, params });
-    this.#placeholderData = placeholderData;
+    this.placeholderData = placeholderData;
     this.#protocols = protocols;
     this.#reconnectOnNetworkRestore = reconnectOnNetworkRestore;
     this.#reconnectOnWindowFocus = reconnectOnWindowFocus;
@@ -114,8 +114,8 @@ export class SocketClient<
     this.#retryOnCustomCondition = retryOnCustomCondition;
     this.#retryOnSpecificCloseCodes = retryOnSpecificCloseCodes;
 
-    if (this.#placeholderData) {
-      this.#setState({ value: this.#placeholderData });
+    if (this.placeholderData) {
+      this.#setState({ value: this.placeholderData });
     }
   }
 
@@ -379,6 +379,7 @@ export class SocketClient<
   }
 
   get isPending(): boolean {
+    if (this.isPlaceholderData) return true;
     return this.value === undefined;
   }
 
@@ -407,6 +408,6 @@ export class SocketClient<
   }
 
   get isPlaceholderData(): boolean {
-    return Object.is(this.value, this.#placeholderData);
+    return this.value === this.placeholderData;
   }
 }

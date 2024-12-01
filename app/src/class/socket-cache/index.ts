@@ -1,3 +1,5 @@
+import { isJSON } from "@/functions/is-json";
+
 type SocketCacheConstructor<State> = {
   url: string;
   decryptData: (data: State) => State;
@@ -77,8 +79,12 @@ export class SocketCache<State> {
     if (!SocketCache.isAvailable) return;
 
     this.#cache = await caches.open(this.#url);
-    this.#state = await this.get(path);
-    this.#notifyObservers();
+    const cachedData = await this.get(path);
+
+    if (isJSON(cachedData)) {
+      this.#state = cachedData;
+      this.#notifyObservers();
+    }
   };
 
   subscribe = (observer: Function): void => {
