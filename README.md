@@ -111,96 +111,164 @@ You can configure the socket client by providing the following options:
 - `dataUpdatedAt`: The timestamp when the data was last updated.
 - `errorUpdatedAt`: The timestamp when the error occurred.
 
-## Usage
-
-```tsx
-import { createSocketClient, SocketCloseCode } from "@ibnlanre/socket";
-
-type StockMarketOverview = {
-  last_updated: string;
-  notifications: {
-    summary: {
-      status: string;
-      last_updated: string;
-      notifications: {
-        total_securities: string;
-        participant_count: string;
-        traded_volume_kg: string;
-        traded_volume_mt: string;
-        listed_contracts: string;
-        boards: Array<{
-          name: string;
-          code: string;
-          description: string;
-          order_types: Array<any>;
-          security_count: string;
-        }>;
-      };
-      is_post_connection: string;
-    };
-  };
-};
-
-type StockMarketOverviewParams = {
-  currency?: string;
-};
-
-const client = createSocketClient<
-  StockMarketOverview,
-  StockMarketOverviewParams
->({
-  baseURL: "wss://new.base.url/",
-  url: "/ws/new-endpoint/market_overview/unique_id",
-  decryptData: decrypt,
-  retry: true,
-  retryDelay: 2000,
-  retryCount: 5,
-  reconnectOnNetworkRestore: true,
-  reconnectOnWindowFocus: true,
-  retryBackoffStrategy: "exponential",
-  maxRetryDelay: 60000,
-  retryOnSpecificCloseCodes: [SocketCloseCode.AbnormalClosure],
-  retryOnCustomCondition: (event, socket) => {
-    return event.code === SocketCloseCode.PROTOCOL_ERROR
-  },
-  minJitterValue: 0.9,
-  maxJitterValue: 1.1,
-});
-
-export function App() {
-  const {
-    data,
-    isPending,
-  } = client.use({ currency: "USD" }, (data) => {
-    if (!data) return;
-    return data.notifications.summary.notifications;
-  });
-
-  if (isPending) return <div>Loading...</div>;
-
-  return (
-    <div>
-      <h1>Stock Market Overview</h1>
-      <p>Total Securities: {data?.totalSecurities}</p>
-      <p>Participant Count: {data?.participantCount}</p>
-      <p>Traded Volume (Kg): {data?.tradedVolumeKg}</p>
-      <p>Traded Volume (Mt): {data?.tradedVolumeMt}</p>
-      <p>Listed Contracts: {data?.listedContracts}</p>
-      <p>Boards: {data?.boards.map((board) => board.name).join(", ")}</p>
-    </div>
-  );
-}
-```
-
 ## API Reference
 
-- `createSocketClient`: Creates a socket client with the specified configuration options.
-- `SocketCloseCode`: An enum representing the WebSocket close codes.
-- `SocketCloseReason`: An object representing the WebSocket close reasons.
-- `combineURLs`: A function to combine multiple URLs into a single URL.
-- `getUri`: A function to get the URI of the WebSocket connection.
-- `isAbsoluteURL`: A function to check if a URL is absolute or relative.
-- `paramsSerializer`: A function to serialize query parameters for a URL.
+<details>
+  <summary>
+    <code>createSocketClient</code>: Creates a socket client with the specified configuration options.
+  </summary>
+
+  ### Usage
+
+  ```tsx
+  import { createSocketClient, SocketCloseCode } from "@ibnlanre/socket";
+
+  type StockMarketOverview = {
+    last_updated: string;
+    notifications: {
+      summary: {
+        status: string;
+        last_updated: string;
+        notifications: {
+          total_securities: string;
+          listed_contracts: string;
+          boards: Array<{ name: string; code: string; }>;
+        };
+        is_post_connection: string;
+      };
+    };
+  };
+
+  type StockMarketOverviewParams = {
+    currency?: string;
+  };
+
+  const client = createSocketClient<
+    StockMarketOverview,
+    StockMarketOverviewParams
+  >({
+    baseURL: "wss://new.base.url/",
+    url: "/ws/new-endpoint/market_overview/unique_id",
+    retryDelay: 2000,
+    minJitterValue: 0.9,
+    retryCount: 5,
+    retryOnSpecificCloseCodes: [SocketCloseCode.AbnormalClosure],
+    retryOnCustomCondition: (event, socket) => {
+      return event.code === SocketCloseCode.PROTOCOL_ERROR
+    },
+  });
+
+  export function App() {
+    const {
+      data,
+      isPending,
+    } = client.use({ currency: "USD" }, (data) => {
+      if (!data) return;
+      return data.notifications.summary.notifications;
+    });
+
+    if (isPending) return <div>Loading...</div>;
+
+    return (
+      <div>
+        <h1>Stock Market Overview</h1>
+        <p>Total Securities: {data?.totalSecurities}</p>
+        <p>Listed Contracts: {data?.listedContracts}</p>
+        <p>Boards: {data?.boards.map(({ name }) => name).join(", ")}</p>
+      </div>
+    );
+  }
+  ```
+</details>
+
+<details>
+  <summary>
+    <code>SocketCloseCode</code>: An enum representing the WebSocket close codes.
+  </summary>
+
+  ### Usage
+
+  ```tsx
+  import { SocketCloseCode } from "@ibnlanre/socket";
+
+  const CLOSURE =  SocketCloseCode.NormalClosure; // 1000
+  ```
+</details>
+
+<details>
+  <summary>
+    <code>SocketCloseReason</code>: An object representing the WebSocket close reasons.
+  </summary>
+
+  ### Usage
+
+  ```tsx
+  import { SocketCloseReason, SocketCloseCode } from "@ibnlanre/socket";
+
+  const REASON =  SocketCloseReason[SocketCloseCode.NormalClosure];
+  // "The connection was closed cleanly"
+  ```
+</details>
+
+<details>
+  <summary>
+    <code>combineURLs</code>: A function to combine multiple URLs into a single URL.
+  </summary>
+
+  ### Usage
+
+  ```tsx
+  import { combineURLs } from "@ibnlanre/socket";
+
+  const URL = combineURLs("https://example.com", "/api/v1");
+  // "https://example.com/api/v1"
+  ```
+</details>
+
+<details>
+  <summary>
+    <code>getUri</code>: A function to get the URI of the WebSocket connection.
+  </summary>
+
+  ### Usage
+
+  ```tsx
+  import { getUri } from "@ibnlanre/socket";
+
+  const URI = getUri("wss://example.com", "/ws/v1");
+  // "wss://example.com/ws/v1"
+  ```
+</details>
+
+<details>
+  <summary>
+    <code>isAbsoluteURL</code>: A function to check if a URL is absolute or relative.
+  </summary>
+
+  ### Usage
+
+  ```tsx
+  import { isAbsoluteURL } from "@ibnlanre/socket";
+
+  const IS_ABSOLUTE = isAbsoluteURL("https://example.com");
+  // true
+  ```
+</details>
+
+<details>
+  <summary>
+    <code>paramsSerializer</code>: A function to serialize query parameters for a URL.
+  </summary>
+
+  ### Usage
+
+  ```tsx
+  import { paramsSerializer } from "@ibnlanre/socket";
+
+  const SERIALIZED = paramsSerializer({ page: 1, limit: 10 });
+  // "page=1&limit=10"
+  ```
+</details>
 
 ## Key Features
 
