@@ -9,7 +9,11 @@
 
 </div>
 
-`@ibnlanre/socket` is a fast, lightweight, type-safe WebSocket client designed to supercharge your developer experience (DX). With its cache-first approach, it provides a seamless and efficient way to manage WebSocket connections, subscribe to data streams, and handle real-time updates in React applications. Easily integrate live data streaming into your projects and deliver a superior user experience with `@ibnlanre/socket`.
+`@ibnlanre/socket` is a fast, lightweight, type-safe WebSocket client designed to supercharge your developer experience (DX).
+
+With its cache-first approach, it provides a seamless and efficient way to manage WebSocket connections, subscribe to data streams, and handle real-time updates in React applications.
+
+Easily integrate live data streaming into your projects and deliver a superior user experience with `@ibnlanre/socket`.
 
 ## Getting Started
 
@@ -21,9 +25,35 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
 
 ## Installation
 
-```bash
-npm install @ibnlanre/socket
-```
+<details>
+  <summary>
+    Using NPM
+  </summary>
+
+  ```bash
+  npm install @ibnlanre/socket
+  ```
+</details>
+
+<details>
+  <summary>
+    Using Yarn
+  </summary>
+
+  ```bash
+  yarn add @ibnlanre/socket
+  ```
+</details>
+
+<details>
+  <summary>
+    Using PNPM
+  </summary>
+
+  ```bash
+  pnpm install @ibnlanre/socket
+  ```
+</details>
 
 ## Configuration
 
@@ -158,11 +188,8 @@ You can configure the socket client by providing the following options:
     },
   });
 
-  export function App() {
-    const {
-      data,
-      isPending,
-    } = client.use({ currency: "USD" }, (data) => {
+  export default function App() {
+    const { data, isPending } = client.use({ currency: "USD" }, (data) => {
       if (!data) return;
       return data.notifications.summary.notifications;
     });
@@ -191,7 +218,8 @@ You can configure the socket client by providing the following options:
   ```tsx
   import { SocketCloseCode } from "@ibnlanre/socket";
 
-  const CLOSURE =  SocketCloseCode.NormalClosure; // 1000
+  const CLOSURE =  SocketCloseCode.NormalClosure;
+  //    ^? 1000
   ```
 </details>
 
@@ -206,7 +234,7 @@ You can configure the socket client by providing the following options:
   import { SocketCloseReason, SocketCloseCode } from "@ibnlanre/socket";
 
   const REASON =  SocketCloseReason[SocketCloseCode.NormalClosure];
-  // "The connection was closed cleanly"
+  //    ^? "The connection was closed cleanly"
   ```
 </details>
 
@@ -221,7 +249,7 @@ You can configure the socket client by providing the following options:
   import { combineURLs } from "@ibnlanre/socket";
 
   const URL = combineURLs("https://example.com", "/api/v1");
-  // "https://example.com/api/v1"
+  //    ^? "https://example.com/api/v1"
   ```
 </details>
 
@@ -236,7 +264,7 @@ You can configure the socket client by providing the following options:
   import { getUri } from "@ibnlanre/socket";
 
   const URI = getUri("wss://example.com", "/ws/v1");
-  // "wss://example.com/ws/v1"
+  //    ^? "wss://example.com/ws/v1"
   ```
 </details>
 
@@ -251,7 +279,7 @@ You can configure the socket client by providing the following options:
   import { isAbsoluteURL } from "@ibnlanre/socket";
 
   const IS_ABSOLUTE = isAbsoluteURL("https://example.com");
-  // true
+  //    ^? true
   ```
 </details>
 
@@ -266,7 +294,7 @@ You can configure the socket client by providing the following options:
   import { paramsSerializer } from "@ibnlanre/socket";
 
   const SERIALIZED = paramsSerializer({ page: 1, limit: 10 });
-  // "page=1&limit=10"
+  //    ^? "page=1&limit=10"
   ```
 </details>
 
