@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "@next/third-parties": "^14.2.15",
+    "@playwright/test": "^1.49.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.0.1",
     "@types/node": "22.7.7",
