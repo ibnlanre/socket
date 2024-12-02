@@ -25,7 +25,7 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
 
 ## Installation
 
-<details>
+<details open>
   <summary>
     Using NPM
   </summary>
@@ -35,7 +35,7 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
   ```
 </details>
 
-<details>
+<details open>
   <summary>
     Using Yarn
   </summary>
@@ -45,7 +45,7 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
   ```
 </details>
 
-<details>
+<details open>
   <summary>
     Using PNPM
   </summary>
@@ -143,7 +143,7 @@ You can configure the socket client by providing the following options:
 
 ## API Reference
 
-<details>
+<details open>
   <summary>
     <code>createSocketClient</code>: Creates a socket client with the specified configuration options.
   </summary>
