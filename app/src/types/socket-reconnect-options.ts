@@ -1,4 +1,5 @@
 import { SocketCloseCode } from "@/constants/socket-close-code";
+import type { UnitValue } from "./socket-time-unit";
 
 export type SocketReconnectOptions = {
   /**
@@ -11,9 +12,9 @@ export type SocketReconnectOptions = {
   /**
    * The delay in milliseconds before retrying the WebSocket connection
    *
-   * @default 1000 (1 second)
+   * @default "5 seconds"
    */
-  retryDelay?: number;
+  retryDelay?: UnitValue;
 
   /**
    * The number of times to retry the WebSocket connection
@@ -49,9 +50,9 @@ export type SocketReconnectOptions = {
   /**
    * The maximum delay in milliseconds between retries
    *
-   * @default 60000 (1 minute)
+   * @default "1 minute"
    */
-  maxRetryDelay?: number;
+  maxRetryDelay?: UnitValue;
 
   /**
    * An array of specific close codes that should trigger a retry

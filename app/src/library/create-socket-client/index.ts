@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { SocketClient } from "@/class/socket-client";
-import { getUri } from "@/functions/get-uri";
 import { shallowMerge } from "@/functions/shallow-merge";
+import { getUri } from "@/library/get-uri";
 
 import type { SocketConstructor } from "@/types/socket-constructor";
 import type { SocketParams } from "@/types/socket-params";

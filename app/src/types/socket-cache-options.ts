@@ -1,3 +1,5 @@
+import type { UnitValue } from "./socket-time-unit";
+
 export type SocketCacheOptions = {
   /**
    * Whether to cache the data or not
@@ -16,7 +18,7 @@ export type SocketCacheOptions = {
   /**
    * The key to use for caching the data
    *
-   * @description The default key is the URL of the WebSocket connection
+   * @description The default key is the origin of the WebSocket connection
    */
   cacheKey?: string;
 
@@ -24,7 +26,7 @@ export type SocketCacheOptions = {
    * The maximum age in milliseconds of the cached items
    *
    *
-   * @default 90000 (15 minutes)
+   * @default "15 minutes"
    */
-  maxCacheAge?: number;
+  maxCacheAge?: UnitValue;
 };

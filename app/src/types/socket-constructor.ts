@@ -4,8 +4,9 @@ import type { SocketLoggingOptions } from "./socket-logging-options";
 import type { SocketPlaceholderOptions } from "./socket-placeholder-options";
 import type { SocketProtocolIdentifier } from "./socket-protocol-identifier";
 import type { SocketReconnectOptions } from "./socket-reconnect-options";
+import type { SocketSetStateAction } from "./socket-set-state-action";
 
-export interface SocketConstructor<Get = unknown, Post = never>
+export interface SocketConstructor<Get = unknown, Post = never, Action = never>
   extends SocketEncryptionOptions<Get, Post>,
     SocketPlaceholderOptions<Get, Post>,
     SocketCacheOptions,
@@ -39,4 +40,11 @@ export interface SocketConstructor<Get = unknown, Post = never>
    * @default true
    */
   enabled?: boolean;
+
+  /**
+   * The reducer to construct the next state of the WebSocket connection
+   *
+   * @description The default reducer is the identity function
+   */
+  setStateAction?: SocketSetStateAction<Get, Action>;
 }

@@ -1,43 +1,44 @@
 import { isJSON } from "@/functions/is-json";
+import type { SocketSetStateAction } from "@/types/socket-set-state-action";
 
-type SocketCacheConstructor<State> = {
-  url: string;
+type SocketCacheConstructor<State = unknown, Action = never> = {
   decryptData: (data: State) => State;
   disableCache: boolean;
   maxCacheAge: number;
+  origin: string;
+  reducer?: SocketSetStateAction<State, Action>;
 };
 
-export class SocketCache<State> {
+export class SocketCache<State = unknown, Action = never> {
   static isAvailable: boolean = "caches" in globalThis;
 
-  #observers: Set<Function> = new Set();
   #cache: Cache | undefined;
   #decryptData: (data: State) => State;
   #disableCache: boolean;
-  #state: State | undefined;
   #maxCacheAge: number;
-  #url: string;
+  #observers: Set<Function> = new Set();
+  #origin: string;
+  #reducer?: SocketSetStateAction<State, Action>;
+  #state: State | undefined;
 
   constructor({
     decryptData,
     disableCache,
     maxCacheAge,
-    url,
-  }: SocketCacheConstructor<State>) {
+    origin,
+    reducer,
+  }: SocketCacheConstructor<State, Action>) {
     this.#decryptData = decryptData;
     this.#disableCache = disableCache;
     this.#maxCacheAge = maxCacheAge;
-    this.#url = url;
+    this.#origin = origin;
+    this.#reducer = reducer;
   }
 
   #notifyObservers = (): void => {
     for (const observer of this.#observers) {
       observer(this.#state);
     }
-  };
-
-  #replacePath = (path: string): string => {
-    return path.replace(/^ws+:/, "https:");
   };
 
   clear = async (): Promise<void> => {
@@ -50,14 +51,13 @@ export class SocketCache<State> {
   get = async (path: string): Promise<State | undefined> => {
     if (!this.#cache) return;
 
-    const supportedPath = this.#replacePath(path);
-    const response = await this.#cache.match(supportedPath);
+    const response = await this.#cache.match(path);
 
     if (response) {
       const timestamp = response.headers.get("Expires") || 0;
 
       if (new Date(timestamp).getTime() < Date.now()) {
-        await this.#cache.delete(supportedPath);
+        await this.#cache.delete(path);
         return;
       }
 
@@ -69,8 +69,7 @@ export class SocketCache<State> {
   has = async (path: string): Promise<boolean> => {
     if (!this.#cache) return false;
 
-    const supportedPath = this.#replacePath(path);
-    const response = await this.#cache.match(supportedPath);
+    const response = await this.#cache.match(path);
 
     return response !== undefined;
   };
@@ -78,7 +77,7 @@ export class SocketCache<State> {
   initialize = async (path: string): Promise<void> => {
     if (!SocketCache.isAvailable) return;
 
-    this.#cache = await caches.open(this.#url);
+    this.#cache = await caches.open(this.#origin);
     const cachedData = await this.get(path);
 
     if (isJSON(cachedData)) {
@@ -94,8 +93,7 @@ export class SocketCache<State> {
   remove = async (path: string): Promise<boolean> => {
     if (!this.#cache) return false;
 
-    const supportedPath = this.#replacePath(path);
-    return await this.#cache.delete(supportedPath);
+    return await this.#cache.delete(path);
   };
 
   set = async (path: string, data: string): Promise<void> => {
@@ -119,8 +117,7 @@ export class SocketCache<State> {
       headers,
     });
 
-    const supportedPath = this.#replacePath(path);
-    await this.#cache.put(supportedPath, response);
+    await this.#cache.put(path, response);
   };
 
   get value(): State | undefined {
