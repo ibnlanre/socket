@@ -118,31 +118,27 @@ The `createSocketClient` function accepts a configuration object with the follow
 | Name                        | Default | Description                                                                  |
 |-----------------------------|-----------|----------------------------------------------------------------------------|
 | **Connection**              |           |                                                                            |
-| `baseURL`                   | -         | The base URL of the WebSocket server.                                      |
-| `url`                       | -         | The endpoint URL for the WebSocket connection.                             |
+| `baseURL`                   |           | The base URL of the WebSocket server.                                      |
+| `url`                       |           | The endpoint URL for the WebSocket connection.                             |
 | `enabled`                   | `true`    | Whether to enable the WebSocket connection or not.                         |
-| `protocols`                 | -         | The protocols to use for the WebSocket connection.                         |
-|                             |           |                                                                            |
-| **Caching**                 |           |                                                                            |
-| `cacheKey`                  | -         | The key to use for caching the data.                                       |
+| `protocols`                 |           | The protocols to use for the WebSocket connection.                         |
+| **Caching**                                                                                                          |
+| `cacheKey`                  |           | The key to use for caching the data.                                       |
 | `clearCacheOnClose`         | `false`   | Whether to clear the cache when the connection is closed.                  |
 | `disableCache`              | `false`   | Whether to disable the cache or not.                                       |
 | `maxCacheAge`               | `15 mins` | The maximum age of the cached data.                                        |
-|                             |           |                                                                            |
-| **Data Handling**           |           |                                                                            |
-| `decrypt`                   | -         | A function to decrypt the received data.                                   |
+| **Data Handling**                                                                                                    |
+| `decrypt`                   |           | A function to decrypt the received data.                                   |
 | `decryptData`               | `false`   | Whether to decrypt the received data or not.                               |
-| `encrypt`                   | -         | A function to encrypt the available data.                                  |
+| `encrypt`                   |           | A function to encrypt the available data.                                  |
 | `encryptPayload`            | `false`   | Whether to encrypt the payload or not.                                     |
-| `initialPayload`            | -         | The initial payload to send when connecting.                               |
-| `placeholderData`           | -         | The placeholder data to use while loading.                                 |
-| `setStateAction`            | -         | The reducer to construct the next state.                                   |
-|                             |           |                                                                            |
-| **Logging**                 |           |                                                                            |
-| `log`                       | -         | The events to log in the console.                                          |
-| `logCondition`              | -         | A custom condition for logging.                                            |
-|                             |           |                                                                            |
-| **Retrial**                 |           |                                                                            |
+| `initialPayload`            |           | The initial payload to send when connecting.                               |
+| `placeholderData`           |           | The placeholder data to use while loading.                                 |
+| `setStateAction`            |           | The reducer to construct the next state.                                   |
+| **Logging**                                                                                                          |
+| `log`                       |           | The events to log in the console.                                          |
+| `logCondition`              |           | A custom condition for logging.                                            |
+| **Retrial**                                                                                                          |
 | `retry`                     | `true`    | Whether to retry the WebSocket connection or not.                          |
 | `retryDelay`                | `5 secs`  | The delay before retrying the WebSocket connection.                        |
 | `retryCount`                | `3`       | The number of times to retry the WebSocket connection.                     |
@@ -150,8 +146,8 @@ The `createSocketClient` function accepts a configuration object with the follow
 | `reconnectOnWindowFocus`    | `true`    | Whether to retry the connection when the window regains focus.             |
 | `retryBackoffStrategy`      | `fixed`    | The strategy for increasing the delay between retries                      |
 | `maxRetryDelay`             | `1 min`   | The maximum delay between retries.                                         |
-| `retryOnSpecificCloseCodes`  | -         | An array of specific close codes that should trigger a retry.               |
-| `retryOnCustomCondition`    | -         | A function to determine whether to retry based on the error or response.   |
+| `retryOnSpecificCloseCodes`  |           | An array of specific close codes that should trigger a retry.               |
+| `retryOnCustomCondition`    |           | A function to determine whether to retry based on the error or response.   |
 | `minJitterValue`            | `0.8`     | The minimum value for the jitter.                                          |
 | `maxJitterValue`            | `1.2`     | The maximum value for the jitter.                                          |
 | `idleConnectionTimeout`     | `5 mins`  | The time to wait before closing an idle connection.                        |
