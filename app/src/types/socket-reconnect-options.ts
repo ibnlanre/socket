@@ -86,4 +86,11 @@ export type SocketReconnectOptions = {
    * @default 1.2
    */
   maxJitterValue?: number;
+
+  /**
+   * The time to wait before closing an idle connection.
+   *
+   * @default "5 minutes"
+   */
+  idleConnectionTimeout?: UnitValue;
 };

@@ -1,4 +1,4 @@
 export type SocketSetStateAction<Get = unknown> = (
-  prevState: Get | undefined,
-  action: Get
+  nextState: Get,
+  currentState?: Get
 ) => Get;

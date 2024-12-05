@@ -7,8 +7,8 @@ import { shallowClone } from "@/functions/shallow-clone";
 import { toMs } from "@/functions/to-ms";
 import { getUri } from "@/library/get-uri";
 
+import type { SocketCipher } from "@/types/socket-cipher";
 import type { SocketConstructor } from "@/types/socket-constructor";
-import type { SocketEncryption } from "@/types/socket-encryption-options";
 import type { SocketConnectionEvent } from "@/types/socket-event";
 import type { SocketFetchStatus } from "@/types/socket-fetch-status";
 import type { SocketListener } from "@/types/socket-listener";
@@ -35,7 +35,7 @@ export class SocketClient<
   ws: WebSocket | null = null;
 
   #clearCacheOnClose: boolean;
-  #encrypt?: SocketEncryption;
+  #encrypt?: SocketCipher;
   #encryptPayload: boolean;
   #eventListeners: Map<string, EventListener> = new Map();
   #focusListener: (() => void) | null = null;
@@ -375,7 +375,7 @@ export class SocketClient<
   send = (payload: Post) => {
     if (this.ws?.readyState === WebSocket.OPEN) {
       if (this.#encryptPayload && this.#encrypt) {
-        payload = this.#encrypt(payload);
+        payload = this.#encrypt(payload) as Post;
       }
 
       this.ws.send(JSON.stringify(payload));

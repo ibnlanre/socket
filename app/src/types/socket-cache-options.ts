@@ -2,7 +2,14 @@ import type { UnitValue } from "./socket-time-unit";
 
 export type SocketCacheOptions = {
   /**
-   * Whether to cache the data or not
+   * The key to use for caching the data
+   *
+   * @description The default key is the origin of the WebSocket connection
+   */
+  cacheKey?: string;
+
+  /**
+   * Whether to clear the cache when the connection is closed.
    *
    * @default false
    */
@@ -16,24 +23,10 @@ export type SocketCacheOptions = {
   disableCache?: boolean;
 
   /**
-   * The key to use for caching the data
-   *
-   * @description The default key is the origin of the WebSocket connection
-   */
-  cacheKey?: string;
-
-  /**
-   * The maximum age in milliseconds of the cached items
+   * The maximum age of the cache data
    *
    *
    * @default "15 minutes"
    */
   maxCacheAge?: UnitValue;
-
-  /**
-   * Time to wait before closing WebSocket due to no listeners
-   *
-   * @default "5 minutes"
-   */
-  idleConnectionTimeout?: UnitValue;
 };

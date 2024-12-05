@@ -1,12 +1,12 @@
 import { isJSON } from "@/functions/is-json";
-import type { SocketEncryption } from "@/types/socket-encryption-options";
+import type { SocketCipher } from "@/types/socket-cipher";
 import type { SocketSetStateAction } from "@/types/socket-set-state-action";
 
 type SocketCacheConstructor<State = unknown> = {
-  decrypt?: SocketEncryption;
+  decrypt?: SocketCipher;
   decryptData: boolean;
   disableCache: boolean;
-  encrypt?: SocketEncryption;
+  encrypt?: SocketCipher;
   maxCacheAge: number;
   origin: string;
   setStateAction?: SocketSetStateAction<State>;
@@ -16,11 +16,11 @@ export class SocketCache<State = unknown> {
   static isAvailable: boolean = "caches" in globalThis;
 
   #cache: Cache | undefined;
-  #decrypt?: SocketEncryption;
+  #decrypt?: SocketCipher;
   #decryptData: boolean;
   #disableCache: boolean;
   #decryptedValue: State | undefined;
-  #encrypt?: SocketEncryption;
+  #encrypt?: SocketCipher;
   #maxCacheAge: number;
   #observers: Set<Function> = new Set();
   #origin: string;
@@ -81,7 +81,7 @@ export class SocketCache<State = unknown> {
       const data = await response.json();
 
       if (this.#decryptData && this.#decrypt) {
-        return this.#decrypt(data);
+        return this.#decrypt(data) as State;
       }
 
       return data;
@@ -121,14 +121,14 @@ export class SocketCache<State = unknown> {
     let data = JSON.parse(value) as State;
 
     if (this.#decryptData && this.#decrypt) {
-      data = this.#decrypt(data);
+      data = this.#decrypt(data) as State;
     }
 
     if (this.#setStateAction) {
-      data = this.#setStateAction(this.#state, data);
+      data = this.#setStateAction(data, this.#state);
 
       if (this.#encrypt) {
-        data = this.#encrypt(data);
+        data = this.#encrypt(data) as State;
       }
 
       value = JSON.stringify(data);
