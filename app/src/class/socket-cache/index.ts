@@ -132,8 +132,9 @@ export class SocketCache<State = unknown> {
       }
 
       value = JSON.stringify(data);
-    } else this.#state = data;
+    }
 
+    this.#state = data;
     this.#notifyObservers();
 
     if (this.#disableCache) return;

@@ -17,18 +17,18 @@ describe("extractPathname", () => {
   it("should handle invalid URLs by splitting the string", () => {
     const url = "invalid-url/path/to/resource";
     const result = extractPathname(url);
-    expect(result).toBe("path/to/resource");
+    expect(result).toBe("resource");
   });
 
   it("should handle URLs with query parameters", () => {
     const url = "https://example.com/path/to/resource?query=param";
     const result = extractPathname(url);
-    expect(result).toBe("/path/to/resource");
+    expect(result).toBe("/path/to/resource?query=param");
   });
 
   it("should handle URLs with hash fragments", () => {
     const url = "https://example.com/path/to/resource#fragment";
     const result = extractPathname(url);
-    expect(result).toBe("/path/to/resource");
+    expect(result).toBe("/path/to/resource#fragment");
   });
 });

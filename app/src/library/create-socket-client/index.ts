@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useReducer } from "react";
 
 import { SocketClient } from "@/class/socket-client";
 import { shallowMerge } from "@/functions/shallow-merge";
@@ -17,10 +17,9 @@ export function createSocketClient<
   type Socket = SocketClient<Get, Params, Post>;
 
   const sockets = new Map<string, Socket>();
-  const { baseURL, url } = configuration;
 
   function initialize(params: Params = {} as Params) {
-    const key = getUri({ baseURL, url, params });
+    const key = getUri({ ...configuration, params });
     if (sockets.has(key)) return sockets.get(key) as Socket;
 
     const client = new SocketClient<Get, Params, Post>(configuration, params);
@@ -33,17 +32,27 @@ export function createSocketClient<
     params: Params = {} as Params,
     select: SocketSelector<Get, State> = (data) => data as State
   ): UseSocketResult<Get, Params, Post, State> {
-    const [client, setClient] = useState(() => initialize(params));
-    const key = getUri({ baseURL, url, params });
+    const key = getUri({ ...configuration, params });
 
-    useEffect(() => {
-      const unsubscribe = client.subscribe(setClient);
-      client.open();
-
-      return unsubscribe;
+    const store = useMemo(() => {
+      return { [key]: initialize(params) };
     }, [key]);
 
-    return shallowMerge(client, { data: select(client.value) });
+    const socket = store[key];
+    const [, dispatch] = useReducer((prev, next) => {
+      console.log("inside reducer", prev, next);
+      return shallowMerge(prev, { [key]: next });
+    }, store);
+
+    useEffect(() => {
+      console.log("inside effect", socket);
+      const unsubscribe = socket.subscribe(dispatch);
+      socket.open();
+      return unsubscribe;
+    }, [socket]);
+
+    console.log("outside effect", socket);
+    return shallowMerge(socket, { data: select(socket.value) });
   }
 
   return {

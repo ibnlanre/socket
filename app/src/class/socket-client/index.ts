@@ -100,22 +100,11 @@ export class SocketClient<
     }: SocketConstructor<Get, Post>,
     params = {} as Params
   ) {
-    this.#href = getUri({ baseURL, url, params });
-
-    this.cache = new SocketCache<Get>({
-      decrypt,
-      decryptData,
-      disableCache,
-      encrypt,
-      maxCacheAge: toMs(maxCacheAge),
-      origin: cacheKey ?? extractOrigin(this.#href),
-      setStateAction,
-    });
-
     this.#clearCacheOnClose = clearCacheOnClose;
     this.#enabled = enabled;
     this.#encrypt = encrypt;
     this.#encryptPayload = encryptPayload;
+    this.#href = getUri({ baseURL, url, params });
     this.#idleConnectionTimeout = toMs(idleConnectionTimeout);
     this.#initialPayload = initialPayload;
     this.#log = log;
@@ -133,6 +122,17 @@ export class SocketClient<
     this.#retryDelay = toMs(retryDelay);
     this.#retryOnCustomCondition = retryOnCustomCondition;
     this.#retryOnSpecificCloseCodes = retryOnSpecificCloseCodes;
+
+    const origin = cacheKey ?? extractOrigin(this.#href);
+    this.cache = new SocketCache<Get>({
+      decrypt,
+      decryptData,
+      disableCache,
+      encrypt,
+      maxCacheAge: toMs(maxCacheAge),
+      origin,
+      setStateAction,
+    });
 
     if (placeholderData) {
       this.#setState({ value: placeholderData, isPlaceholderData: true });
