@@ -72,66 +72,6 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
 
 To create a socket client, use the `createSocketClient` function.
 
-### Parameters
-
-The `createSocketClient` function also accepts a configuration object with the following properties:
-
-General
-
-- `baseURL`: The base URL of the WebSocket server.
-- `url`: The endpoint URL for the WebSocket connection.
-- `enabled`: Whether to enable the WebSocket connection or not.
-- `protocols`: The protocols to use for the WebSocket connection.
-
-**Caching**
-
-- `cacheKey`: The key to use for caching the data.
-- `clearCacheOnClose`: Whether to clear the cache when the connection is closed.
-- `disableCache`: Whether to disable the cache or not.
-- `maxCacheAge`: The maximum age of the cached data.
-
-**Data Handling**
-
-- `decrypt`: A function to decrypt the received data.
-- `decryptData`: Whether to decrypt the received data or not.
-- `encrypt`: A function to encrypt the available data.
-- `encryptPayload`: Whether to encrypt the payload or not.
-- `initialPayload`: The initial payload to send when connecting.
-- `placeholderData`: The placeholder data to use while loading.
-- `setStateAction`: The reducer to construct the next state.
-
-**Logging**
-
-- `log`: The events to log in the console.
-- `logCondition`: A custom condition for logging.
-
-**Retrial**
-
-- `retry`: Whether to retry the WebSocket connection or not.
-- `retryDelay`: The delay before retrying the WebSocket connection.
-- `retryCount`: The number of times to retry the WebSocket connection.
-- `reconnectOnNetworkRestore`: Whether to retry the connection when the network is restored.
-- `reconnectOnWindowFocus`: Whether to retry the connection when the window regains focus.
-- `retryBackoffStrategy`: The strategy for increasing the delay between retries (e.g., fixed, exponential).
-- `maxRetryDelay`: The maximum delay between retries.
-- `retryOnSpecificCloseCodes`: An array of specific close codes that should trigger a retry.
-- `retryOnCustomCondition`: A custom function to determine whether to retry based on the error or response.
-- `minJitterValue`: The minimum value for the jitter.
-- `maxJitterValue`: The maximum value for the jitter.
-- `idleConnectionTimeout`: The time to wait before closing an idle connection.
-
-### Returns
-
-Calling the `createSocketClient` function returns a client object with the following properties:
-
-- `initialize`: A function to initialize the socket client.
-- `use`: Subscribes to a data stream and returns the data, loading state, and error.
-- `sockets`: A map of WebSocket connections created by the client.
-
-#### Example
-
-The following example demonstrates how to create a socket client using the `createSocketClient` function:
-
 ```tsx
 import { createSocketClient, SocketCloseCode } from "@ibnlanre/socket";
 
@@ -171,9 +111,82 @@ const client = createSocketClient<
 });
 ```
 
+### Parameters
+
+The `createSocketClient` function accepts a configuration object with the following properties:
+
+| Name                        | Default | Description                                                                  |
+|-----------------------------|-----------|----------------------------------------------------------------------------|
+| **Connection**              |           |                                                                            |
+| `baseURL`                   | -         | The base URL of the WebSocket server.                                      |
+| `url`                       | -         | The endpoint URL for the WebSocket connection.                             |
+| `enabled`                   | `true`    | Whether to enable the WebSocket connection or not.                         |
+| `protocols`                 | -         | The protocols to use for the WebSocket connection.                         |
+|                             |           |                                                                            |
+| **Caching**                 |           |                                                                            |
+| `cacheKey`                  | -         | The key to use for caching the data.                                       |
+| `clearCacheOnClose`         | `false`   | Whether to clear the cache when the connection is closed.                  |
+| `disableCache`              | `false`   | Whether to disable the cache or not.                                       |
+| `maxCacheAge`               | `15 mins` | The maximum age of the cached data.                                        |
+|                             |           |                                                                            |
+| **Data Handling**           |           |                                                                            |
+| `decrypt`                   | -         | A function to decrypt the received data.                                   |
+| `decryptData`               | `false`   | Whether to decrypt the received data or not.                               |
+| `encrypt`                   | -         | A function to encrypt the available data.                                  |
+| `encryptPayload`            | `false`   | Whether to encrypt the payload or not.                                     |
+| `initialPayload`            | -         | The initial payload to send when connecting.                               |
+| `placeholderData`           | -         | The placeholder data to use while loading.                                 |
+| `setStateAction`            | -         | The reducer to construct the next state.                                   |
+|                             |           |                                                                            |
+| **Logging**                 |           |                                                                            |
+| `log`                       | -         | The events to log in the console.                                          |
+| `logCondition`              | -         | A custom condition for logging.                                            |
+|                             |           |                                                                            |
+| **Retrial**                 |           |                                                                            |
+| `retry`                     | `true`    | Whether to retry the WebSocket connection or not.                          |
+| `retryDelay`                | `5 secs`  | The delay before retrying the WebSocket connection.                        |
+| `retryCount`                | `3`       | The number of times to retry the WebSocket connection.                     |
+| `reconnectOnNetworkRestore` | `true`    | Whether to retry the connection when the network is restored.              |
+| `reconnectOnWindowFocus`    | `true`    | Whether to retry the connection when the window regains focus.             |
+| `retryBackoffStrategy`      | `fixed`    | The strategy for increasing the delay between retries                      |
+| `maxRetryDelay`             | `1 min`   | The maximum delay between retries.                                         |
+| `retryOnSpecificCloseCodes`  | -         | An array of specific close codes that should trigger a retry.               |
+| `retryOnCustomCondition`    | -         | A function to determine whether to retry based on the error or response.   |
+| `minJitterValue`            | `0.8`     | The minimum value for the jitter.                                          |
+| `maxJitterValue`            | `1.2`     | The maximum value for the jitter.                                          |
+| `idleConnectionTimeout`     | `5 mins`  | The time to wait before closing an idle connection.                        |
+
+### Returns
+
+Calling the `createSocketClient` function returns a client object with the following properties:
+
+- `initialize`: A function to initialize the socket client.
+- `use`: Subscribes to a data stream and returns the data, loading state, and error.
+- `sockets`: A map of WebSocket connections created by the client.
+
 ### Subscribing to a WebSocket Connection
 
 To subscribe to a WebSocket connection, use the `use` hook provided by the client object. This hook returns an object containing the data, status, metadata, and actions for managing the WebSocket connection.
+
+```tsx
+export default function App() {
+  const { data, isPending } = client.use({ currency: "USD" }, (data) => {
+    if (!data) return;
+    return data.notifications.summary.notifications;
+  });
+
+  if (isPending) return <div>Loading...</div>;
+
+  return (
+    <div>
+      <h1>Stock Market Overview</h1>
+      <p>Total Securities: {data?.totalSecurities}</p>
+      <p>Listed Contracts: {data?.listedContracts}</p>
+      <p>Boards: {data?.boards.map(({ name }) => name).join(", ")}</p>
+    </div>
+  );
+}
+```
 
 ### Parameters
 
@@ -226,30 +239,6 @@ Calling the `use` hook subscribes to the WebSocket connection and returns the fo
 - `ws`: The WebSocket object representing the connection.
 - `dataUpdatedAt`: The timestamp when the data was last updated.
 - `errorUpdatedAt`: The timestamp when the error occurred.
-
-### Example
-
-The following example demonstrates how to use the `use` hook to subscribe to a WebSocket connection:
-
-```tsx
-  export default function App() {
-    const { data, isPending } = client.use({ currency: "USD" }, (data) => {
-      if (!data) return;
-      return data.notifications.summary.notifications;
-    });
-
-    if (isPending) return <div>Loading...</div>;
-
-    return (
-      <div>
-        <h1>Stock Market Overview</h1>
-        <p>Total Securities: {data?.totalSecurities}</p>
-        <p>Listed Contracts: {data?.listedContracts}</p>
-        <p>Boards: {data?.boards.map(({ name }) => name).join(", ")}</p>
-      </div>
-    );
-  }
-```
 
 ## API Reference
 
