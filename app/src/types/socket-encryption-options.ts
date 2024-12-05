@@ -1,15 +1,27 @@
+export type SocketEncryption = <Data, Result = Data>(data: Data) => Result;
+
 export interface SocketEncryptionOptions<Get = unknown, Post = never> {
   /**
-   * A custom function to encrypt the data before sending it
-   *
-   * @default (payload) => payload
+   * A function that encrypts data.
    */
-  encryptPayload?: (data: Post) => Post;
+  encrypt?: SocketEncryption;
 
   /**
-   * A custom function to decrypt the data after receiving it
+   * Whether to encrypt the payload.
    *
-   * @default (data) => data
+   * @default false
    */
-  decryptData?: (data: Get) => Get;
+  encryptPayload?: boolean;
+
+  /**
+   * A function that decrypts data.
+   */
+  decrypt?: SocketEncryption;
+
+  /**
+   * Whether to decrypt the received data.
+   *
+   * @default false
+   */
+  decryptData?: boolean;
 }

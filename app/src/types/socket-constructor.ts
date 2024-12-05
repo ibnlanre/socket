@@ -6,7 +6,7 @@ import type { SocketProtocolIdentifier } from "./socket-protocol-identifier";
 import type { SocketReconnectOptions } from "./socket-reconnect-options";
 import type { SocketSetStateAction } from "./socket-set-state-action";
 
-export interface SocketConstructor<Get = unknown, Post = never, Action = never>
+export interface SocketConstructor<Get = unknown, Post = never>
   extends SocketEncryptionOptions<Get, Post>,
     SocketPlaceholderOptions<Get, Post>,
     SocketCacheOptions,
@@ -46,5 +46,5 @@ export interface SocketConstructor<Get = unknown, Post = never, Action = never>
    *
    * @description The default reducer is the identity function
    */
-  setStateAction?: SocketSetStateAction<Get, Action>;
+  setStateAction?: SocketSetStateAction<Get>;
 }

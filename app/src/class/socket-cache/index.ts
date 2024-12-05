@@ -1,38 +1,48 @@
 import { isJSON } from "@/functions/is-json";
+import type { SocketEncryption } from "@/types/socket-encryption-options";
 import type { SocketSetStateAction } from "@/types/socket-set-state-action";
 
-type SocketCacheConstructor<State = unknown, Action = never> = {
-  decryptData: (data: State) => State;
+type SocketCacheConstructor<State = unknown> = {
+  decrypt?: SocketEncryption;
+  decryptData: boolean;
   disableCache: boolean;
+  encrypt?: SocketEncryption;
   maxCacheAge: number;
   origin: string;
-  reducer?: SocketSetStateAction<State, Action>;
+  setStateAction?: SocketSetStateAction<State>;
 };
 
-export class SocketCache<State = unknown, Action = never> {
+export class SocketCache<State = unknown> {
   static isAvailable: boolean = "caches" in globalThis;
 
   #cache: Cache | undefined;
-  #decryptData: (data: State) => State;
+  #decrypt?: SocketEncryption;
+  #decryptData: boolean;
   #disableCache: boolean;
+  #decryptedValue: State | undefined;
+  #encrypt?: SocketEncryption;
   #maxCacheAge: number;
   #observers: Set<Function> = new Set();
   #origin: string;
-  #reducer?: SocketSetStateAction<State, Action>;
+  #setStateAction?: SocketSetStateAction<State>;
   #state: State | undefined;
 
   constructor({
+    decrypt,
     decryptData,
     disableCache,
+    encrypt,
     maxCacheAge,
     origin,
-    reducer,
-  }: SocketCacheConstructor<State, Action>) {
+    setStateAction,
+  }: SocketCacheConstructor<State>) {
+    this.#decrypt = decrypt;
     this.#decryptData = decryptData;
     this.#disableCache = disableCache;
+    this.#encrypt = encrypt;
     this.#maxCacheAge = maxCacheAge;
     this.#origin = origin;
-    this.#reducer = reducer;
+    this.#setStateAction = setStateAction;
   }
 
   #notifyObservers = (): void => {
@@ -46,6 +56,13 @@ export class SocketCache<State = unknown, Action = never> {
 
     const keys = await this.#cache.keys();
     for (const request of keys) this.#cache.delete(request);
+  };
+
+  decrypt = (data: State) => {
+    if (this.#decryptData && this.#decrypt) {
+      return this.#decrypt(data);
+    }
+    return data;
   };
 
   get = async (path: string): Promise<State | undefined> => {
@@ -62,7 +79,12 @@ export class SocketCache<State = unknown, Action = never> {
       }
 
       const data = await response.json();
-      return this.#decryptData(data);
+
+      if (this.#decryptData && this.#decrypt) {
+        return this.#decrypt(data);
+      }
+
+      return data;
     }
   };
 
@@ -70,7 +92,6 @@ export class SocketCache<State = unknown, Action = never> {
     if (!this.#cache) return false;
 
     const response = await this.#cache.match(path);
-
     return response !== undefined;
   };
 
@@ -96,16 +117,30 @@ export class SocketCache<State = unknown, Action = never> {
     return await this.#cache.delete(path);
   };
 
-  set = async (path: string, data: string): Promise<void> => {
-    const value = JSON.parse(data);
-    this.#state = this.#decryptData(value);
+  set = async (path: string, value: string): Promise<void> => {
+    let data = JSON.parse(value) as State;
+
+    if (this.#decryptData && this.#decrypt) {
+      data = this.#decrypt(data);
+    }
+
+    if (this.#setStateAction) {
+      data = this.#setStateAction(this.#state, data);
+
+      if (this.#encrypt) {
+        data = this.#encrypt(data);
+      }
+
+      value = JSON.stringify(data);
+    } else this.#state = data;
+
     this.#notifyObservers();
 
     if (this.#disableCache) return;
     if (!this.#cache) return;
 
     const timestamp = new Date(Date.now() + this.#maxCacheAge);
-    const size = new TextEncoder().encode(data).length;
+    const size = new TextEncoder().encode(value).length;
     const headers = new Headers();
 
     headers.set("Cache-Control", "private");
@@ -113,7 +148,7 @@ export class SocketCache<State = unknown, Action = never> {
     headers.set("Expires", timestamp.toUTCString());
     headers.set("Content-Length", size.toString());
 
-    const response = new Response(data, {
+    const response = new Response(value, {
       headers,
     });
 

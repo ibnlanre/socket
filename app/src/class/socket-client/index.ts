@@ -8,18 +8,17 @@ import { toMs } from "@/functions/to-ms";
 import { getUri } from "@/library/get-uri";
 
 import type { SocketConstructor } from "@/types/socket-constructor";
+import type { SocketEncryption } from "@/types/socket-encryption-options";
 import type { SocketConnectionEvent } from "@/types/socket-event";
 import type { SocketFetchStatus } from "@/types/socket-fetch-status";
 import type { SocketListener } from "@/types/socket-listener";
 import type { SocketParams } from "@/types/socket-params";
-import type { SocketSetStateAction } from "@/types/socket-set-state-action";
 import type { SocketStatus } from "@/types/socket-status";
 import type { SocketTimeout } from "@/types/socket-timeout";
 
 export class SocketClient<
   Get = unknown,
   Params extends SocketParams = never,
-  Action = never,
   Post = never
 > {
   cache: SocketCache<Get>;
@@ -36,7 +35,8 @@ export class SocketClient<
   ws: WebSocket | null = null;
 
   #clearCacheOnClose: boolean;
-  #encryptPayload: (data: Post) => Post;
+  #encrypt?: SocketEncryption;
+  #encryptPayload: boolean;
   #eventListeners: Map<string, EventListener> = new Map();
   #focusListener: (() => void) | null = null;
   #href: string;
@@ -56,7 +56,6 @@ export class SocketClient<
   #retryBackoffStrategy: "fixed" | "exponential";
   #retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
   #retryOnSpecificCloseCodes: SocketCloseCode[];
-  #setStateAction?: SocketSetStateAction<Get, Action>;
   #subscribers: Set<Function> = new Set();
   #timerId: SocketTimeout = undefined;
   #enabled: boolean;
@@ -66,10 +65,12 @@ export class SocketClient<
       baseURL = "",
       cacheKey,
       clearCacheOnClose = false,
-      decryptData = (data: Get) => data,
+      decrypt,
+      decryptData = true,
       disableCache = false,
       enabled = true,
-      encryptPayload = (payload: Post) => payload,
+      encrypt,
+      encryptPayload = true,
       initialPayload,
       log = ["open", "close", "error"],
       logCondition = () => process.env.NODE_ENV === "development",
@@ -93,20 +94,24 @@ export class SocketClient<
       retryOnCustomCondition,
       setStateAction,
       url,
-    }: SocketConstructor<Get, Post, Action>,
+    }: SocketConstructor<Get, Post>,
     params = {} as Params
   ) {
     this.#href = getUri({ baseURL, url, params });
 
     this.cache = new SocketCache<Get>({
+      decrypt,
       decryptData,
       disableCache,
+      encrypt,
       maxCacheAge: toMs(maxCacheAge),
       origin: cacheKey ?? extractOrigin(this.#href),
+      setStateAction,
     });
 
     this.#clearCacheOnClose = clearCacheOnClose;
     this.#enabled = enabled;
+    this.#encrypt = encrypt;
     this.#encryptPayload = encryptPayload;
     this.#initialPayload = initialPayload;
     this.#log = log;
@@ -124,7 +129,6 @@ export class SocketClient<
     this.#retryDelay = toMs(retryDelay);
     this.#retryOnCustomCondition = retryOnCustomCondition;
     this.#retryOnSpecificCloseCodes = retryOnSpecificCloseCodes;
-    this.#setStateAction = setStateAction;
 
     if (placeholderData) {
       this.#setState({ value: placeholderData, isPlaceholderData: true });
@@ -366,8 +370,11 @@ export class SocketClient<
 
   send = (payload: Post) => {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      const data = this.#encryptPayload(payload);
-      this.ws.send(JSON.stringify(data));
+      if (this.#encryptPayload && this.#encrypt) {
+        payload = this.#encrypt(payload);
+      }
+
+      this.ws.send(JSON.stringify(payload));
     }
   };
 
