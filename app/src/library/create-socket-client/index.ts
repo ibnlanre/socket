@@ -33,25 +33,18 @@ export function createSocketClient<
     select: SocketSelector<Get, State> = (data) => data as State
   ): UseSocketResult<Get, Params, Post, State> {
     const key = getUri({ ...configuration, params });
-
     const store = useMemo(() => {
       return { [key]: initialize(params) };
     }, [key]);
 
-    const socket = store[key];
     const [, dispatch] = useReducer((prev, next) => {
-      console.log("inside reducer", prev, next);
       return shallowMerge(prev, { [key]: next });
     }, store);
 
-    useEffect(() => {
-      console.log("inside effect", socket);
-      const unsubscribe = socket.subscribe(dispatch);
-      socket.open();
-      return unsubscribe;
-    }, [socket]);
+    const socket = store[key];
+    useEffect(socket.open, [socket]);
+    useEffect(socket.subscribe(dispatch), [socket]);
 
-    console.log("outside effect", socket);
     return shallowMerge(socket, { data: select(socket.value) });
   }
 
