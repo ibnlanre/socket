@@ -40,6 +40,8 @@ export class SocketClient<
   #eventListeners: Map<string, EventListener> = new Map();
   #focusListener: (() => void) | null = null;
   #href: string;
+  #idleConnectionTimeout: number;
+  #idleConnectionTimerId: SocketTimeout = undefined;
   #initialPayload?: Post;
   #log: SocketConnectionEvent[];
   #logCondition: (logType: SocketConnectionEvent) => boolean;
@@ -57,7 +59,7 @@ export class SocketClient<
   #retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
   #retryOnSpecificCloseCodes: SocketCloseCode[];
   #subscribers: Set<Function> = new Set();
-  #timerId: SocketTimeout = undefined;
+  #reconnectionTimerId: SocketTimeout = undefined;
   #enabled: boolean;
 
   constructor(
@@ -71,6 +73,7 @@ export class SocketClient<
       enabled = true,
       encrypt,
       encryptPayload = true,
+      idleConnectionTimeout = "5 minutes",
       initialPayload,
       log = ["open", "close", "error"],
       logCondition = () => process.env.NODE_ENV === "development",
@@ -113,6 +116,7 @@ export class SocketClient<
     this.#enabled = enabled;
     this.#encrypt = encrypt;
     this.#encryptPayload = encryptPayload;
+    this.#idleConnectionTimeout = toMs(idleConnectionTimeout);
     this.#initialPayload = initialPayload;
     this.#log = log;
     this.#logCondition = logCondition;
@@ -157,7 +161,7 @@ export class SocketClient<
   };
 
   #cleanup = () => {
-    clearTimeout(this.#timerId);
+    clearTimeout(this.#reconnectionTimerId);
 
     this.#cleanupEventListeners();
     this.#setState({
@@ -272,7 +276,7 @@ export class SocketClient<
 
   #reconnect = () => {
     const backoffDelay = this.#calculateBackoff();
-    this.#timerId = setTimeout(this.#connect, backoffDelay);
+    this.#reconnectionTimerId = setTimeout(this.#connect, backoffDelay);
   };
 
   #setState = (newState: Partial<SocketClient<Get, Params, Post>>) => {
@@ -379,6 +383,8 @@ export class SocketClient<
   };
 
   subscribe = (listener: Function, immediate = true) => {
+    clearTimeout(this.#idleConnectionTimerId);
+
     if (!this.#subscribers.has(listener)) {
       if (immediate) listener(this);
       this.#subscribers.add(listener);
@@ -386,6 +392,13 @@ export class SocketClient<
 
     return () => {
       this.#subscribers.delete(listener);
+
+      if (this.#subscribers.size === 0) {
+        this.#idleConnectionTimerId = setTimeout(
+          this.close,
+          this.#idleConnectionTimeout
+        );
+      }
     };
   };
 

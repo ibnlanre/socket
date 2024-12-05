@@ -29,4 +29,11 @@ export type SocketCacheOptions = {
    * @default "15 minutes"
    */
   maxCacheAge?: UnitValue;
+
+  /**
+   * Time to wait before closing WebSocket due to no listeners
+   *
+   * @default "5 minutes"
+   */
+  idleConnectionTimeout?: UnitValue;
 };
