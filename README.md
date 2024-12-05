@@ -60,71 +60,7 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
   ```
 </details>
 
-## `createSocketClient`
-
-The `createSocketClient` function is used to create a socket client with the specified configuration options. This client manages the WebSocket connection, subscribes to data streams, and provides an hook for accessing the streamed data in your components.
-
-### Configuration
-
-You can configure the socket client by providing the following options:
-
-#### General
-
-- `baseURL`: The base URL of the WebSocket server.
-- `url`: The endpoint URL for the WebSocket connection.
-- `enabled`: Whether to enable the WebSocket connection or not.
-- `protocols`: The protocols to use for the WebSocket connection.
-
-#### Caching
-
-- `cacheKey`: The key to use for caching the data.
-- `clearCacheOnClose`: Whether to clear the cache when the connection is closed.
-- `disableCache`: Whether to disable the cache or not.
-- `maxCacheAge`: The maximum age of the cached data.
-
-#### Data Handling
-
-- `decrypt`: A function to decrypt the received data.
-- `decryptData`: Whether to decrypt the received data or not.
-- `encrypt`: A function to encrypt the available data.
-- `encryptPayload`: Whether to encrypt the payload or not.
-- `initialPayload`: The initial payload to send when connecting.
-- `placeholderData`: The placeholder data to use while loading.
-- `setStateAction`: The reducer to construct the next state.
-
-#### Logging
-
-- `log`: The events to log in the console.
-- `logCondition`: A custom condition for logging.
-
-#### Retrial
-
-- `retry`: Whether to retry the WebSocket connection or not.
-- `retryDelay`: The delay before retrying the WebSocket connection.
-- `retryCount`: The number of times to retry the WebSocket connection.
-- `reconnectOnNetworkRestore`: Whether to retry the connection when the network is restored.
-- `reconnectOnWindowFocus`: Whether to retry the connection when the window regains focus.
-- `retryBackoffStrategy`: The strategy for increasing the delay between retries (e.g., fixed, exponential).
-- `maxRetryDelay`: The maximum delay between retries.
-- `retryOnSpecificCloseCodes`: An array of specific close codes that should trigger a retry.
-- `retryOnCustomCondition`: A custom function to determine whether to retry based on the error or response.
-- `minJitterValue`: The minimum value for the jitter.
-- `maxJitterValue`: The maximum value for the jitter.
-- `idleConnectionTimeout`: The time to wait before closing an idle connection.
-
-### Return Values
-
-The `createSocketClient` provides the following return values:
-
-- `initialize`: A function to initialize the socket client.
-- `use`: Subscribes to a data stream and returns the data, loading state, and error.
-- `sockets`: A map of WebSocket connections created by the client.
-
-## The `use` Hook
-
-The `use` hook returned by the `createSocketClient` function is used to subscribe to a data stream and receive updates in your components. It returns the data, loading state, and error, allowing you to handle real-time updates efficiently.
-
-### Usage
+## Usage
 
 ```tsx
   import { createSocketClient, SocketCloseCode } from "@ibnlanre/socket";
@@ -183,7 +119,7 @@ The `use` hook returned by the `createSocketClient` function is used to subscrib
   }
   ```
 
-### Return Values
+## `use` Hook
 
 #### Actions
 
@@ -229,10 +165,71 @@ The `use` hook returned by the `createSocketClient` function is used to subscrib
 
 <details>
   <summary>
+    <code>createSocketClient</code>: A function to create a WebSocket client.
+  </summary>
+
+  <br />
+
+  - `initialize`: A function to initialize the socket client.
+  - `use`: Subscribes to a data stream and returns the data, loading state, and error.
+  - `sockets`: A map of WebSocket connections created by the client.
+
+  ### Configuration
+
+  You can configure the socket client by providing the following options:
+
+  #### General
+
+  - `baseURL`: The base URL of the WebSocket server.
+  - `url`: The endpoint URL for the WebSocket connection.
+  - `enabled`: Whether to enable the WebSocket connection or not.
+  - `protocols`: The protocols to use for the WebSocket connection.
+
+  #### Caching
+
+  - `cacheKey`: The key to use for caching the data.
+  - `clearCacheOnClose`: Whether to clear the cache when the connection is closed.
+  - `disableCache`: Whether to disable the cache or not.
+  - `maxCacheAge`: The maximum age of the cached data.
+
+  #### Data Handling
+
+  - `decrypt`: A function to decrypt the received data.
+  - `decryptData`: Whether to decrypt the received data or not.
+  - `encrypt`: A function to encrypt the available data.
+  - `encryptPayload`: Whether to encrypt the payload or not.
+  - `initialPayload`: The initial payload to send when connecting.
+  - `placeholderData`: The placeholder data to use while loading.
+  - `setStateAction`: The reducer to construct the next state.
+
+  #### Logging
+
+  - `log`: The events to log in the console.
+  - `logCondition`: A custom condition for logging.
+
+  #### Retrial
+
+  - `retry`: Whether to retry the WebSocket connection or not.
+  - `retryDelay`: The delay before retrying the WebSocket connection.
+  - `retryCount`: The number of times to retry the WebSocket connection.
+  - `reconnectOnNetworkRestore`: Whether to retry the connection when the network is restored.
+  - `reconnectOnWindowFocus`: Whether to retry the connection when the window regains focus.
+  - `retryBackoffStrategy`: The strategy for increasing the delay between retries (e.g., fixed, exponential).
+  - `maxRetryDelay`: The maximum delay between retries.
+  - `retryOnSpecificCloseCodes`: An array of specific close codes that should trigger a retry.
+  - `retryOnCustomCondition`: A custom function to determine whether to retry based on the error or response.
+  - `minJitterValue`: The minimum value for the jitter.
+  - `maxJitterValue`: The maximum value for the jitter.
+  - `idleConnectionTimeout`: The time to wait before closing an idle connection.
+
+</details>
+
+<details>
+  <summary>
     <code>SocketCloseCode</code>: An enum representing the WebSocket close codes.
   </summary>
 
-  ### Usage
+  ### Example
 
   ```tsx
   import { SocketCloseCode } from "@ibnlanre/socket";
@@ -247,7 +244,7 @@ The `use` hook returned by the `createSocketClient` function is used to subscrib
     <code>SocketCloseReason</code>: An object representing the WebSocket close reasons.
   </summary>
 
-  ### Usage
+  ### Example
 
   ```tsx
   import { SocketCloseReason, SocketCloseCode } from "@ibnlanre/socket";
@@ -262,7 +259,7 @@ The `use` hook returned by the `createSocketClient` function is used to subscrib
     <code>getUri</code>: A function to get the URI of the WebSocket connection.
   </summary>
 
-  ### Usage
+  ### Example
 
   ```tsx
   import { getUri } from "@ibnlanre/socket";
