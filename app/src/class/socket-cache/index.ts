@@ -19,7 +19,6 @@ export class SocketCache<State = unknown> {
   #decrypt?: SocketCipher;
   #decryptData: boolean;
   #disableCache: boolean;
-  #decryptedValue: State | undefined;
   #encrypt?: SocketCipher;
   #maxCacheAge: number;
   #observers: Set<Function> = new Set();
