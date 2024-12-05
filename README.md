@@ -35,25 +35,31 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
     Using NPM
   </summary>
 
+  <br />
+
   ```bash
   npm install @ibnlanre/socket
   ```
 </details>
 
-<details open>
+<details>
   <summary>
     Using Yarn
   </summary>
+
+  <br />
 
   ```bash
   yarn add @ibnlanre/socket
   ```
 </details>
 
-<details open>
+<details>
   <summary>
     Using PNPM
   </summary>
+
+  <br />
 
   ```bash
   pnpm install @ibnlanre/socket
