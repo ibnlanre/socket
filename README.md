@@ -215,15 +215,18 @@ Calling the `use` hook subscribes to the WebSocket connection and returns the fo
 
 **Status**
 
-- `isPending`: A boolean indicating whether the data is loading or not.
+- `isLoading`: A boolean indicating whether the data is loading or not.
+- `isPending`: A boolean indicating whether the data is available or not.
 - `isError`: A boolean indicating whether an error occurred or not.
-- `isSuccess`: A boolean indicating whether the data was successfully fetched or not.
+- `isSuccess`: A boolean indicating whether the data was received successfully or not.
 - `isStaleData`: A boolean indicating whether the data is stale or not.
 - `isPlaceholderData`: A boolean indicating whether the data is a placeholder or not.
 - `isRefetching`: A boolean indicating whether the data is being refetched or not.
 - `isRefetchError`: A boolean indicating whether an error occurred during refetching or not.
-- `isActive`: A boolean indicating whether the WebSocket connection is active or not.
-- `isInactive`: A boolean indicating whether the WebSocket connection is inactive or not.
+- `isConnected`: A boolean indicating whether the WebSocket connection is open or not.
+- `isDisconnected`: A boolean indicating whether the WebSocket connection is closed or not.
+- `isConnecting`: A boolean indicating whether the WebSocket connection is connecting or not.
+- `isIdle`: A boolean indicating whether the WebSocket connection is inactive or not.
 
 **Metadata**
 

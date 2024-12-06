@@ -14,6 +14,7 @@ import type { SocketFetchStatus } from "@/types/socket-fetch-status";
 import type { SocketListener } from "@/types/socket-listener";
 import type { SocketParams } from "@/types/socket-params";
 import type { SocketStatus } from "@/types/socket-status";
+import type { UnitValue } from "@/types/socket-time-unit";
 import type { SocketTimeout } from "@/types/socket-timeout";
 
 export class SocketClient<
@@ -285,14 +286,14 @@ export class SocketClient<
     if (!this.#reconnectOnNetworkRestore) return;
 
     this.#networkRestoreListener = () => {
-      if (this.isInactive) this.#connect();
+      if (this.isIdle) this.#connect();
     };
 
     window.addEventListener("online", this.#networkRestoreListener);
   };
 
   #setValue = (value: Get) => {
-    const status = this.isActive ? "success" : "stale";
+    const status = this.isConnected ? "success" : "stale";
     this.#setState({ value, status, isPlaceholderData: false });
   };
 
@@ -300,7 +301,7 @@ export class SocketClient<
     if (!this.#reconnectOnWindowFocus) return;
 
     this.#focusListener = () => {
-      if (this.isInactive) this.#connect();
+      if (this.isIdle) this.#connect();
     };
 
     window.addEventListener("focus", this.#focusListener);
@@ -401,6 +402,35 @@ export class SocketClient<
     };
   };
 
+  waitUntil(
+    state: "open" | "close" | "error",
+    timeout: UnitValue = "1 minute"
+  ): Promise<void> {
+    let timerId: SocketTimeout;
+
+    return new Promise((resolve, reject) => {
+      const handleClearTimeout = () => {
+        clearTimeout(timerId);
+        this.ws?.removeEventListener(state, handleResolution);
+      };
+
+      const handleResolution = () => {
+        resolve();
+        handleClearTimeout();
+      };
+
+      this.ws?.addEventListener(state, handleResolution);
+
+      const handleRejection = () => {
+        handleClearTimeout();
+        const message = `WebSocket did not reach state "${state}" within ${timeout}ms.`;
+        reject(new Error(message));
+      };
+
+      timerId = setTimeout(handleRejection, toMs(timeout));
+    });
+  }
+
   get isError(): boolean {
     return this.status === "error";
   }
@@ -426,12 +456,20 @@ export class SocketClient<
     return this.status === "success";
   }
 
-  get isActive(): boolean {
+  get isConnected(): boolean {
     return this.fetchStatus === "connected";
   }
 
-  get isInactive(): boolean {
-    return ["disconnected", "idle"].includes(this.fetchStatus);
+  get isConnecting(): boolean {
+    return this.fetchStatus === "connecting";
+  }
+
+  get isDisconnected(): boolean {
+    return this.fetchStatus === "disconnected";
+  }
+
+  get isIdle(): boolean {
+    return this.fetchStatus === "idle";
   }
 
   get isStaleData(): boolean {
