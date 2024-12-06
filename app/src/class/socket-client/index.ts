@@ -419,7 +419,7 @@ export class SocketClient<
         handleClearTimeout();
       };
 
-      this.ws?.addEventListener(state, handleResolution);
+      this.ws?.addEventListener(state, handleResolution, { once: true });
 
       const handleRejection = () => {
         handleClearTimeout();
