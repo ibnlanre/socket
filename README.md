@@ -159,7 +159,7 @@ The `createSocketClient` function accepts a configuration object with the follow
 | `retryBackoffStrategy`      | `fixed`    | The strategy for increasing the delay between retries                      |
 | `maxRetryDelay`             | `1min`    | The maximum delay between retries.                                         |
 | `retryOnSpecificCloseCodes`  |           | An array of specific close codes that should trigger a retry.               |
-| `retryOnCustomCondition`    |           | A function to determine whether to retry based on the error or response.   |
+| `retryOnCustomCondition`    |           | A custom function to determine whether to retry                            |
 | `minJitterValue`            | `0.8`     | The minimum value for the jitter.                                          |
 | `maxJitterValue`            | `1.2`     | The maximum value for the jitter.                                          |
 | `idleConnectionTimeout`     | `5mins`   | The time to wait before closing an idle connection.                        |

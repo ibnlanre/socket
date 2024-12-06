@@ -168,6 +168,8 @@ export class SocketClient<
       fetchStatus: "idle",
       failureReason: null,
       failureCount: 0,
+      error: null,
+      errorUpdatedAt: 0,
     });
   };
 
@@ -251,16 +253,11 @@ export class SocketClient<
     };
 
     this.ws.onclose = (event: CloseEvent) => {
-      this.#setState({
-        fetchStatus: "disconnected",
-        status: "idle",
-      });
-
-      if (event.code === SocketCloseCode.NORMAL_CLOSURE) return;
-      if (this.#shouldRetry(event)) this.#reconnect();
+      if (event.wasClean) return this.#cleanup();
+      if (this.#shouldRetryOnClose(event)) this.#reconnect();
     };
 
-    this.ws.onerror = () => {
+    this.ws.onerror = (event: Event) => {
       this.#setState({
         status: "error",
         errorUpdatedAt: Date.now(),
@@ -314,7 +311,7 @@ export class SocketClient<
     return false;
   };
 
-  #shouldRetry = (event: CloseEvent): boolean => {
+  #shouldRetryOnClose = (event: CloseEvent): boolean => {
     const target = event.target as WebSocket;
     const errorCode = event.code as SocketCloseCode;
     const reason = SocketCloseReason[errorCode];
@@ -330,8 +327,10 @@ export class SocketClient<
 
     if (this.#retry && this.failureCount < this.#retryCount) {
       this.#setState({
-        failureCount: this.failureCount,
+        fetchStatus: "disconnected",
         failureReason: event.reason || reason,
+        failureCount: this.failureCount + 1,
+        status: "idle",
       });
 
       if (this.#retryOnCustomCondition?.(event, target)) return true;
