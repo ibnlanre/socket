@@ -116,53 +116,43 @@ const client = createSocketClient<
 The `createSocketClient` function accepts a configuration object with the following properties:
 
 **General**
-| Name                        | Default   | Description                                                                |
-|-----------------------------|-----------|----------------------------------------------------------------------------|
-| `baseURL`                   |           | The base URL of the WebSocket server.                                      |
-| `url`                       |           | The endpoint URL for the WebSocket connection.                             |
-| `enabled`                   | `true`    | Whether to enable the WebSocket connection or not.                         |
-| `protocols`                 |           | The protocols to use for the WebSocket connection.                         |
+- `baseURL`: The base URL of the WebSocket server.
+- `url`: The endpoint URL for the WebSocket connection.
+- `enabled` (default: `true`): Whether to enable the WebSocket connection or not.
+- `protocols`: The protocols to use for the WebSocket connection.
 
 **Caching**
-| Name                        | Default   | Description                                                                |
-|-----------------------------|-----------|----------------------------------------------------------------------------|
-| `cacheKey`                  |           | The key to use for caching the data.                                       |
-| `clearCacheOnClose`         | `false`   | Whether to clear the cache when the connection is closed.                  |
-| `disableCache`              | `false`   | Whether to disable the cache or not.                                       |
-| `maxCacheAge`               | `15mins`  | The maximum age of the cached data.                                        |
+- `cacheKey`: The key to use for caching the data.
+- `clearCacheOnClose` (default: `false`): Whether to clear the cache when the connection is closed.
+- `disableCache` (default: `false`): Whether to disable the cache or not.
+- `maxCacheAge` (default: `15mins`): The maximum age of the cached data.
 
 **Data Handling**
-| Name                        | Default   | Description                                                                |
-|-----------------------------|-----------|----------------------------------------------------------------------------|
-| `decrypt`                   |           | A function to decrypt the received data.                                   |
-| `decryptData`               | `false`   | Whether to decrypt the received data or not.                               |
-| `encrypt`                   |           | A function to encrypt the available data.                                  |
-| `encryptPayload`            | `false`   | Whether to encrypt the payload or not.                                     |
-| `initialPayload`            |           | The initial payload to send when connecting.                               |
-| `placeholderData`           |           | The placeholder data to use while loading.                                 |
-| `setStateAction`            |           | The reducer to construct the next state.                                   |
+- `decrypt`: A function to decrypt the received data.
+- `decryptData` (default: `false`): Whether to decrypt the received data or not.
+- `encrypt`: A function to encrypt the available data.
+- `encryptPayload` (default: `false`): Whether to encrypt the payload or not.
+- `initialPayload`: The initial payload to send when connecting.
+- `placeholderData`: The placeholder data to use while loading.
+- `setStateAction`: The reducer to construct the next state.
 
 **Logging**
-| Name                        | Default   | Description                                                                |
-|-----------------------------|-----------|----------------------------------------------------------------------------|
-| `log`                       |           | The events to log in the console.                                          |
-| `logCondition`              |           | A custom condition for logging.                                            |
+- `log`: The events to log in the console.
+- `logCondition`: A custom condition for logging.
 
 **Retrial**
-| Name                        | Default   | Description                                                                |
-|-----------------------------|-----------|----------------------------------------------------------------------------|
-| `retry`                     | `true`    | Whether to retry the WebSocket connection or not.                          |
-| `retryDelay`                | `5secs`   | The delay before retrying the WebSocket connection.                        |
-| `retryCount`                | `3`       | The number of times to retry the WebSocket connection.                     |
-| `reconnectOnNetworkRestore` | `true`    | Whether to retry the connection when the network is restored.              |
-| `reconnectOnWindowFocus`    | `true`    | Whether to retry the connection when the window regains focus.             |
-| `retryBackoffStrategy`      | `fixed`    | The strategy for increasing the delay between retries                      |
-| `maxRetryDelay`             | `1min`    | The maximum delay between retries.                                         |
-| `retryOnSpecificCloseCodes`  |           | An array of specific close codes that should trigger a retry.               |
-| `retryOnCustomCondition`    |           | A custom function to determine whether to retry                            |
-| `minJitterValue`            | `0.8`     | The minimum value for the jitter.                                          |
-| `maxJitterValue`            | `1.2`     | The maximum value for the jitter.                                          |
-| `idleConnectionTimeout`     | `5mins`   | The time to wait before closing an idle connection.                        |
+- `retry` (default: `true`): Whether to retry the WebSocket connection or not.
+- `retryDelay` (default: `5secs`): The delay before retrying the WebSocket connection.
+- `retryCount` (default: `3`): The number of times to retry the WebSocket connection.
+- `reconnectOnNetworkRestore` (default: `true`): Whether to retry the connection when the network is restored.
+- `reconnectOnWindowFocus` (default: `true`): Whether to retry the connection when the window regains focus.
+- `retryBackoffStrategy` (default: `fixed`): The strategy for increasing the delay between retries.
+- `maxRetryDelay` (default: `1min`): The maximum delay between retries.
+- `retryOnSpecificCloseCodes`: An array of specific close codes that should trigger a retry.
+- `retryOnCustomCondition`: A custom function to determine whether to retry.
+- `minJitterValue` (default: `0.8`): The minimum value for the jitter.
+- `maxJitterValue` (default: `1.2`): The maximum value for the jitter.
+- `idleConnectionTimeout` (default: `5mins`): The time to wait before closing an idle connection.
 
 ### Returns
 
