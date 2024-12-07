@@ -94,3 +94,5 @@ export enum SocketCloseCode {
    */
   TLS_HANDSHAKE_FAIL = 1015,
 }
+
+export type SocketCode = SocketCloseCode | (number & {});

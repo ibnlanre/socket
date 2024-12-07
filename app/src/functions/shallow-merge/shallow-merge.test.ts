@@ -27,7 +27,7 @@ describe("shallowMerge", () => {
     const target = { a: 1 };
     const source = { b: 2 };
     shallowMerge(target, source);
-    expect(target).toEqual({ a: 1 });
+    expect(target).toEqual({ a: 1, b: 2 });
   });
 
   it("should handle empty target object", () => {

@@ -7,6 +7,5 @@ export const handlers: Array<WebSocketHandler> = [
     client.send(JSON.stringify({ message: "Hello!" }));
 
     client.addEventListener("message", (event) => {});
-    console.log("outgoing WebSocket connection");
   }),
 ];

@@ -8,7 +8,9 @@
     "tag": "git tag -a v$npm_package_version -m v$npm_package_version",
     "push": "git push origin v$npm_package_version",
     "package": "npm publish --access public",
-    "release": "npm run package && npm run tag && npm run push"
+    "release": "npm run package && npm run tag && npm run push",
+    "test": "vitest --typecheck",
+    "test:ui": "vitest --typecheck --ui"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -37,7 +39,7 @@
   "bugs": {
     "url": "https://github.com/ibnlanre/socket/issues"
   },
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "keywords": [
     "socket",
     "websockets",

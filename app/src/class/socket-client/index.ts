@@ -403,8 +403,8 @@ export class SocketClient<
   };
 
   waitUntil(
-    state: "open" | "close" | "error",
-    timeout: UnitValue = "1 minute"
+    state: SocketConnectionEvent,
+    timeout: UnitValue = "5 seconds"
   ): Promise<void> {
     let timerId: SocketTimeout;
 

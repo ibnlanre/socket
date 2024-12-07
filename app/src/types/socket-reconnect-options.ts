@@ -1,4 +1,4 @@
-import { SocketCloseCode } from "@/constants/socket-close-code";
+import type { SocketCode } from "@/constants/socket-close-code";
 import type { UnitValue } from "./socket-time-unit";
 
 export type SocketReconnectOptions = {
@@ -64,7 +64,7 @@ export type SocketReconnectOptions = {
    *   SocketCloseCode.SERVICE_RESTART
    * ]
    */
-  retryOnSpecificCloseCodes?: SocketCloseCode[];
+  retryOnSpecificCloseCodes?: SocketCode[];
 
   /**
    * A custom function to determine whether to retry based on the error or response

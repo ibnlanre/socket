@@ -203,15 +203,18 @@ Calling the `use` hook subscribes to the WebSocket connection and returns the fo
 - `open`: A function to open the WebSocket connection.
 - `send`: A function to send a message to the WebSocket server.
 
-**Handlers**
+**Actions**
 
 - `subscribe`: Subscribes to data changes and updates the component.
 - `on`: Subscribes to a specific WebSocket event.
+- `waitUntil`: Waits until a specific condition is met. Suitable for waiting for the connection to be established.
 
 **State**
 
 - `value`: The data received from the WebSocket server.
 - `data`: The data received after transformation by the `select` function.
+- `ws`: The WebSocket object representing the connection.
+- `cache`: The cache object containing the data and metadata.
 
 **Status**
 
@@ -223,21 +226,19 @@ Calling the `use` hook subscribes to the WebSocket connection and returns the fo
 - `isPlaceholderData`: A boolean indicating whether the data is a placeholder or not.
 - `isRefetching`: A boolean indicating whether the data is being refetched or not.
 - `isRefetchError`: A boolean indicating whether an error occurred during refetching or not.
+- `isIdle`: A boolean indicating whether the WebSocket connection is inactive or not.
+- `isConnecting`: A boolean indicating whether the WebSocket connection is connecting or not.
 - `isConnected`: A boolean indicating whether the WebSocket connection is open or not.
 - `isDisconnected`: A boolean indicating whether the WebSocket connection is closed or not.
-- `isConnecting`: A boolean indicating whether the WebSocket connection is connecting or not.
-- `isIdle`: A boolean indicating whether the WebSocket connection is inactive or not.
 
 **Metadata**
 
-- `cache`: The cache object containing the data and metadata.
 - `error`: The error object containing the error message and details.
 - `fetchStatus`: The fetch status indicating the state of the data fetch.
 - `failureCount`: The number of times the data fetch has failed.
 - `failureReason`: The reason for the data fetch failure.
 - `path`: The path of the WebSocket connection.
 - `status`: The status of the WebSocket connection.
-- `ws`: The WebSocket object representing the connection.
 - `dataUpdatedAt`: The timestamp when the data was last updated.
 - `errorUpdatedAt`: The timestamp when the error occurred.
 
