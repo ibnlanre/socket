@@ -1,6 +1,8 @@
 import { SocketCache } from "@/class/socket-cache";
 import { SocketCloseCode } from "@/constants/socket-close-code";
 import { SocketCloseReason } from "@/constants/socket-close-reason";
+import { arrayBufferToBlob } from "@/functions/array-buffer-to-blob";
+import { blobToJson } from "@/functions/blob-to-json";
 import { extractOrigin } from "@/functions/extract-origin";
 import { extractPathname } from "@/functions/extract-pathname";
 import { shallowClone } from "@/functions/shallow-clone";
@@ -9,6 +11,7 @@ import { getUri } from "@/library/get-uri";
 
 import type { SocketCipher } from "@/types/socket-cipher";
 import type { SocketConstructor } from "@/types/socket-constructor";
+import type { SocketData } from "@/types/socket-data";
 import type { SocketConnectionEvent } from "@/types/socket-event";
 import type { SocketFetchStatus } from "@/types/socket-fetch-status";
 import type { SocketListener } from "@/types/socket-listener";
@@ -22,9 +25,11 @@ export class SocketClient<
   Params extends SocketParams = never,
   Post = never
 > {
+  binaryType: "blob" | "arraybuffer" = "blob";
   cache: SocketCache<Get>;
   dataUpdatedAt: number = 0;
   error: Error | null = null;
+  errorTimeout: number = 0;
   errorUpdatedAt: number = 0;
   failureCount: number = 0;
   failureReason: string | null = null;
@@ -209,6 +214,7 @@ export class SocketClient<
       if (this.#initialPayload) this.send(this.#initialPayload);
 
       this.#setState({
+        binaryType: this.binaryType,
         fetchStatus: "connected",
         failureCount: 0,
         failureReason: null,
@@ -231,7 +237,7 @@ export class SocketClient<
       });
 
       try {
-        this.cache.set(this.path, ev.data);
+        this.#saveData(ev);
 
         if (this.#shouldLog("message")) {
           const target = ev.target as WebSocket;
@@ -263,6 +269,7 @@ export class SocketClient<
         status: "error",
         errorUpdatedAt: Date.now(),
         error: new Error("WebSocket connection error"),
+        errorTimeout: event.timeStamp,
       });
     };
   };
@@ -275,6 +282,20 @@ export class SocketClient<
   #reconnect = () => {
     const backoffDelay = this.#calculateBackoff();
     this.#reconnectionTimerId = setTimeout(this.#connect, backoffDelay);
+  };
+
+  #saveData = async ({ type, data }: SocketData) => {
+    if (type === "binary") {
+      if (this.binaryType === "arraybuffer") {
+        data = arrayBufferToBlob(data as ArrayBuffer);
+      }
+
+      if (this.binaryType === "blob") {
+        data = await blobToJson(data as Blob);
+      }
+    }
+
+    this.cache.set(this.path, data as string);
   };
 
   #setState = (newState: Partial<SocketClient<Get, Params, Post>>) => {
