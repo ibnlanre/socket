@@ -19,7 +19,6 @@ import type { SocketParams } from "@/types/socket-params";
 import type { SocketStatus } from "@/types/socket-status";
 import type { UnitValue } from "@/types/socket-time-unit";
 import type { SocketTimeout } from "@/types/socket-timeout";
-import { clearTimeout } from "timers";
 
 export class SocketClient<
   Get = unknown,
