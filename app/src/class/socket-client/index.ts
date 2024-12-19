@@ -19,6 +19,7 @@ import type { SocketParams } from "@/types/socket-params";
 import type { SocketStatus } from "@/types/socket-status";
 import type { UnitValue } from "@/types/socket-time-unit";
 import type { SocketTimeout } from "@/types/socket-timeout";
+import { clearTimeout } from "timers";
 
 export class SocketClient<
   Get = unknown,
@@ -364,7 +365,10 @@ export class SocketClient<
   };
 
   close = () => {
-    if (this.ws?.readyState !== WebSocket.CLOSED) this.ws?.close();
+    const code = SocketCloseCode.NORMAL_CLOSURE;
+    const reason = SocketCloseReason[code];
+
+    if (this.ws?.readyState !== WebSocket.CLOSED) this.ws?.close(code, reason);
     if (this.#clearCacheOnClose) this.cache.remove(this.path);
 
     this.#cleanup();
