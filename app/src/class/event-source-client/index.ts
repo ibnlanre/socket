@@ -1,14 +1,15 @@
-type ReconnectionPolicy = {
-  retries: number;
-  delay: number;
-};
+import type { EventSourceClientOptions } from "@/types/event-source-options";
+import type { UnitValue } from "@/types/socket-time-unit";
 
-type EventSourceClientOptions = {
-  method?: string;
-  headers?: Record<string, string>;
-  body?: any;
-  reconnectionPolicy?: ReconnectionPolicy;
-  initialLastEventId?: string;
+type ReconnectionPolicy = {
+  retry?: boolean;
+  retryDelay?: number;
+  retryCount?: number;
+  retryBackoffStrategy?: "exponential" | "linear";
+  maxRetryDelay?: UnitValue;
+  minJitterValue?: number;
+  maxJitterValue?: number;
+  jitterStrategy?: "fixed" | "full";
 };
 
 class EventSourceClient<TEvents extends Record<string, any>> {
@@ -18,7 +19,13 @@ class EventSourceClient<TEvents extends Record<string, any>> {
   private lastEventId: string | null = null;
   private listeners: Map<string, (event: MessageEvent) => void> = new Map();
 
-  constructor(url: string, options: EventSourceClientOptions = {}) {
+  constructor({
+    url,
+
+    initialLastEventId,
+
+    ...init
+  }: EventSourceClientOptions) {
     this.url = url;
     this.options = options;
     this.lastEventId = options.initialLastEventId || null;
