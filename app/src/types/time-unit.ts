@@ -6,6 +6,7 @@ type PluralTime =
   | "weeks"
   | "months"
   | "years";
+
 type TruncatedPluralTime =
   | "secs"
   | "mins"
@@ -23,6 +24,7 @@ type SingularTime =
   | "week"
   | "month"
   | "year";
+
 type TruncatedSingularTime = "sec" | "min" | "hr" | "dy" | "wk" | "mth" | "yr";
 
 type LittleTime = "s" | "m" | "h" | "d" | "w" | "mo" | "y";

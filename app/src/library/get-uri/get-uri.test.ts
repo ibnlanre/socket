@@ -1,4 +1,4 @@
-import type { SocketURI } from "@/types/socket-uri";
+import type { SocketURI } from "@/types/socket/uri";
 
 import { describe, expect, it } from "vitest";
 import { getUri } from ".";

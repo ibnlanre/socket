@@ -1,4 +1,4 @@
-import type { UnitValue } from "./socket-time-unit";
+import type { UnitValue } from "../time-unit";
 
 export type SocketCacheOptions = {
   /**

@@ -1,5 +1,3 @@
-import type { ReconnectionPolicy } from "./reconnection-policy";
-
 type Header =
   | "A-IM"
   | "Accept"
@@ -113,38 +111,3 @@ type Header =
 export type HeadersRecord = Record<Header, string>;
 export type HeadersTuple = [Header, string][];
 export type HeadersInit = HeadersTuple | HeadersRecord | Headers;
-
-type MethodInit =
-  | "CONNECT"
-  | "DELETE"
-  | "GET"
-  | "HEAD"
-  | "OPTIONS"
-  | "PATCH"
-  | "POST"
-  | "PUT"
-  | "TRACE";
-
-interface Init extends RequestInit {
-  /**
-   * @see https://fetch.spec.whatwg.org/#concept-headers-list
-   */
-  headers?: HeadersInit;
-  /**
-   * @see https://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html
-   */
-  method?: MethodInit;
-}
-
-type Base = {
-  url: string;
-  baseURL?: string;
-};
-
-export interface EventSourceClientOptions
-  extends Base,
-    Init,
-    ReconnectionPolicy {
-  url: string;
-  initialLastEventId?: string;
-}

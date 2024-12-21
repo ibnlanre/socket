@@ -4,18 +4,17 @@ import { SocketClient } from "@/class/socket-client";
 import { shallowMerge } from "@/functions/shallow-merge";
 import { getUri } from "@/library/get-uri";
 
-import type { SocketConstructor } from "@/types/socket-constructor";
-import type { SocketParams } from "@/types/socket-params";
-import type { SocketSelector } from "@/types/socket-selector";
+import type { ConnectionParams } from "@/types/connection-params";
+import type { SocketConstructor } from "@/types/socket/constructor";
+import type { SocketSelector } from "@/types/socket/selector";
 import type { UseSocketResult } from "@/types/use-socket-result";
 
 export function createSocketClient<
   Get = unknown,
-  Params extends SocketParams = never,
+  Params extends ConnectionParams = never,
   Post = never
 >(configuration: SocketConstructor<Get, Post>) {
   type Socket = SocketClient<Get, Params, Post>;
-
   const sockets = new Map<string, Socket>();
 
   function initialize(params: Params = {} as Params) {

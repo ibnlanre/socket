@@ -1,4 +1,4 @@
-import type { SocketConnectionEvent } from "./socket-event";
+import type { SocketConnectionEvent } from "./connection-event";
 
 export type SocketLoggingOptions = {
   /**

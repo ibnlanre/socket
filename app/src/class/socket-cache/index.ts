@@ -1,6 +1,6 @@
 import { isJSON } from "@/functions/is-json";
-import type { SocketCipher } from "@/types/socket-cipher";
-import type { SocketSetStateAction } from "@/types/socket-set-state-action";
+import type { SocketCipher } from "@/types/socket/cipher";
+import type { SocketSetStateAction } from "@/types/socket/set-state-action";
 
 type SocketCacheConstructor<State = unknown> = {
   decrypt?: SocketCipher;

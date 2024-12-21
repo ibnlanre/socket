@@ -1,5 +1,5 @@
-import type { SocketCipher } from "./socket-cipher";
-import type { SocketSetStateAction } from "./socket-set-state-action";
+import type { SocketCipher } from "./cipher";
+import type { SocketSetStateAction } from "./set-state-action";
 
 export interface SocketDataHandlingOptions<Get = unknown, Post = never> {
   /**

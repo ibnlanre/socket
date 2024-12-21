@@ -1,4 +1,4 @@
-import type { TimeUnit, UnitValue } from "@/types/socket-time-unit";
+import type { TimeUnit, UnitValue } from "@/types/time-unit";
 
 const temporal = {
   get second() {

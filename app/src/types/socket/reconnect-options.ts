@@ -1,6 +1,6 @@
 import type { SocketCode } from "@/constants/socket-close-code";
-import type { ReconnectionPolicy } from "./reconnection-policy";
-import type { UnitValue } from "./socket-time-unit";
+import type { ReconnectionPolicy } from "../reconnection-policy";
+import type { UnitValue } from "../time-unit";
 
 export interface SocketReconnectOptions extends ReconnectionPolicy {
   /**

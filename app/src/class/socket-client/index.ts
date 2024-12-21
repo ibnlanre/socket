@@ -9,20 +9,20 @@ import { shallowClone } from "@/functions/shallow-clone";
 import { toMs } from "@/functions/to-ms";
 import { getUri } from "@/library/get-uri";
 
-import type { SocketCipher } from "@/types/socket-cipher";
-import type { SocketConstructor } from "@/types/socket-constructor";
-import type { SocketData } from "@/types/socket-data";
-import type { SocketConnectionEvent } from "@/types/socket-event";
-import type { SocketFetchStatus } from "@/types/socket-fetch-status";
-import type { SocketListener } from "@/types/socket-listener";
-import type { SocketParams } from "@/types/socket-params";
-import type { SocketStatus } from "@/types/socket-status";
-import type { UnitValue } from "@/types/socket-time-unit";
-import type { SocketTimeout } from "@/types/socket-timeout";
+import type { ConnectionParams } from "@/types/connection-params";
+import type { SocketCipher } from "@/types/socket/cipher";
+import type { SocketConnectionEvent } from "@/types/socket/connection-event";
+import type { SocketConstructor } from "@/types/socket/constructor";
+import type { SocketData } from "@/types/socket/data";
+import type { SocketFetchStatus } from "@/types/socket/fetch-status";
+import type { SocketListener } from "@/types/socket/listener";
+import type { SocketStatus } from "@/types/socket/status";
+import type { SocketTimeout } from "@/types/socket/timeout";
+import type { UnitValue } from "@/types/time-unit";
 
 export class SocketClient<
   Get = unknown,
-  Params extends SocketParams = never,
+  Params extends ConnectionParams = never,
   Post = never
 > {
   binaryType: "blob" | "arraybuffer" = "blob";
@@ -53,9 +53,9 @@ export class SocketClient<
   #logCondition: (logType: SocketConnectionEvent) => boolean;
   #retry: boolean;
   #retryDelay: number;
-  #minJitterValue: number;
   #maxJitterValue: number;
   #maxRetryDelay: number;
+  #minJitterValue: number;
   #networkRestoreListener: (() => void) | null = null;
   #protocols: string | string[];
   #reconnectOnNetworkRestore: boolean;

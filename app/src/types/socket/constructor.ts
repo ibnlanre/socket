@@ -1,8 +1,8 @@
-import type { SocketCacheOptions } from "./socket-cache-options";
-import type { SocketDataHandlingOptions } from "./socket-data-handling-options";
-import type { SocketLoggingOptions } from "./socket-logging-options";
-import type { SocketProtocolIdentifier } from "./socket-protocol-identifier";
-import type { SocketReconnectOptions } from "./socket-reconnect-options";
+import type { SocketCacheOptions } from "./cache-options";
+import type { SocketDataHandlingOptions } from "./data-handling-options";
+import type { SocketLoggingOptions } from "./logging-options";
+import type { SocketProtocolIdentifier } from "./protocol-identifier";
+import type { SocketReconnectOptions } from "./reconnect-options";
 
 export interface SocketConstructor<Get = unknown, Post = never>
   extends SocketDataHandlingOptions<Get, Post>,
