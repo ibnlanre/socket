@@ -5,14 +5,17 @@ import { getUri } from "@/library/get-uri";
 import type { ConnectionParams } from "@/types/connection-params";
 import type { EventSourceClientOptions } from "@/types/event-source/constructor";
 
+/**
+ * https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
+ */
 export class EventSourceClient<
   Events extends Record<string, unknown>,
   Params extends ConnectionParams = never
 > {
+  #abortController: AbortController = new AbortController();
   #cache: string;
   #eventSource: EventSource | null = null;
   #lastEventId: string | null;
-  #method: string;
   #href: string;
   #init: RequestInit;
   #listeners: Map<string, (event: MessageEvent) => void> = new Map();
@@ -20,11 +23,20 @@ export class EventSourceClient<
   #retryDelay: number;
   #maxJitterValue: number;
   #maxRetryDelay: number;
+  #method: string;
   #minJitterValue: number;
   #retryCount: number;
   #retryBackoffStrategy: "fixed" | "exponential";
-  #abortController: AbortController = new AbortController();
 
+  data: string = "";
+  lastEventId: string = "";
+  eventType: string = "";
+
+  /**
+   * Constructor to initialize the EventSourceClient.
+   * @param options Configuration options for the EventSourceClient.
+   * @param params Connection parameters.
+   */
   constructor(
     {
       url,
@@ -41,7 +53,7 @@ export class EventSourceClient<
       cache = "no-store",
       ...init
     }: EventSourceClientOptions,
-    params = {} as Params
+    params = <Params>{}
   ) {
     this.#cache = cache;
     this.#href = getUri({ url, baseURL, params });
@@ -57,7 +69,11 @@ export class EventSourceClient<
     this.#retryBackoffStrategy = retryBackoffStrategy;
   }
 
-  #createEventSource() {
+  /**
+   * Create an EventSource instance and set up event handlers.
+   * @private
+   */
+  #createEventSource = () => {
     this.#eventSource = new EventSource(this.#href, {
       withCredentials: this.#init.credentials === "include",
     });
@@ -71,9 +87,13 @@ export class EventSourceClient<
       this.#eventSource?.close();
       this.#reconnect();
     };
-  }
+  };
 
-  #connect() {
+  /**
+   * Connect using the fetch API and process the event stream.
+   * @private
+   */
+  #connect = () => {
     const requestInit = this.#initialize();
 
     fetch(this.#href, requestInit)
@@ -84,26 +104,8 @@ export class EventSourceClient<
         return response.body;
       })
       .then((body) => {
-        if (!body) {
-          throw new Error("ReadableStream is not supported in this browser.");
-        }
-
-        if (body.getReader) {
-          const reader = body.getReader();
-          const decoder = new TextDecoder();
-          const read = () => {
-            reader.read().then(({ done, value }) => {
-              if (done) {
-                this.#reconnect();
-                return;
-              }
-              const text = decoder.decode(value, { stream: true });
-              this.#handleMessage(text);
-              read();
-            });
-          };
-          read();
-        }
+        if (!body) return this.#reconnect();
+        if (body.getReader) this.#readBody(body.getReader());
       })
       .catch((error) => {
         if (error.name === "AbortError") {
@@ -113,9 +115,116 @@ export class EventSourceClient<
           this.#reconnect();
         }
       });
-  }
+  };
 
-  #initialize() {
+  /**
+   * Process each field in the event stream.
+   *
+   * @param field The field name.
+   * @param value The field value.
+   *
+   * @private
+   */
+  #processField = (field: string, value: string) => {
+    switch (field) {
+      case "event":
+        this.eventType = value;
+        break;
+      case "data":
+        this.data += value + "\n";
+        break;
+      case "id":
+        if (!value.includes("\u0000")) {
+          this.lastEventId = value;
+        }
+        break;
+      case "retry":
+        if (/^\d+$/.test(value)) {
+          this.#retryDelay = parseInt(value, 10);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
+  #processLine = (line: string) => {
+    if (line === "") {
+      this.#dispatchEvent();
+      this.data = "";
+      this.eventType = "";
+    } else if (line.startsWith(":")) {
+      // Ignore the line
+    } else if (line.includes(":")) {
+      const [field, ...data] = line.split(":");
+      const value = data.join(":").trimStart();
+      this.#processField(field, value);
+    } else {
+      this.#processField(line, "");
+    }
+  };
+
+  #readBody = (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+    return reader.read().then(({ done, value }) => {
+      if (done) {
+        this.#reconnect();
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      const text = decoder.decode(value, { stream: true });
+
+      /**
+       * Splits the concatenated string of `this.data` and `text` into an array of lines.
+       * The splitting is done based on different newline characters: `\r\n`, `\r`, or `\n`.
+       *
+       * @example
+       * ```typescript
+       * this.data = "Hello\r\nWorld";
+       * const text = "\nNew Line";
+       * const lines = (this.data + text).split(/\r\n|\r|\n/);
+       * // lines will be ["Hello", "World", "", "New Line"]
+       * ```
+       */
+      const lines = (this.data + text).split(/\r\n|\r|\n/);
+
+      this.data = lines.pop() || "";
+      lines.forEach(this.#processLine);
+
+      return this.#readBody(reader);
+    });
+  };
+
+  /**
+   * Dispatch the event to listeners.
+   * @private
+   */
+  #dispatchEvent = () => {
+    if (this.data === "") return;
+
+    if (this.data.endsWith("\n")) {
+      this.data = this.data.slice(0, -1);
+    }
+
+    const event = new MessageEvent(this.eventType || "message", {
+      data: this.data,
+      lastEventId: this.lastEventId,
+      origin: new URL(this.#href).origin,
+    });
+
+    this.#listeners.forEach((listener, eventName) => {
+      if (eventName === event.type) {
+        listener(event);
+      }
+    });
+  };
+
+  /**
+   * Initialize the request.
+   * @returns The initialized request.
+   * @private
+   */
+  #initialize = () => {
     this.#abortController = new AbortController();
 
     const cache = this.#cache;
@@ -139,9 +248,13 @@ export class EventSourceClient<
     };
 
     return shallowMerge(this.#init, request);
-  }
+  };
 
-  #reconnect() {
+  /**
+   * Reconnect logic with backoff strategy.
+   * @private
+   */
+  #reconnect = () => {
     if (this.#retry && this.#retryCount > 0) {
       const backoffDelay = this.#calculateBackoff();
       setTimeout(() => {
@@ -149,9 +262,14 @@ export class EventSourceClient<
         this.open();
       }, backoffDelay);
     }
-  }
+  };
 
-  #calculateBackoff(): number {
+  /**
+   * Calculate backoff delay.
+   * @returns The calculated backoff delay.
+   * @private
+   */
+  #calculateBackoff = (): number => {
     switch (this.#retryBackoffStrategy) {
       case "fixed":
         return Math.min(this.#retryDelay, this.#maxRetryDelay);
@@ -167,61 +285,110 @@ export class EventSourceClient<
 
         return delay * jitterFactor;
     }
-  }
+  };
 
-  #handleMessage(data: string) {
+  /**
+   * Handle incoming messages.
+   * @param data The message data.
+   * @private
+   */
+  #handleMessage = (data: string) => {
     const event = new MessageEvent("message", { data });
     this.#listeners.forEach((listener, eventName) => {
       if (eventName === "message" || eventName === event.type) {
         listener(event);
       }
     });
-  }
+  };
 
-  #handleError(error: any) {
+  /**
+   * Handle errors.
+   * @param error The error object.
+   * @private
+   */
+  #handleError = (error: any) => {
     const event = new MessageEvent("error", { data: error });
     this.#listeners.forEach((listener, eventName) => {
-      if (eventName === "error") {
-        listener(event);
-      }
+      if (eventName === "error") listener(event);
     });
-  }
+  };
 
-  #addEventListener<K extends keyof Events>(
+  /**
+   * Add an event listener.
+   * @param type The event type.
+   * @param listener The event listener.
+   * @private
+   */
+  #addEventListener = <K extends keyof Events>(
     type: K,
     listener: (event: MessageEvent<Events[K]>) => void
-  ) {
-    this.#listeners.set(
-      type as string,
-      listener as (event: MessageEvent) => void
-    );
-  }
+  ) => {
+    this.#listeners.set(<string>type, <(event: MessageEvent) => void>listener);
+  };
 
-  #removeEventListener<K extends keyof Events>(type: K) {
-    this.#listeners.delete(type as string);
-  }
+  /**
+   * Remove an event listener.
+   * @param type The event type.
+   * @private
+   */
+  #removeEventListener = <K extends keyof Events>(type: K) => {
+    this.#listeners.delete(<string>type);
+  };
 
+  /**
+   * An asynchronous generator function that yields `MessageEvent` objects.
+   * This function continuously listens for "message" events and yields each event as it occurs.
+   *
+   * @async
+   * @generator
+   * @yields {MessageEvent} The next message event.
+   */
   async *[Symbol.asyncIterator]() {
     while (true) {
-      const event = await new Promise<MessageEvent>((resolve) => {
-        const listener = (event: MessageEvent) => {
-          this.#removeEventListener("message");
-          resolve(event);
-        };
-        this.#addEventListener("message", listener);
-      });
+      const event = await new Promise<MessageEvent<Events["message"]>>(
+        (resolve) => {
+          const listener = (event: MessageEvent) => {
+            this.#removeEventListener("message");
+            resolve(event);
+          };
+          this.#addEventListener("message", listener);
+        }
+      );
       yield event;
     }
   }
 
-  open() {
+  /**
+   * Open the connection.
+   */
+  open = () => {
     if (this.#init.method === "GET") this.#createEventSource();
     else this.#connect();
-  }
+  };
 
-  close() {
+  /**
+   * Close the connection.
+   */
+  close = () => {
     this.#abortController.abort();
     this.#eventSource?.close();
     this.#eventSource = null;
-  }
+  };
+}
+
+// Example usage
+const eventSourceClient = new EventSourceClient<{
+  message: string;
+}>({
+  url: "/events",
+  retry: true,
+  retryCount: 10,
+  retryDelay: "5 seconds",
+  retryBackoffStrategy: "exponential",
+});
+
+eventSourceClient.open();
+
+for await (const event of eventSourceClient) {
+  console.log(event.data);
 }

@@ -17,9 +17,9 @@ export function createSocketClient<
   type Socket = SocketClient<Get, Params, Post>;
   const sockets = new Map<string, Socket>();
 
-  function initialize(params: Params = {} as Params) {
+  function initialize(params: Params = <Params>{}) {
     const key = getUri({ ...configuration, params });
-    if (sockets.has(key)) return sockets.get(key) as Socket;
+    if (sockets.has(key)) return <Socket>sockets.get(key);
 
     const client = new SocketClient<Get, Params, Post>(configuration, params);
     sockets.set(key, client);
@@ -28,8 +28,8 @@ export function createSocketClient<
   }
 
   function use<State>(
-    params: Params = {} as Params,
-    select: SocketSelector<Get, State> = (data) => data as State
+    params: Params = <Params>{},
+    select: SocketSelector<Get, State> = (data) => <State>data
   ): UseSocketResult<Get, Params, Post, State> {
     const key = getUri({ ...configuration, params });
     const store = useMemo(() => {

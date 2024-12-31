@@ -104,7 +104,7 @@ export class SocketClient<
       setStateAction,
       url,
     }: SocketConstructor<Get, Post>,
-    params = {} as Params
+    params = <Params>{}
   ) {
     this.#clearCacheOnClose = clearCacheOnClose;
     this.#enabled = enabled;
@@ -223,7 +223,7 @@ export class SocketClient<
       });
 
       if (this.#shouldLog("open")) {
-        const target = ev.target as WebSocket;
+        const target = <WebSocket>ev.target;
         console.info("WebSocket connected", {
           url: target.url,
         });
@@ -240,7 +240,7 @@ export class SocketClient<
         this.#saveData(ev);
 
         if (this.#shouldLog("message")) {
-          const target = ev.target as WebSocket;
+          const target = <WebSocket>ev.target;
           console.log("WebSocket message received", {
             data: ev.data,
             url: target.url,
@@ -248,7 +248,7 @@ export class SocketClient<
         }
       } catch (err) {
         if (this.#shouldLog("error")) {
-          const target = ev.target as WebSocket;
+          const target = <WebSocket>ev.target;
 
           console.error("WebSocket connection error", {
             data: ev.data,
@@ -287,15 +287,15 @@ export class SocketClient<
   #saveData = async ({ type, data }: SocketData) => {
     if (type === "binary") {
       if (this.binaryType === "arraybuffer") {
-        data = arrayBufferToBlob(data as ArrayBuffer);
+        data = arrayBufferToBlob(<ArrayBuffer>data);
       }
 
       if (this.binaryType === "blob") {
-        data = await blobToJson(data as Blob);
+        data = await blobToJson(<Blob>data);
       }
     }
 
-    this.cache.set(this.path, data as string);
+    this.cache.set(this.path, <string>data);
   };
 
   #setState = (newState: Partial<SocketClient<Get, Params, Post>>) => {
@@ -334,8 +334,8 @@ export class SocketClient<
   };
 
   #shouldRetryOnClose = (event: CloseEvent): boolean => {
-    const target = event.target as WebSocket;
-    const errorCode = event.code as SocketCloseCode;
+    const target = <WebSocket>event.target;
+    const errorCode = <SocketCloseCode>event.code;
     const reason = SocketCloseReason[errorCode];
 
     if (this.#shouldLog("close")) {
@@ -399,7 +399,7 @@ export class SocketClient<
   send = (payload: Post) => {
     if (this.ws?.readyState === WebSocket.OPEN) {
       if (this.#encryptPayload && this.#encrypt) {
-        payload = this.#encrypt(payload) as Post;
+        payload = <Post>this.#encrypt(payload);
       }
 
       this.ws.send(JSON.stringify(payload));

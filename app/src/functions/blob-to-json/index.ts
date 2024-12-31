@@ -3,7 +3,7 @@ export function blobToJson(blob: Blob) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        resolve(reader.result as string);
+        resolve(<string>reader.result);
       } catch (error) {
         reject(error);
       }
