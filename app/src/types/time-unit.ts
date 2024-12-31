@@ -1,4 +1,5 @@
 type PluralTime =
+  | "milliseconds"
   | "seconds"
   | "minutes"
   | "hours"
@@ -8,6 +9,7 @@ type PluralTime =
   | "years";
 
 type TruncatedPluralTime =
+  | "msecs"
   | "secs"
   | "mins"
   | "hrs"
@@ -17,6 +19,7 @@ type TruncatedPluralTime =
   | "yrs";
 
 type SingularTime =
+  | "millisecond"
   | "second"
   | "minute"
   | "hour"
@@ -25,9 +28,17 @@ type SingularTime =
   | "month"
   | "year";
 
-type TruncatedSingularTime = "sec" | "min" | "hr" | "dy" | "wk" | "mth" | "yr";
+type TruncatedSingularTime =
+  | "msec"
+  | "sec"
+  | "min"
+  | "hr"
+  | "dy"
+  | "wk"
+  | "mth"
+  | "yr";
 
-type LittleTime = "s" | "m" | "h" | "d" | "w" | "mo" | "y";
+type LittleTime = "ms" | "s" | "m" | "h" | "d" | "w" | "mo" | "y";
 type SingularTimeUnit = SingularTime | TruncatedSingularTime;
 type PluralTimeUnit = PluralTime | TruncatedPluralTime;
 

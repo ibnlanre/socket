@@ -1,6 +1,9 @@
 import type { TimeUnit, UnitValue } from "@/types/time-unit";
 
 const temporal = {
+  get millisecond() {
+    return 1;
+  },
   get second() {
     return 1000;
   },
@@ -60,16 +63,23 @@ const timeUnitValues: Record<TimeUnit, number> = {
   secs: temporal.second,
   second: temporal.second,
   seconds: temporal.second,
+  ms: temporal.millisecond,
+  msec: temporal.millisecond,
+  msecs: temporal.millisecond,
+  millisecond: temporal.millisecond,
+  milliseconds: temporal.millisecond,
 };
 
-const year = ["years", "year", "yrs", "yr", "y"];
-const month = ["months", "month", "mos", "mth", "mo"];
-const week = ["weeks", "week", "wks", "wk", "w"];
-const day = ["days", "day", "dys", "dy", "d"];
-const hour = ["hours", "hour", "hrs", "hr", "h"];
-const minute = ["minutes", "minute", "mins", "min", "m"];
-const second = ["seconds", "second", "secs", "sec", "s"];
-const units = second.concat(minute, hour, day, week, month, year);
+const units = [
+  ["years", "year", "yrs", "yr", "y"],
+  ["months", "month", "mos", "mth", "mo"],
+  ["weeks", "week", "wks", "wk", "w"],
+  ["days", "day", "dys", "dy", "d"],
+  ["hours", "hour", "hrs", "hr", "h"],
+  ["minutes", "minute", "mins", "min", "m"],
+  ["seconds", "second", "secs", "sec", "s"],
+  ["milliseconds", "millisecond", "msecs", "msec", "ms"],
+].flat();
 
 export function isTimeUnit(value: string): value is TimeUnit {
   return units.includes(value);
@@ -79,7 +89,7 @@ export function multiplier(value: number, unit: TimeUnit): number {
   return value * timeUnitValues[unit];
 }
 
-const numberRegex = /^(\d+(?:\.\d+)?)\s?/;
+const numberRegex = /^([+-]?\d+(?:\.\d+)?)\s?/;
 const timeUnitRegex = [numberRegex.source, "(", units.join("|"), ")$"];
 const timeUnitPattern = new RegExp(timeUnitRegex.join(""), "i");
 
