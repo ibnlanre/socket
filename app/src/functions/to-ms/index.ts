@@ -24,7 +24,7 @@ const temporal = {
   },
 };
 
-const unitMultipliers: Record<TimeUnit, number> = {
+const timeUnitValues: Record<TimeUnit, number> = {
   y: temporal.year,
   yr: temporal.year,
   yrs: temporal.year,
@@ -62,11 +62,6 @@ const unitMultipliers: Record<TimeUnit, number> = {
   seconds: temporal.second,
 };
 
-export function multiplier(value: number, unit: TimeUnit): number {
-  if (!isTimeUnit(unit)) return value;
-  return value * unitMultipliers[unit];
-}
-
 const year = ["years", "year", "yrs", "yr", "y"];
 const month = ["months", "month", "mos", "mth", "mo"];
 const week = ["weeks", "week", "wks", "wk", "w"];
@@ -74,15 +69,18 @@ const day = ["days", "day", "dys", "dy", "d"];
 const hour = ["hours", "hour", "hrs", "hr", "h"];
 const minute = ["minutes", "minute", "mins", "min", "m"];
 const second = ["seconds", "second", "secs", "sec", "s"];
-
-const timeUnits = second.concat(minute, hour, day, week, month, year);
+const units = second.concat(minute, hour, day, week, month, year);
 
 export function isTimeUnit(value: string): value is TimeUnit {
-  return timeUnits.includes(value);
+  return units.includes(value);
+}
+
+export function multiplier(value: number, unit: TimeUnit): number {
+  return value * timeUnitValues[unit];
 }
 
 const numberRegex = /^(\d+(?:\.\d+)?)\s?/;
-const timeUnitRegex = [numberRegex.source, "(", timeUnits.join("|"), ")$"];
+const timeUnitRegex = [numberRegex.source, "(", units.join("|"), ")$"];
 const timeUnitPattern = new RegExp(timeUnitRegex.join(""), "i");
 
 export function toMs(value: UnitValue): number {
@@ -96,6 +94,8 @@ export function toMs(value: UnitValue): number {
   }
 
   const [, number, unit] = capture;
+
+  if (!unit) return parseFloat(value);
   const timeUnit = <TimeUnit>unit.toLowerCase();
 
   return Math.round(multiplier(+number, timeUnit));

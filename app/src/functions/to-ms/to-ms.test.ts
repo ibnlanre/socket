@@ -5,7 +5,11 @@ describe("toMs", () => {
   it("should return the number if it is a number", () => {
     expect(toMs(1000)).toBe(1000);
     expect(toMs(1000.0)).toBe(1000);
+  });
+
+  it("should return the number if it is a string", () => {
     expect(toMs(<any>"1000")).toBe(1000);
+    expect(toMs(<any>"1000i")).toBe(1000);
   });
 
   it("should convert years to milliseconds", () => {
