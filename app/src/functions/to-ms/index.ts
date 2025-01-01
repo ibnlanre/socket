@@ -89,7 +89,7 @@ export function multiplier(value: number, unit: TimeUnit): number {
   return value * timeUnitValues[unit];
 }
 
-const numberRegex = /^([+-]?\d+(?:\.\d+)?)\s?/;
+const numberRegex = /^([+-]?\d+(?:\.\d*)?|\.\d+)\s?/;
 const timeUnitRegex = [numberRegex.source, "(", units.join("|"), ")$"];
 const timeUnitPattern = new RegExp(timeUnitRegex.join(""), "i");
 
