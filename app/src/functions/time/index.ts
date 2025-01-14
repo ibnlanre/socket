@@ -5,25 +5,25 @@ const temporal = {
     return 1;
   },
   get second() {
-    return 1000;
+    return 1000 * this.millisecond;
   },
   get minute() {
-    return this.second * 60;
+    return 60 * this.second;
   },
   get hour() {
-    return this.minute * 60;
+    return 60 * this.minute;
   },
   get day() {
-    return this.hour * 24;
+    return 24 * this.hour;
   },
   get week() {
-    return this.day * 7;
+    return 7 * this.day;
   },
   get month() {
-    return this.day * 30.4375;
+    return 30.4375 * this.day;
   },
   get year() {
-    return this.day * 365.25;
+    return 365.25 * this.day;
   },
 };
 
@@ -93,20 +93,29 @@ const numberRegex = /^([+-]?\d+(?:\.\d*)?|\.\d+)\s?/;
 const timeUnitRegex = [numberRegex.source, "(", units.join("|"), ")$"];
 const timeUnitPattern = new RegExp(timeUnitRegex.join(""), "i");
 
-export function toMs(value: UnitValue): number {
-  if (typeof value === "number") return value;
+export function convert(value: number, from: TimeUnit, to: TimeUnit): number {
+  const inMilliseconds = multiplier(value, from);
+  return inMilliseconds / timeUnitValues[to];
+}
+
+export function toSignificantDigits(value: number, digits: number = 2): number {
+  return parseFloat(value.toFixed(digits));
+}
+
+export function time(value: UnitValue, to: TimeUnit = "ms"): number {
+  if (typeof value === "number") return convert(value, "ms", to);
 
   const capture = timeUnitPattern.exec(value);
 
   if (!capture) {
     const number = parseFloat(value);
-    return isNaN(number) ? Infinity : number;
+    return isNaN(number) ? Infinity : convert(number, "ms", to);
   }
 
   const [, number, unit] = capture;
 
-  if (!unit) return parseFloat(value);
+  if (!unit) return convert(parseFloat(value), "ms", to);
   const timeUnit = <TimeUnit>unit.toLowerCase();
 
-  return Math.round(multiplier(+number, timeUnit));
+  return toSignificantDigits(convert(+number, timeUnit, to));
 }

@@ -6,7 +6,7 @@ import { blobToJson } from "@/functions/blob-to-json";
 import { extractOrigin } from "@/functions/extract-origin";
 import { extractPathname } from "@/functions/extract-pathname";
 import { shallowClone } from "@/functions/shallow-clone";
-import { toMs } from "@/functions/to-ms";
+import { time } from "@/functions/time";
 import { getUri } from "@/library/get-uri";
 
 import type { ConnectionParams } from "@/types/connection-params";
@@ -111,12 +111,12 @@ export class SocketClient<
     this.#encrypt = encrypt;
     this.#encryptPayload = encryptPayload;
     this.#href = getUri({ baseURL, url, params });
-    this.#idleConnectionTimeout = toMs(idleConnectionTimeout);
+    this.#idleConnectionTimeout = time(idleConnectionTimeout);
     this.#initialPayload = initialPayload;
     this.#log = log;
     this.#logCondition = logCondition;
     this.#maxJitterValue = maxJitterValue;
-    this.#maxRetryDelay = toMs(maxRetryDelay);
+    this.#maxRetryDelay = time(maxRetryDelay);
     this.#minJitterValue = minJitterValue;
     this.path = extractPathname(this.#href);
     this.#protocols = protocols;
@@ -125,7 +125,7 @@ export class SocketClient<
     this.#retry = retry;
     this.#retryBackoffStrategy = retryBackoffStrategy;
     this.#retryCount = retryCount;
-    this.#retryDelay = toMs(retryDelay);
+    this.#retryDelay = time(retryDelay);
     this.#retryOnCustomCondition = retryOnCustomCondition;
     this.#retryOnSpecificCloseCodes = retryOnSpecificCloseCodes;
 
@@ -135,7 +135,7 @@ export class SocketClient<
       decryptData,
       disableCache,
       encrypt,
-      maxCacheAge: toMs(maxCacheAge),
+      maxCacheAge: time(maxCacheAge),
       origin,
       setStateAction,
     });
@@ -451,7 +451,7 @@ export class SocketClient<
         reject(new Error(message));
       };
 
-      timerId = setTimeout(handleRejection, toMs(timeout));
+      timerId = setTimeout(handleRejection, time(timeout));
     });
   }
 

@@ -1,5 +1,5 @@
 import { shallowMerge } from "@/functions/shallow-merge";
-import { toMs } from "@/functions/to-ms";
+import { time } from "@/functions/time";
 import { getUri } from "@/library/get-uri";
 
 import type { ConnectionParams } from "@/types/connection-params";
@@ -61,9 +61,9 @@ export class EventSourceClient<
     this.#init = init;
     this.#method = method;
     this.#retry = retry;
-    this.#retryDelay = toMs(retryDelay);
+    this.#retryDelay = time(retryDelay);
     this.#maxJitterValue = maxJitterValue;
-    this.#maxRetryDelay = toMs(maxRetryDelay);
+    this.#maxRetryDelay = time(maxRetryDelay);
     this.#minJitterValue = minJitterValue;
     this.#retryCount = retryCount;
     this.#retryBackoffStrategy = retryBackoffStrategy;
