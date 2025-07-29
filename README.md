@@ -246,7 +246,7 @@ Calling the `use` hook subscribes to the WebSocket connection and returns the fo
 
 <details>
   <summary>
-    <code>SocketCloseCode</code>: An enum representing the WebSocket close codes.
+    <code>SocketCloseCode</code>: An enumuration representing the WebSocket close codes.
   </summary>
 
   ### Example

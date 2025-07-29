@@ -8,7 +8,7 @@
   "editor.codeActionsOnSave": {
     "source.sortImports": "always",
     "source.addMissingImports.ts": "always",
-    "source.removeUnusedImports": "never"
+    "source.removeUnusedImports": "explicit"
   },
   "css.customData": [".vscode/tailwind.json"]
 }

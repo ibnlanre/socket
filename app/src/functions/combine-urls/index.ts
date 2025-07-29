@@ -1,6 +1,6 @@
 import { isAbsoluteURL } from "../is-absolute-url";
-import { normalizeBaseURL } from "./normalize-base-url";
-import { normalizeRelativeURL } from "./normalize-relative-url";
+import { normalizeBaseURL } from "../normalize-base-url";
+import { normalizeRelativeURL } from "../normalize-relative-url";
 
 /**
  * Combine a base URL and a relative URL

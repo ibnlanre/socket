@@ -1,7 +1,7 @@
 import { combineURLs } from "@/functions/combine-urls";
 import { paramsSerializer } from "@/functions/params-serializer";
 
-import type { SocketURI } from "@/types/socket-uri";
+import type { SocketURI } from "@/types/socket/uri";
 
 export function getUri({ url, baseURL = "", params }: SocketURI): string {
   const fullPath = combineURLs(baseURL, url);
