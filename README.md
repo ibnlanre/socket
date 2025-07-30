@@ -168,9 +168,12 @@ To subscribe to a WebSocket connection, use the `use` hook provided by the clien
 
 ```tsx
 export default function App() {
-  const { data, isPending } = client.use({ currency: "USD" }, (data) => {
-    if (!data) return;
-    return data.notifications.summary.notifications;
+  const { data, isPending } = client.use({
+    params: { currency: "USD" },
+    select(data) {
+      if (!data) return { total_securities: 0, listed_contracts: 0, boards: [] };
+      return data.notifications;
+    }
   });
 
   if (isPending) return <div>Loading...</div>;
@@ -178,9 +181,9 @@ export default function App() {
   return (
     <div>
       <h1>Stock Market Overview</h1>
-      <p>Total Securities: {data?.totalSecurities}</p>
-      <p>Listed Contracts: {data?.listedContracts}</p>
-      <p>Boards: {data?.boards.map(({ name }) => name).join(", ")}</p>
+      <p>Total Securities: {data.total_securities}</p>
+      <p>Listed Contracts: {data.listed_contracts}</p>
+      <p>Boards: {data.boards.map(({ name }) => name).join(", ")}</p>
     </div>
   );
 }

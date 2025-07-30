@@ -115,7 +115,7 @@ export function time(value: UnitValue, to: TimeUnit = "ms"): number {
   const [, number, unit] = capture;
 
   if (!unit) return convert(parseFloat(value), "ms", to);
-  const timeUnit = <TimeUnit>unit.toLowerCase();
+  const timeUnit = unit.toLowerCase() as TimeUnit;
 
   return toSignificantDigits(convert(+number, timeUnit, to));
 }

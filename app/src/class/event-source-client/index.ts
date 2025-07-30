@@ -53,7 +53,7 @@ export class EventSourceClient<
       cache = "no-store",
       ...init
     }: EventSourceClientOptions,
-    params = <Params>{}
+    params = {} as Params
   ) {
     this.#cache = cache;
     this.#href = getUri({ url, baseURL, params });
@@ -323,7 +323,7 @@ export class EventSourceClient<
     type: K,
     listener: (event: MessageEvent<Events[K]>) => void
   ) => {
-    this.#listeners.set(<string>type, <(event: MessageEvent) => void>listener);
+    this.#listeners.set(type as string, listener as (event: MessageEvent) => void);
   };
 
   /**
@@ -332,7 +332,7 @@ export class EventSourceClient<
    * @private
    */
   #removeEventListener = <K extends keyof Events>(type: K) => {
-    this.#listeners.delete(<string>type);
+    this.#listeners.delete(type as string);
   };
 
   /**

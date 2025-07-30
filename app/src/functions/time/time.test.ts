@@ -9,9 +9,9 @@ describe("time", () => {
   });
 
   it("should return the number if it is a string", () => {
-    expect(time(<any>"1000")).toBe(1000);
-    expect(time(<any>"1000i")).toBe(1000);
-    expect(time(<any>"-1000")).toBe(-1000);
+    expect(time("1000" as any)).toBe(1000);
+    expect(time("1000i" as any)).toBe(1000);
+    expect(time("-1000" as any)).toBe(-1000);
   });
 
   it("should convert years to milliseconds", () => {
@@ -87,8 +87,8 @@ describe("time", () => {
   });
 
   it("should return Infinity for invalid input", () => {
-    expect(time(<any>"invalid")).toBe(Infinity);
-    expect(time(<any>"123abc")).toBe(123);
+    expect(time("invalid" as any)).toBe(Infinity);
+    expect(time("123abc" as any)).toBe(123);
   });
 
   it("should convert value to specific unit", () => {
@@ -101,5 +101,3 @@ describe("time", () => {
     expect(time("1yr", "mo")).toBe(12);
   });
 });
-
-// 4.345238095238095

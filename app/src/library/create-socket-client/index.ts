@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { SocketClient } from "@/class/socket-client";
 import { shallowMerge } from "@/functions/shallow-merge";
@@ -9,6 +9,15 @@ import type { SocketConstructor } from "@/types/socket/constructor";
 import type { SocketSelector } from "@/types/socket/selector";
 import type { UseSocketResult } from "@/types/use-socket-result";
 
+type UseSocketOptions<
+  Get = unknown,
+  Params extends ConnectionParams = never,
+  State = Get
+> = {
+  params?: Params;
+  select?: SocketSelector<Get, State>;
+};
+
 export function createSocketClient<
   Get = unknown,
   Params extends ConnectionParams = never,
@@ -17,9 +26,9 @@ export function createSocketClient<
   type Socket = SocketClient<Get, Params, Post>;
   const sockets = new Map<string, Socket>();
 
-  function initialize(params: Params = <Params>{}) {
+  function initialize(params: Params = {} as Params): Socket {
     const key = getUri({ ...configuration, params });
-    if (sockets.has(key)) return <Socket>sockets.get(key);
+    if (sockets.has(key)) return sockets.get(key)!;
 
     const client = new SocketClient<Get, Params, Post>(configuration, params);
     sockets.set(key, client);
@@ -27,29 +36,49 @@ export function createSocketClient<
     return client;
   }
 
-  function use<State>(
-    params: Params = <Params>{},
-    select: SocketSelector<Get, State> = (data) => <State>data
-  ): UseSocketResult<Get, Params, Post, State> {
+  function use<State>({
+    params = {} as Params,
+    select = (data) => data as State,
+  }: UseSocketOptions<Get, Params, State> = {}): UseSocketResult<
+    Get,
+    Params,
+    Post,
+    State
+  > {
     const key = getUri({ ...configuration, params });
-    const store = useMemo(() => {
-      return { [key]: initialize(params) };
-    }, [key]);
+    const socket = useMemo(() => initialize(params), [key]);
+    const [socketState, setSocketState] = useState(socket);
 
-    const [, dispatch] = useReducer((prev, next) => {
-      return shallowMerge(prev, { [key]: next });
-    }, store);
+    useEffect(() => socket.open(), [socket]);
+    useEffect(() => socket.subscribe(setSocketState), [socket]);
 
-    const socket = store[key];
-    useEffect(socket.open, [socket]);
-    useEffect(socket.subscribe(dispatch), [socket]);
+    return shallowMerge(socketState, { data: select(socketState.value) });
+  }
 
-    return shallowMerge(socket, { data: select(socket.value) });
+  function cleanup(params: Params = {} as Params): boolean {
+    const key = getUri({ ...configuration, params });
+    const socket = sockets.get(key);
+    if (socket) {
+      socket.close();
+      socket.cache.clear();
+      return sockets.delete(key);
+    }
+    return false;
+  }
+
+  function cleanupAll(): void {
+    sockets.forEach((socket) => {
+      socket.close();
+      socket.cache.clear();
+    });
+    sockets.clear();
   }
 
   return {
     use,
     initialize,
+    cleanup,
+    cleanupAll,
     sockets,
   };
 }

@@ -1,5 +1,8 @@
 import { SocketCache } from "@/class/socket-cache";
-import { SocketCloseCode } from "@/constants/socket-close-code";
+import {
+  SocketCloseCode,
+  type SocketCode,
+} from "@/constants/socket-close-code";
 import { SocketCloseReason } from "@/constants/socket-close-reason";
 import { arrayBufferToBlob } from "@/functions/array-buffer-to-blob";
 import { blobToJson } from "@/functions/blob-to-json";
@@ -63,7 +66,7 @@ export class SocketClient<
   #retryCount: number;
   #retryBackoffStrategy: "fixed" | "exponential";
   #retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
-  #retryOnSpecificCloseCodes: SocketCloseCode[];
+  #retryOnSpecificCloseCodes: SocketCode[];
   #subscribers: Set<Function> = new Set();
   #reconnectionTimerId: SocketTimeout = undefined;
   #enabled: boolean;
@@ -104,7 +107,7 @@ export class SocketClient<
       setStateAction,
       url,
     }: SocketConstructor<Get, Post>,
-    params = <Params>{}
+    params = {} as Params
   ) {
     this.#clearCacheOnClose = clearCacheOnClose;
     this.#enabled = enabled;
@@ -223,7 +226,7 @@ export class SocketClient<
       });
 
       if (this.#shouldLog("open")) {
-        const target = <WebSocket>ev.target;
+        const target = ev.target as WebSocket;
         console.info("WebSocket connected", {
           url: target.url,
         });
@@ -240,7 +243,7 @@ export class SocketClient<
         this.#saveData(ev);
 
         if (this.#shouldLog("message")) {
-          const target = <WebSocket>ev.target;
+          const target = ev.target as WebSocket;
           console.log("WebSocket message received", {
             data: ev.data,
             url: target.url,
@@ -248,7 +251,7 @@ export class SocketClient<
         }
       } catch (err) {
         if (this.#shouldLog("error")) {
-          const target = <WebSocket>ev.target;
+          const target = ev.target as WebSocket;
 
           console.error("WebSocket connection error", {
             data: ev.data,
@@ -287,15 +290,15 @@ export class SocketClient<
   #saveData = async ({ type, data }: SocketData) => {
     if (type === "binary") {
       if (this.binaryType === "arraybuffer") {
-        data = arrayBufferToBlob(<ArrayBuffer>data);
+        data = arrayBufferToBlob(data as ArrayBuffer);
       }
 
       if (this.binaryType === "blob") {
-        data = await blobToJson(<Blob>data);
+        data = await blobToJson(data as Blob);
       }
     }
 
-    this.cache.set(this.path, <string>data);
+    this.cache.set(this.path, data as string);
   };
 
   #setState = (newState: Partial<SocketClient<Get, Params, Post>>) => {
@@ -334,8 +337,8 @@ export class SocketClient<
   };
 
   #shouldRetryOnClose = (event: CloseEvent): boolean => {
-    const target = <WebSocket>event.target;
-    const errorCode = <SocketCloseCode>event.code;
+    const target = event.target as WebSocket;
+    const errorCode = event.code as SocketCloseCode;
     const reason = SocketCloseReason[errorCode];
 
     if (this.#shouldLog("close")) {
@@ -399,7 +402,7 @@ export class SocketClient<
   send = (payload: Post) => {
     if (this.ws?.readyState === WebSocket.OPEN) {
       if (this.#encryptPayload && this.#encrypt) {
-        payload = <Post>this.#encrypt(payload);
+        payload = this.#encrypt(payload) as Post;
       }
 
       this.ws.send(JSON.stringify(payload));
@@ -444,14 +447,15 @@ export class SocketClient<
       };
 
       this.ws?.addEventListener(state, handleResolution, { once: true });
+      const countdown = time(timeout);
 
       const handleRejection = () => {
         handleClearTimeout();
-        const message = `WebSocket did not reach state "${state}" within ${timeout}ms.`;
+        const message = `WebSocket did not reach state "${state}" within ${countdown}ms.`;
         reject(new Error(message));
       };
 
-      timerId = setTimeout(handleRejection, time(timeout));
+      timerId = setTimeout(handleRejection, countdown);
     });
   }
 

@@ -95,6 +95,6 @@ export const SocketCloseCode = Object.freeze({
   TLS_HANDSHAKE_FAIL: 1015,
 });
 
-export type SocketCloseCode = typeof SocketCloseCode;
-export type SocketCloseCodes = SocketCloseCode[keyof SocketCloseCode];
+export type SocketCloseEnum = typeof SocketCloseCode;
+export type SocketCloseCode = SocketCloseEnum[keyof SocketCloseEnum];
 export type SocketCode = SocketCloseCode | (number & {});

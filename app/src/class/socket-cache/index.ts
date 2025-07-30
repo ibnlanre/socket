@@ -80,7 +80,7 @@ export class SocketCache<State = unknown> {
       const data = await response.json();
 
       if (this.#decryptData && this.#decrypt) {
-        return <State>this.#decrypt(data);
+        return this.#decrypt(data) as State;
       }
 
       return data;
@@ -117,17 +117,17 @@ export class SocketCache<State = unknown> {
   };
 
   set = async (path: string, value: string): Promise<void> => {
-    let data = <State>JSON.parse(value);
+    let data = JSON.parse(value) as State;
 
     if (this.#decryptData && this.#decrypt) {
-      data = <State>this.#decrypt(data);
+      data = this.#decrypt(data) as State;
     }
 
     if (this.#setStateAction) {
       data = this.#setStateAction(data, this.#state);
 
       if (this.#encrypt) {
-        data = <State>this.#encrypt(data);
+        data = this.#encrypt(data) as State;
       }
 
       value = JSON.stringify(data);

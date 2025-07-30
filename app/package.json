@@ -9,7 +9,7 @@
     "push": "git push origin v$npm_package_version",
     "package": "npm publish --access public",
     "release": "npm run package && npm run tag && npm run push",
-    "test": "vitest --typecheck",
+    "test": "vitest --run --typecheck",
     "test:ui": "vitest --typecheck --ui"
   },
   "main": "dist/index.cjs",
@@ -47,6 +47,18 @@
     "state-management",
     "react"
   ],
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.4",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/ui": "^3.2.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.4"
+  },
   "peerDependencies": {
     "react": ">=16.8.0",
     "react-dom": ">=16.8.0"
