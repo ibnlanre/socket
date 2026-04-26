@@ -7,7 +7,7 @@ import type { SocketSchema } from "./schema";
 
 export interface SocketConstructor<Get = unknown, Post = never, Params = never>
   extends
-    SocketDataHandlingOptions<Get, Post>,
+    SocketDataHandlingOptions<Get>,
     SocketCacheOptions,
     SocketLoggingOptions,
     SocketReconnectOptions {

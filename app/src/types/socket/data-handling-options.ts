@@ -1,7 +1,19 @@
+import type { UnitValue } from "@/types/time-unit";
 import type { SocketCipher } from "./cipher";
 import type { SocketSetStateAction } from "./set-state-action";
 
-export interface SocketDataHandlingOptions<Get = unknown, Post = never> {
+export interface SocketDataHandlingOptions<Get = unknown> {
+  /**
+   * Collapse identical outbound payloads sent within this window into a single
+   * wire message. Callers sharing the same socket instance will all observe the
+   * shared response without each triggering a separate server round-trip.
+   *
+   * Set to `0` or omit to disable deduplication.
+   *
+   * @default 0
+   */
+  deduplicationWindow?: UnitValue;
+
   /**
    * A function to decrypt the received data.
    */

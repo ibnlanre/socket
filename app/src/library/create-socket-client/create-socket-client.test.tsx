@@ -530,4 +530,282 @@ describe("createSocketClient", () => {
       errorClient.closeAll();
     });
   });
+
+  describe("send (deduplication)", () => {
+    const sendConfig = {
+      ...mockConfig,
+      deduplicationWindow: 100,
+      sendSchema: z.object({ event: z.string() }),
+      messageSchema: z.object({
+        timestamp: z.number(),
+        message: z.string().optional(),
+        error: z.string().optional(),
+        echo: z.object({ event: z.string() }).optional(),
+      }),
+    };
+
+    it("should send the payload and return true on first call", async () => {
+      const schemaClient = createSocketClient(sendConfig);
+      const socket = schemaClient.get();
+      socket.open();
+      await socket.waitUntil("open");
+
+      expect(socket.send({ event: "ping" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+
+    it("should deduplicate identical payloads within the configured window", async () => {
+      const schemaClient = createSocketClient(sendConfig);
+      const socket = schemaClient.get();
+      socket.open();
+      await socket.waitUntil("open");
+
+      socket.send({ event: "ping" });
+      expect(socket.send({ event: "ping" })).toBe(false);
+
+      schemaClient.closeAll();
+    });
+
+    it("should not deduplicate when deduplicationWindow is 0", async () => {
+      const schemaClient = createSocketClient({
+        ...sendConfig,
+        deduplicationWindow: 0,
+      });
+      const socket = schemaClient.get();
+      socket.open();
+      await socket.waitUntil("open");
+
+      expect(socket.send({ event: "ping" })).toBe(true);
+      expect(socket.send({ event: "ping" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+
+    it("should send distinct payloads independently", async () => {
+      const schemaClient = createSocketClient(sendConfig);
+      const socket = schemaClient.get();
+      socket.open();
+      await socket.waitUntil("open");
+
+      expect(socket.send({ event: "ping" })).toBe(true);
+      expect(socket.send({ event: "pong" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+
+    it("should re-send after the deduplication window expires", async () => {
+      const schemaClient = createSocketClient({
+        ...sendConfig,
+        deduplicationWindow: 50,
+      });
+      const socket = schemaClient.get();
+      socket.open();
+      await socket.waitUntil("open");
+
+      socket.send({ event: "ping" });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(socket.send({ event: "ping" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+
+    it("should maintain separate dedup registries per socket instance", async () => {
+      const schemaClient = createSocketClient({
+        ...sendConfig,
+        paramsSchema: z.object({ userId: z.string().optional() }),
+      });
+
+      const socketA = schemaClient.get({ params: { userId: "a" } });
+      const socketB = schemaClient.get({ params: { userId: "b" } });
+      socketA.open();
+      socketB.open();
+      await Promise.all([socketA.waitUntil("open"), socketB.waitUntil("open")]);
+
+      expect(socketA.send({ event: "ping" })).toBe(true);
+      expect(socketB.send({ event: "ping" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+
+    it("should reset dedup state for a new socket after close", async () => {
+      const schemaClient = createSocketClient(sendConfig);
+      const socket = schemaClient.get();
+      socket.open();
+      await socket.waitUntil("open");
+
+      socket.send({ event: "ping" });
+      expect(socket.send({ event: "ping" })).toBe(false);
+
+      schemaClient.close();
+
+      const newSocket = schemaClient.get();
+      newSocket.open();
+      await newSocket.waitUntil("open");
+
+      expect(newSocket.send({ event: "ping" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+
+    it("should dedup a queued payload within the window after the socket opens and flushes", async () => {
+      const schemaClient = createSocketClient(sendConfig);
+      const socket = schemaClient.get();
+
+      // Queue before open — flush will record sentAt on the entry
+      socket.send({ event: "ping" });
+
+      socket.open();
+      await socket.waitUntil("open");
+
+      // Immediately after flush, the same payload is within the dedup window
+      expect(socket.send({ event: "ping" })).toBe(false);
+
+      schemaClient.closeAll();
+    });
+
+    it("should allow the same payload to be re-sent after the window expires post-flush", async () => {
+      const schemaClient = createSocketClient({
+        ...sendConfig,
+        deduplicationWindow: 50,
+      });
+      const socket = schemaClient.get();
+
+      socket.send({ event: "ping" });
+      socket.open();
+      await socket.waitUntil("open");
+
+      expect(socket.send({ event: "ping" })).toBe(false);
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(socket.send({ event: "ping" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+
+    it("should queue multiple identical sends before open and dispatch only one wire message", async () => {
+      const schemaClient = createSocketClient(sendConfig);
+      const socket = schemaClient.get();
+
+      // All three return true (no time-based dedup for pending entries)
+      expect(socket.send({ event: "ping" })).toBe(true);
+      expect(socket.send({ event: "ping" })).toBe(true);
+      expect(socket.send({ event: "ping" })).toBe(true);
+
+      socket.open();
+      await socket.waitUntil("open");
+
+      // The single flushed message should trigger exactly one echo
+      await waitFor(
+        () => {
+          expect(socket.value).toEqual(
+            expect.objectContaining({
+              echo: expect.objectContaining({ event: "ping" }),
+            })
+          );
+        },
+        { timeout: 5000 }
+      );
+
+      schemaClient.closeAll();
+    });
+
+    it("should accept deduplicationWindow as a UnitValue string", async () => {
+      const schemaClient = createSocketClient({
+        ...sendConfig,
+        deduplicationWindow: "50 milliseconds",
+      });
+      const socket = schemaClient.get();
+      socket.open();
+      await socket.waitUntil("open");
+
+      socket.send({ event: "ping" });
+      expect(socket.send({ event: "ping" })).toBe(false);
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(socket.send({ event: "ping" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+
+    it("should dedup a queued payload within the window after the socket opens and flushes", async () => {
+      const schemaClient = createSocketClient(sendConfig);
+      const socket = schemaClient.get();
+
+      // Queue before open — flush will record sentAt on the entry
+      socket.send({ event: "ping" });
+
+      socket.open();
+      await socket.waitUntil("open");
+
+      // Immediately after flush, the same payload is within the dedup window
+      expect(socket.send({ event: "ping" })).toBe(false);
+
+      schemaClient.closeAll();
+    });
+
+    it("should allow the same payload to be re-sent after the window expires post-flush", async () => {
+      const schemaClient = createSocketClient({
+        ...sendConfig,
+        deduplicationWindow: 50,
+      });
+      const socket = schemaClient.get();
+
+      socket.send({ event: "ping" });
+      socket.open();
+      await socket.waitUntil("open");
+
+      expect(socket.send({ event: "ping" })).toBe(false);
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(socket.send({ event: "ping" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+
+    it("should queue multiple identical sends before open and dispatch only one wire message", async () => {
+      const schemaClient = createSocketClient(sendConfig);
+      const socket = schemaClient.get();
+
+      // All three return true (no time-based dedup for pending entries)
+      expect(socket.send({ event: "ping" })).toBe(true);
+      expect(socket.send({ event: "ping" })).toBe(true);
+      expect(socket.send({ event: "ping" })).toBe(true);
+
+      socket.open();
+      await socket.waitUntil("open");
+
+      // The single flushed message should trigger exactly one echo
+      await waitFor(
+        () => {
+          expect(socket.value).toEqual(
+            expect.objectContaining({
+              echo: expect.objectContaining({ event: "ping" }),
+            })
+          );
+        },
+        { timeout: 5000 }
+      );
+
+      schemaClient.closeAll();
+    });
+
+    it("should accept deduplicationWindow as a UnitValue string", async () => {
+      const schemaClient = createSocketClient({
+        ...sendConfig,
+        deduplicationWindow: "50 milliseconds",
+      });
+      const socket = schemaClient.get();
+      socket.open();
+      await socket.waitUntil("open");
+
+      socket.send({ event: "ping" });
+      expect(socket.send({ event: "ping" })).toBe(false);
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(socket.send({ event: "ping" })).toBe(true);
+
+      schemaClient.closeAll();
+    });
+  });
 });

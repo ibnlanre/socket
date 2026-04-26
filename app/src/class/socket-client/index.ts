@@ -8,6 +8,7 @@ import { arrayBufferToBlob } from "@/functions/array-buffer-to-blob";
 import { blobToJson } from "@/functions/blob-to-json";
 import { extractOrigin } from "@/functions/extract-origin";
 import { extractPathname } from "@/functions/extract-pathname";
+import { paramsSerializer } from "@/functions/params-serializer";
 import { shallowClone } from "@/functions/shallow-clone";
 import { time } from "@/functions/time";
 import { getUri } from "@/library/get-uri";
@@ -70,7 +71,13 @@ export class SocketClient<
   #subscribers: Set<SocketClientSubscriber<Get, Post, Params>> = new Set();
   #reconnectionTimerId: SocketTimeout = undefined;
   #messageSchema?: SocketConstructor<Get, Post, Params>["messageSchema"];
-  #pendingPayloads: Post[] = [];
+  #deduplicationWindow: number;
+  /**
+   * Unified outbound queue and deduplication registry.
+   * sentAt === 0  → payload is queued, waiting for the socket to open.
+   * sentAt  > 0  → payload was dispatched at that timestamp; used for dedup.
+   */
+  #sends: Map<string, { payload: Post; sentAt: number }> = new Map();
   #sendSchema?: SocketConstructor<Get, Post, Params>["sendSchema"];
 
   constructor(
@@ -80,6 +87,7 @@ export class SocketClient<
       clearCacheOnClose = false,
       decrypt,
       decryptData = true,
+      deduplicationWindow = 0,
       disableCache = false,
       encrypt,
       encryptPayload = true,
@@ -109,9 +117,10 @@ export class SocketClient<
       setStateAction,
       url,
     }: SocketConstructor<Get, Post, Params>,
-    params
+    params = {} as Params
   ) {
     this.#clearCacheOnClose = clearCacheOnClose;
+    this.#deduplicationWindow = time(deduplicationWindow);
     this.#encrypt = encrypt;
     this.#encryptPayload = encryptPayload;
     this.#href = getUri({ baseURL, url, params });
@@ -322,12 +331,13 @@ export class SocketClient<
   };
 
   #flushPendingPayloads = () => {
-    while (
-      this.ws?.readyState === WebSocket.OPEN &&
-      this.#pendingPayloads.length
-    ) {
-      const payload = this.#pendingPayloads.shift()!;
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const now = Date.now();
+
+    for (const [key, { sentAt, payload }] of this.#sends) {
+      if (sentAt > 0) continue;
       this.#dispatchPayload(payload);
+      this.#sends.set(key, { payload, sentAt: now });
     }
   };
 
@@ -428,15 +438,27 @@ export class SocketClient<
     this.#connect();
   };
 
-  send = (payload: Post) => {
+  send = (payload: Post): boolean => {
     payload = this.#parseSendPayload(payload);
+
+    const window = this.#deduplicationWindow;
+    const key = paramsSerializer(payload as ConnectionParams);
+    const now = Date.now();
+
+    const { sentAt = 0 } = { ...this.#sends.get(key) };
+    if (window > 0 && now - sentAt < window) return false;
 
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.#dispatchPayload(payload);
-      return;
+      this.#sends.set(key, { payload, sentAt: now });
+    } else {
+      // Queue: new entries are appended; expired entries are moved to the end
+      // so they flush in the order they were re-requested.
+      if (sentAt > 0) this.#sends.delete(key);
+      this.#sends.set(key, { payload, sentAt: 0 });
     }
 
-    this.#pendingPayloads.push(payload);
+    return true;
   };
 
   #parseSendPayload = (payload: Post): Post => {
