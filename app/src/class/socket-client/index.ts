@@ -14,6 +14,7 @@ import { getUri } from "@/library/get-uri";
 
 import type { ConnectionParams } from "@/types/connection-params";
 import type { SocketCipher } from "@/types/socket/cipher";
+import type { SocketClientSubscriber } from "@/types/socket/client-subscriber";
 import type { SocketConnectionEvent } from "@/types/socket/connection-event";
 import type { SocketConstructor } from "@/types/socket/constructor";
 import type { SocketData } from "@/types/socket/data";
@@ -25,8 +26,8 @@ import type { UnitValue } from "@/types/time-unit";
 
 export class SocketClient<
   Get = unknown,
+  Post = never,
   Params extends ConnectionParams = never,
-  Post = never
 > {
   binaryType: "blob" | "arraybuffer" = "blob";
   cache: SocketCache<Get>;
@@ -51,7 +52,6 @@ export class SocketClient<
   #href: string;
   #idleConnectionTimeout: number;
   #idleConnectionTimerId: SocketTimeout = undefined;
-  #initialPayload?: Post;
   #log: SocketConnectionEvent[];
   #logCondition: (logType: SocketConnectionEvent) => boolean;
   #retry: boolean;
@@ -67,9 +67,11 @@ export class SocketClient<
   #retryBackoffStrategy: "fixed" | "exponential";
   #retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
   #retryOnSpecificCloseCodes: SocketCode[];
-  #subscribers: Set<Function> = new Set();
+  #subscribers: Set<SocketClientSubscriber<Get, Post, Params>> = new Set();
   #reconnectionTimerId: SocketTimeout = undefined;
-  #enabled: boolean;
+  #messageSchema?: SocketConstructor<Get, Post, Params>["messageSchema"];
+  #pendingPayloads: Post[] = [];
+  #sendSchema?: SocketConstructor<Get, Post, Params>["sendSchema"];
 
   constructor(
     {
@@ -79,17 +81,17 @@ export class SocketClient<
       decrypt,
       decryptData = true,
       disableCache = false,
-      enabled = true,
       encrypt,
       encryptPayload = true,
       idleConnectionTimeout = "5 minutes",
-      initialPayload,
+      messageSchema,
       log = ["open", "close", "error"],
       logCondition = () => process.env.NODE_ENV === "development",
       maxCacheAge = "15 minutes",
       maxJitterValue = 1.2,
       maxRetryDelay = "1 minute",
       minJitterValue = 0.8,
+      sendSchema,
       placeholderData,
       protocols = [],
       reconnectOnNetworkRestore = true,
@@ -106,21 +108,21 @@ export class SocketClient<
       retryOnCustomCondition,
       setStateAction,
       url,
-    }: SocketConstructor<Get, Post>,
-    params = {} as Params
+    }: SocketConstructor<Get, Post, Params>,
+    params
   ) {
     this.#clearCacheOnClose = clearCacheOnClose;
-    this.#enabled = enabled;
     this.#encrypt = encrypt;
     this.#encryptPayload = encryptPayload;
     this.#href = getUri({ baseURL, url, params });
     this.#idleConnectionTimeout = time(idleConnectionTimeout);
-    this.#initialPayload = initialPayload;
+    this.#messageSchema = messageSchema;
     this.#log = log;
     this.#logCondition = logCondition;
     this.#maxJitterValue = maxJitterValue;
     this.#maxRetryDelay = time(maxRetryDelay);
     this.#minJitterValue = minJitterValue;
+    this.#sendSchema = sendSchema;
     this.path = extractPathname(this.#href);
     this.#protocols = protocols;
     this.#reconnectOnNetworkRestore = reconnectOnNetworkRestore;
@@ -143,7 +145,7 @@ export class SocketClient<
       setStateAction,
     });
 
-    if (placeholderData) {
+    if (placeholderData !== undefined) {
       this.#setState({ value: placeholderData, isPlaceholderData: true });
     }
   }
@@ -214,7 +216,7 @@ export class SocketClient<
     });
 
     this.ws.onopen = (ev: Event) => {
-      if (this.#initialPayload) this.send(this.#initialPayload);
+      this.#flushPendingPayloads();
 
       this.#setState({
         binaryType: this.binaryType,
@@ -298,10 +300,38 @@ export class SocketClient<
       }
     }
 
-    this.cache.set(this.path, data as string);
+    const payload = this.#parseMessage(data as string);
+    this.cache.set(this.path, payload);
   };
 
-  #setState = (newState: Partial<SocketClient<Get, Params, Post>>) => {
+  #parseMessage = (payload: string): string => {
+    if (!this.#messageSchema) return payload;
+
+    const result = this.#messageSchema.safeParse(JSON.parse(payload));
+    if (result.success) return JSON.stringify(result.data);
+
+    throw new Error(result.error.message);
+  };
+
+  #dispatchPayload = (payload: Post) => {
+    if (this.#encryptPayload && this.#encrypt) {
+      payload = this.#encrypt(payload) as Post;
+    }
+
+    this.ws?.send(JSON.stringify(payload));
+  };
+
+  #flushPendingPayloads = () => {
+    while (
+      this.ws?.readyState === WebSocket.OPEN &&
+      this.#pendingPayloads.length
+    ) {
+      const payload = this.#pendingPayloads.shift()!;
+      this.#dispatchPayload(payload);
+    }
+  };
+
+  #setState = (newState: Partial<SocketClient<Get, Post, Params>>) => {
     for (const key in newState) this[key] = newState[key];
     this.#notifySubscribers();
   };
@@ -386,9 +416,8 @@ export class SocketClient<
     this.#eventListeners.set(event, callback);
   };
 
-  open = () => {
-    if (!this.#enabled) return;
-    if (this.ws) return;
+  open = (enabled: boolean = true) => {
+    if (!enabled || this.ws) return;
 
     this.#cleanup();
     this.cache.subscribe(this.#setValue);
@@ -400,16 +429,29 @@ export class SocketClient<
   };
 
   send = (payload: Post) => {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      if (this.#encryptPayload && this.#encrypt) {
-        payload = this.#encrypt(payload) as Post;
-      }
+    payload = this.#parseSendPayload(payload);
 
-      this.ws.send(JSON.stringify(payload));
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.#dispatchPayload(payload);
+      return;
     }
+
+    this.#pendingPayloads.push(payload);
   };
 
-  subscribe = (listener: Function, immediate = true) => {
+  #parseSendPayload = (payload: Post): Post => {
+    if (!this.#sendSchema) return payload;
+
+    const result = this.#sendSchema.safeParse(payload);
+    if (result.success) return result.data;
+
+    throw new Error(result.error.message);
+  };
+
+  subscribe = (
+    listener: (client: SocketClient<Get, Post, Params>) => void,
+    immediate = true
+  ) => {
     clearTimeout(this.#idleConnectionTimerId);
 
     if (!this.#subscribers.has(listener)) {
@@ -435,7 +477,25 @@ export class SocketClient<
   ): Promise<void> {
     let timerId: SocketTimeout;
 
+    const hasReachedState = () => {
+      switch (state) {
+        case "open":
+          return this.isConnected;
+        case "message":
+          return this.isSuccess;
+        case "close":
+          return this.isIdle || this.isDisconnected || this.ws === null;
+        case "error":
+          return this.isError;
+      }
+    };
+
     return new Promise((resolve, reject) => {
+      if (hasReachedState()) {
+        resolve();
+        return;
+      }
+
       const handleClearTimeout = () => {
         clearTimeout(timerId);
         this.ws?.removeEventListener(state, handleResolution);

@@ -68,39 +68,41 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
 
 ## Usage
 
-### Creating a Socket Client
+### Create a client
 
-To create a socket client, use the `createSocketClient` function.
+Use `createSocketClient` to define a reusable socket client for one endpoint. Runtime schemas are optional, but when you provide them they validate data at runtime and drive TypeScript inference.
 
 ```tsx
 import { createSocketClient, SocketCloseCode } from "@ibnlanre/socket";
+import { z } from "zod";
 
-type StockMarketOverview = {
-  last_updated: string;
-  notifications: {
-    summary: {
-      status: string;
-      last_updated: string;
-      notifications: {
-        total_securities: string;
-        listed_contracts: string;
-        boards: Array<{ name: string; code: string; }>;
-      };
-      is_post_connection: string;
-    };
-  };
-};
-
-type StockMarketOverviewParams = {
-  currency?: string;
-};
-
-const client = createSocketClient<
-  StockMarketOverview,
-  StockMarketOverviewParams
->({
+const marketSummaryOverviewClient = createSocketClient({
   baseURL: "wss://new.base.url/",
   url: "/ws/new-endpoint/market_overview/unique_id",
+  paramsSchema: z.object({
+    currency_code: z.string().optional(),
+  }),
+  sendSchema: z.object({
+    type: z.literal("subscribe"),
+    currency_code: z.string().optional(),
+  }),
+  messageSchema: z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("success"),
+      data: z.object({
+        messages: z.object({
+          summary: z.object({
+            status: z.string(),
+          }),
+        }),
+      }),
+    }),
+    z.object({
+      type: z.literal("error"),
+      message: z.string(),
+    }),
+  ]),
+  retry: true,
   retryDelay: 2000,
   minJitterValue: 0.9,
   retryCount: 5,
@@ -118,6 +120,9 @@ The `createSocketClient` function accepts a configuration object with the follow
 **General**
 - `baseURL`: The base URL of the WebSocket server.
 - `url`: The endpoint URL for the WebSocket connection.
+- `messageSchema`: A runtime schema for websocket messages received from the server. It also becomes the inferred message type for `value`, `select`, and subscribers.
+- `paramsSchema`: A runtime schema for URL params passed through the client options object. It also becomes the inferred params type for `use`, `initialize`, and `cleanup`.
+- `sendSchema`: A runtime schema for messages sent through `send`. It also becomes the inferred payload type for those calls.
 - `enabled` (default: `true`): Whether to enable the WebSocket connection or not.
 - `protocols`: The protocols to use for the WebSocket connection.
 
@@ -132,8 +137,7 @@ The `createSocketClient` function accepts a configuration object with the follow
 - `decryptData` (default: `false`): Whether to decrypt the received data or not.
 - `encrypt`: A function to encrypt the available data.
 - `encryptPayload` (default: `false`): Whether to encrypt the payload or not.
-- `initialPayload`: The initial payload to send when connecting.
-- `placeholderData`: The placeholder data to use while loading.
+- `placeholderData`: Seeds the socket with a complete message-shaped value before live data arrives. Your `select` function still runs against this value.
 - `setStateAction`: The reducer to construct the next state.
 
 **Logging**
@@ -158,92 +162,92 @@ The `createSocketClient` function accepts a configuration object with the follow
 
 Calling the `createSocketClient` function returns a client object with the following properties:
 
-- `initialize`: A function to initialize the socket client.
-- `use`: Subscribes to a data stream and returns the data, loading state, and error.
-- `sockets`: A map of WebSocket connections created by the client.
+- `get`: Returns the managed socket for a params key, creating it if needed.
+- `close`: Closes and removes one managed socket. Returns `true` when a socket existed.
+- `closeAll`: Closes and removes every managed socket created by the client.
+- `preset`: Returns the same options object, but keeps the selected data type attached so you can reuse the config cleanly.
+- `use`: React hook that subscribes to one managed socket and returns the socket instance plus a reactive `data` field.
 
-### Subscribing to a WebSocket Connection
+Multiple calls with the same params reuse the same underlying socket instance. Different params create different managed sockets.
 
-To subscribe to a WebSocket connection, use the `use` hook provided by the client object. This hook returns an object containing the data, status, metadata, and actions for managing the WebSocket connection.
+### React usage
+
+`client.use(...)` is the reactive entrypoint. It opens the managed socket on mount unless `enabled` is `false`, subscribes to state changes, and returns the socket instance merged with the selected `data`.
 
 ```tsx
-export default function App() {
-  const { data, isPending } = client.use({
-    params: { currency: "USD" },
-    select(data) {
-      if (!data) return { total_securities: 0, listed_contracts: 0, boards: [] };
-      return data.notifications;
-    }
+function socketOptions(currency_code?: string) {
+  return marketSummaryOverviewClient.preset({
+    params: { currency_code },
+    initialData: "Message not received yet",
+    select(response) {
+      if (!response) {
+        return "Message not received yet";
+      }
+
+      if (response.type === "error") {
+        return response.message;
+      }
+
+      return response.data.messages.summary.status;
+    },
   });
+}
 
-  if (isPending) return <div>Loading...</div>;
+export default function App() {
+  const options = socketOptions("USD");
+  const marketSummaryOverview = marketSummaryOverviewClient.use(options);
 
-  return (
-    <div>
-      <h1>Stock Market Overview</h1>
-      <p>Total Securities: {data.total_securities}</p>
-      <p>Listed Contracts: {data.listed_contracts}</p>
-      <p>Boards: {data.boards.map(({ name }) => name).join(", ")}</p>
-    </div>
-  );
+  return <div>{marketSummaryOverview.data}</div>;
 }
 ```
 
-### Parameters
+`use` accepts these options:
 
-The `use` hook accepts the following parameters:
+- `params`: Query params used to build the socket URL and cache key.
+- `enabled` defaulting to `true`: Stops `open()` from running until you are ready.
+- `select`: Maps the latest socket message into the shape your component wants.
+- `initialData`: Fallback for the selected return value before any socket message is available.
 
-- `params`: The parameters to pass to the WebSocket connection.
-- `select`: A function to transform the data before updating the component.
+`initialData` is for the selected output. `placeholderData` in the client config is different: it seeds the underlying socket with a full message-shaped value before live data arrives, and `select` still runs against it.
 
-### Returns
+### Imperative usage
 
-Calling the `use` hook subscribes to the WebSocket connection and returns the following properties:
+Imperative actions live on the socket instance itself. You can get that instance either through `client.get(...)` or from the object returned by `client.use(...)`.
 
-**Actions**
+```tsx
+const socket = marketSummaryOverviewClient.get({
+  params: { currency_code: "USD" },
+});
 
-- `close`: A function to close the WebSocket connection.
-- `open`: A function to open the WebSocket connection.
-- `send`: A function to send a message to the WebSocket server.
+socket.open();
+await socket.waitUntil("open");
+socket.send({
+  type: "subscribe",
+  currency_code: "USD",
+});
+```
 
-**Actions**
+The hook result exposes the same socket methods, so React code can stay local when needed:
 
-- `subscribe`: Subscribes to data changes and updates the component.
-- `on`: Subscribes to a specific WebSocket event.
-- `waitUntil`: Waits until a specific condition is met. Suitable for waiting for the connection to be established.
+```tsx
+function SubscribeOnOpen() {
+  const marketSummaryOverview = marketSummaryOverviewClient.use({
+    params: { currency_code: "USD" },
+    select: (response) => response,
+  });
 
-**State**
+  useEffect(() => {
+    marketSummaryOverview.waitUntil("open").then(() => {
+      marketSummaryOverview.send({
+        type: "subscribe",
+        currency_code: "USD",
+      });
+    });
+  }, [marketSummaryOverview]);
 
-- `value`: The data received from the WebSocket server.
-- `data`: The data received after transformation by the `select` function.
-- `ws`: The WebSocket object representing the connection.
-- `cache`: The cache object containing the data and metadata.
-
-**Status**
-
-- `isLoading`: A boolean indicating whether the data is loading or not.
-- `isPending`: A boolean indicating whether the data is available or not.
-- `isError`: A boolean indicating whether an error occurred or not.
-- `isSuccess`: A boolean indicating whether the data was received successfully or not.
-- `isStaleData`: A boolean indicating whether the data is stale or not.
-- `isPlaceholderData`: A boolean indicating whether the data is a placeholder or not.
-- `isRefetching`: A boolean indicating whether the data is being refetched or not.
-- `isRefetchError`: A boolean indicating whether an error occurred during refetching or not.
-- `isIdle`: A boolean indicating whether the WebSocket connection is inactive or not.
-- `isConnecting`: A boolean indicating whether the WebSocket connection is connecting or not.
-- `isConnected`: A boolean indicating whether the WebSocket connection is open or not.
-- `isDisconnected`: A boolean indicating whether the WebSocket connection is closed or not.
-
-**Metadata**
-
-- `error`: The error object containing the error message and details.
-- `fetchStatus`: The fetch status indicating the state of the data fetch.
-- `failureCount`: The number of times the data fetch has failed.
-- `failureReason`: The reason for the data fetch failure.
-- `path`: The path of the WebSocket connection.
-- `status`: The status of the WebSocket connection.
-- `dataUpdatedAt`: The timestamp when the data was last updated.
-- `errorUpdatedAt`: The timestamp when the error occurred.
+  return null;
+}
+```
 
 ## API Reference
 

@@ -1,11 +1,14 @@
 import type { SocketClient } from "@/class/socket-client";
 import type { ConnectionParams } from "./connection-params";
 
-export interface UseSocketResult<
+export type UseSocketResult<
   Get = unknown,
-  Params extends ConnectionParams = never,
   Post = never,
-  State = Get
-> extends SocketClient<Get, Params, Post> {
+  Params extends ConnectionParams = never,
+  State = Get,
+> = SocketClient<Get, Post, Params> & {
+  /**
+   * The latest data received from the socket.
+   */
   data: State;
-}
+};

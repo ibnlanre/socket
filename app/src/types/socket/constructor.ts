@@ -3,9 +3,11 @@ import type { SocketDataHandlingOptions } from "./data-handling-options";
 import type { SocketLoggingOptions } from "./logging-options";
 import type { SocketProtocolIdentifier } from "./protocol-identifier";
 import type { SocketReconnectOptions } from "./reconnect-options";
+import type { SocketSchema } from "./schema";
 
-export interface SocketConstructor<Get = unknown, Post = never>
-  extends SocketDataHandlingOptions<Get, Post>,
+export interface SocketConstructor<Get = unknown, Post = never, Params = never>
+  extends
+    SocketDataHandlingOptions<Get, Post>,
     SocketCacheOptions,
     SocketLoggingOptions,
     SocketReconnectOptions {
@@ -22,11 +24,19 @@ export interface SocketConstructor<Get = unknown, Post = never>
   url: string;
 
   /**
-   * Whether to enable the WebSocket connection or not
-   *
-   * @default true
+   * Validates and optionally transforms incoming websocket messages.
    */
-  enabled?: boolean;
+  messageSchema?: SocketSchema<Get>;
+
+  /**
+   * Validates and optionally transforms URL params used for the connection.
+   */
+  paramsSchema?: SocketSchema<Params>;
+
+  /**
+   * Validates and optionally transforms outbound messages before send.
+   */
+  sendSchema?: SocketSchema<Post>;
 
   /**
    * The protocols to use for the WebSocket connection

@@ -15,16 +15,16 @@ import { normalizeRelativeURL } from "../normalize-relative-url";
  * combineURLs("https://example.com", "api") => "https://example.com/api"
  */
 export function combineURLs(...urls: string[]): string {
-  const { baseURL, relativeURLs } = urls.reduce(
+  const { baseURL, relativeURLs } = urls.reduce<{
+    baseURL: string;
+    relativeURLs: string[];
+  }>(
     (acc, url) => {
       if (isAbsoluteURL(url)) acc.baseURL = url;
       else acc.relativeURLs.push(url);
       return acc;
     },
-    { baseURL: "", relativeURLs: [] } as {
-      baseURL: string;
-      relativeURLs: string[];
-    }
+    { baseURL: "", relativeURLs: [] }
   );
 
   if (urls.length) {

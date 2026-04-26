@@ -1,1 +1,1 @@
-export type SocketSelector<Get, State> = (data?: Get) => State;
+export type SocketSelector<Get, State> = (data: Get) => State;

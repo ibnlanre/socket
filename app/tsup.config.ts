@@ -7,6 +7,7 @@ const core: Options = {
   clean: true,
   entry: ["src/index.ts"],
   outDir: "dist",
+  tsconfig: "./tsconfig.json",
   treeshake: true,
 };
 

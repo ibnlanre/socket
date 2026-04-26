@@ -27,12 +27,7 @@ export interface SocketDataHandlingOptions<Get = unknown, Post = never> {
   encryptPayload?: boolean;
 
   /**
-   * The data to send to the WebSocket server on connection
-   */
-  initialPayload?: Post;
-
-  /**
-   * The initial state of the WebSocket connection
+   * Seeds the socket with its initial value before live data arrives.
    */
   placeholderData?: Get;
 
