@@ -12,14 +12,13 @@
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "noEmit": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noImplicitAny": false,
-    "baseUrl": "./",
     "verbatimModuleSyntax": true,
     "paths": {
-      "@/*": ["app/src/*"],
+      "@/*": ["./app/src/*"],
       "~/*": ["./*"]
     }
   }
