@@ -11,24 +11,30 @@
 
 `@ibnlanre/socket` is a fast, lightweight, and type-safe WebSocket client built to supercharge your developer experience (DX). Designed with a cache-first approach and flexible configuration, it makes managing WebSocket connections effortless and efficient.
 
-This library is optimized for delivering a superior user experience. Its cache-first design makes your app feel faster by providing instant access to stored data while fetching updates in the background. Meanwhile, the retry mechanism ensures uninterrupted real-time data flow, so your users never miss a beat.
+It is built for React apps that need a predictable way to open sockets, reuse them across components, validate messages, and recover cleanly from disconnects. You can use it declaratively through a hook or imperatively through the socket instance.
+
+In practice, the flow is simple: define one client per endpoint, let the library reuse sockets for identical params, and optionally add Zod schemas for runtime validation and type inference.
+
+This library targets browser-based React apps. It uses the browser `WebSocket` API and can persist cached payloads through the Cache API when that API is available. If the Cache API is unavailable, the socket still works, but cache persistence is skipped.
 
 ## Features
 
-- **Blazing-Fast Caching**: Keeps previously received data readily available, with background updates to ensure speed and freshness.
-- **Real-Time Data Streaming**: Seamlessly integrates live data updates into your app.
-- **Subscription Management**: Easy and intuitive APIs for managing multiple WebSocket subscriptions.
-- **Retry Mechanism**: Automatically re-establishes connections during network hiccups or server downtime to minimize disruptions.
+- **Cache-first state**: Surfaces previously received data quickly while fresh messages continue streaming in.
+- **React-friendly API**: Use one client through a hook for components or access the underlying socket directly when you need imperative control.
+- **Runtime-safe messaging**: Plug in Zod schemas to validate params, outgoing payloads, and incoming messages.
+- **Built-in reconnect behavior**: Retry with delays, backoff, jitter, and custom close-condition logic.
 
 ## Getting Started
 
-To get started with the `@ibnlanre/socket` library, follow these steps:
+To get started with `@ibnlanre/socket`:
 
-1. Install the library using a package manager.
-2. Create a socket client using the `createSocketClient` function.
-3. Use the client in your components to subscribe to data streams and handle updates.
+1. Install the package and its Zod peer dependency.
+2. Create a client for a single WebSocket endpoint.
+3. Use `client.use(...)` in React or `client.get(...)` when you want the socket instance directly.
 
 ## Installation
+
+`zod` is a peer dependency. Install both packages:
 
 <details open>
   <summary>
@@ -38,7 +44,7 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
   <br />
 
   ```bash
-  npm install @ibnlanre/socket
+  npm install @ibnlanre/socket zod
   ```
 </details>
 
@@ -50,7 +56,7 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
   <br />
 
   ```bash
-  yarn add @ibnlanre/socket
+  yarn add @ibnlanre/socket zod
   ```
 </details>
 
@@ -62,15 +68,44 @@ To get started with the `@ibnlanre/socket` library, follow these steps:
   <br />
 
   ```bash
-  pnpm install @ibnlanre/socket
+  pnpm add @ibnlanre/socket zod
   ```
 </details>
+
+## Quick start
+
+This is the smallest useful setup: create one client, call `use`, and render the selected data.
+
+```tsx
+import { createSocketClient } from "@ibnlanre/socket";
+
+const priceClient = createSocketClient<string>({
+  baseURL: "wss://example.com",
+  url: "/prices",
+});
+
+export function PriceTicker() {
+  const price = priceClient.use({
+    select: (message) => message,
+    initialData: "Waiting for price...",
+  });
+
+  return <div>{price.data}</div>;
+}
+```
+
+## Mental model
+
+- One client represents one WebSocket endpoint.
+- `client.use(...)` is the React entrypoint. It subscribes to a managed socket and returns reactive state plus socket methods.
+- `client.get(...)` gives you the managed socket instance for imperative actions like `open`, `send`, and `waitUntil`.
+- The same params reuse the same underlying socket. Different params create different managed sockets.
 
 ## Usage
 
 ### Create a client
 
-Use `createSocketClient` to define a reusable socket client for one endpoint. Runtime schemas are optional, but when you provide them they validate data at runtime and drive TypeScript inference.
+Use `createSocketClient` to define one reusable client for one endpoint. Runtime schemas are optional, but when you provide them they validate data at runtime and also drive TypeScript inference.
 
 ```tsx
 import { createSocketClient, SocketCloseCode } from "@ibnlanre/socket";
@@ -108,19 +143,32 @@ const marketSummaryOverviewClient = createSocketClient({
   retryCount: 5,
   retryOnSpecificCloseCodes: [SocketCloseCode.AbnormalClosure],
   retryOnCustomCondition: (event, socket) => {
-    return event.code === SocketCloseCode.PROTOCOL_ERROR
+    return event.code === SocketCloseCode.PROTOCOL_ERROR;
   },
 });
 ```
 
+### What `use(...)` gives you back
+
+The hook returns the socket instance plus a reactive `data` field.
+
+- `data`: The selected value returned by your `select` function, or `initialData` before a message arrives.
+- `value`: The latest full socket message after schema parsing.
+- `status`: One of `loading`, `success`, `error`, `idle`, or `stale`.
+- `fetchStatus`: One of `idle`, `connecting`, `connected`, or `disconnected`.
+- `isIdle`, `isConnecting`, `isConnected`, `isDisconnected`: Derived connection flags.
+- `isLoading`, `isSuccess`, `isError`, `isPending`, `isRefetching`, `isRefetchError`, `isStaleData`: Derived state flags.
+- `failureCount`, `failureReason`, `error`, `dataUpdatedAt`, `errorUpdatedAt`: Useful connection and failure metadata.
+- `open`, `close`, `send`, `subscribe`, `waitUntil`, `on`: Imperative socket methods when you need them.
+
 ### Parameters
 
-The `createSocketClient` function accepts a configuration object with the following properties:
+`createSocketClient` accepts a configuration object with these options:
 
 **General**
 - `baseURL`: The base URL of the WebSocket server.
 - `url`: The endpoint URL for the WebSocket connection.
-- `messageSchema`: A runtime schema for websocket messages received from the server. It also becomes the inferred message type for `value`, `select`, and subscribers.
+- `messageSchema`: A runtime schema for WebSocket messages received from the server. It also becomes the inferred message type for `value`, `select`, and subscribers.
 - `paramsSchema`: A runtime schema for URL params passed through the client options object. It also becomes the inferred params type for `use`, `initialize`, and `cleanup`.
 - `sendSchema`: A runtime schema for messages sent through `send`. It also becomes the inferred payload type for those calls.
 - `enabled` (default: `true`): Whether to enable the WebSocket connection or not.
@@ -144,7 +192,7 @@ The `createSocketClient` function accepts a configuration object with the follow
 - `log`: The events to log in the console.
 - `logCondition`: A custom condition for logging.
 
-**Retrial**
+**Retry and reconnect**
 - `retry` (default: `true`): Whether to retry the WebSocket connection or not.
 - `retryDelay` (default: `5secs`): The delay before retrying the WebSocket connection.
 - `retryCount` (default: `3`): The number of times to retry the WebSocket connection.
@@ -160,7 +208,7 @@ The `createSocketClient` function accepts a configuration object with the follow
 
 ### Returns
 
-Calling the `createSocketClient` function returns a client object with the following properties:
+Calling `createSocketClient` returns a client with these methods:
 
 - `get`: Returns the managed socket for a params key, creating it if needed.
 - `close`: Closes and removes one managed socket. Returns `true` when a socket existed.
@@ -253,7 +301,7 @@ function SubscribeOnOpen() {
 
 <details>
   <summary>
-    <code>SocketCloseCode</code>: An enumuration representing the WebSocket close codes.
+    <code>SocketCloseCode</code>: An enumeration of WebSocket close codes.
   </summary>
 
   ### Example
