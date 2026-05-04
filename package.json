@@ -1,44 +1,19 @@
 {
+  "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --fix",
-    "parcel": "parcel ./tests/index.tsx",
-    "webpack": "webpack",
-    "esbuild": "esbuild ./tests/index.tsx --bundle --outfile=dist/bundle.js --minify --sourcemap"
-  },
-  "dependencies": {
-    "@babel/preset-env": "^7.28.5",
-    "@babel/preset-react": "^7.28.5",
-    "babel-loader": "^10.0.0",
-    "clsx": "^2.1.1",
-    "next": "^14.2.30",
-    "nextra": "^3.3.1",
-    "nextra-theme-docs": "^3.3.1",
-    "preact": "^10.28.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "tailwindcss": "^3.4.17",
-    "webpack": "^5.104.1"
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@next/third-parties": "^14.2.30",
     "@playwright/test": "^1.54.1",
-    "@testing-library/dom": "^10.4.1",
-    "@testing-library/react": "^16.3.0",
-    "@types/node": "22.7.7",
-    "@types/react": "^18.3.23",
-    "@types/react-dom": "^18.3.7",
-    "@vercel/speed-insights": "^1.2.0",
-    "autoprefixer": "^10.4.21",
-    "esbuild": "^0.27.2",
+    "@types/node": "^22.12.0",
+    "@types/ws": "^8.18.1",
     "jsdom": "^25.0.1",
     "msw": "^2.10.4",
-    "parcel": "^2.16.3",
-    "postcss": "^8.5.6",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
-    "vite": "^7.0.6",
-    "webpack-cli": "^6.0.1"
+    "ws": "^8.18.3"
   },
   "license": "BSD-3-Clause"
 }

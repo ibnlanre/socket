@@ -19,6 +19,13 @@ export interface SocketConstructor<Get = unknown, Post = never, Params = never>
   baseURL?: string;
 
   /**
+   * Preferred binary frame representation for the managed WebSocket.
+   *
+   * @default "blob"
+   */
+  binaryType?: "blob" | "arraybuffer";
+
+  /**
    * The URL to connect to
    */
   url: string;

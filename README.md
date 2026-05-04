@@ -94,6 +94,14 @@ export function PriceTicker() {
 }
 ```
 
+## End-to-End Testing
+
+The browser-level e2e test is meant to validate the socket library itself, not a separate demo surface. It drives the example app in `app/example` and connects that app to a real local WebSocket test server.
+
+```bash
+pnpm test:e2e
+```
+
 ## Mental model
 
 - One client represents one WebSocket endpoint.

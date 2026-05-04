@@ -11,6 +11,10 @@ export { getUri } from "./library/get-uri";
 export type { SocketCacheOptions } from "./types/socket/cache-options";
 export type { SocketConnectionEvent } from "./types/socket/connection-event";
 export type { SocketConstructor } from "./types/socket/constructor";
+export type {
+  SocketMessageFailureAction,
+  SocketMessageFailurePolicy,
+} from "./types/socket/data-handling-options";
 export type { SocketFetchStatus } from "./types/socket/fetch-status";
 export type { InferSocketSchema } from "./types/socket/infer-schema";
 export type { SocketListener } from "./types/socket/listener";

@@ -19,11 +19,21 @@ import type { SocketClientSubscriber } from "@/types/socket/client-subscriber";
 import type { SocketConnectionEvent } from "@/types/socket/connection-event";
 import type { SocketConstructor } from "@/types/socket/constructor";
 import type { SocketData } from "@/types/socket/data";
+import type {
+  SocketMessageFailureAction,
+  SocketMessageFailurePolicy,
+} from "@/types/socket/data-handling-options";
 import type { SocketFetchStatus } from "@/types/socket/fetch-status";
 import type { SocketListener } from "@/types/socket/listener";
 import type { SocketStatus } from "@/types/socket/status";
 import type { SocketTimeout } from "@/types/socket/timeout";
 import type { UnitValue } from "@/types/time-unit";
+
+type SocketMessageFailureStage = keyof Required<SocketMessageFailurePolicy>;
+type SocketMessageFailure = Error & {
+  closeCode: SocketCloseCode;
+  stage: SocketMessageFailureStage;
+};
 
 export class SocketClient<
   Get = unknown,
@@ -71,7 +81,9 @@ export class SocketClient<
   #subscribers: Set<SocketClientSubscriber<Get, Post, Params>> = new Set();
   #reconnectionTimerId: SocketTimeout = undefined;
   #messageSchema?: SocketConstructor<Get, Post, Params>["messageSchema"];
+  #messageFailurePolicy: Required<SocketMessageFailurePolicy>;
   #deduplicationWindow: number;
+  #preserveTerminalMetadata: boolean = false;
   /**
    * Unified outbound queue and deduplication registry.
    * sentAt === 0  → payload is queued, waiting for the socket to open.
@@ -83,6 +95,7 @@ export class SocketClient<
   constructor(
     {
       baseURL = "",
+      binaryType = "blob",
       cacheKey,
       clearCacheOnClose = false,
       decrypt,
@@ -92,6 +105,7 @@ export class SocketClient<
       encrypt,
       encryptPayload = true,
       idleConnectionTimeout = "5 minutes",
+      messageFailurePolicy,
       messageSchema,
       log = ["open", "close", "error"],
       logCondition = () => process.env.NODE_ENV === "development",
@@ -119,6 +133,7 @@ export class SocketClient<
     }: SocketConstructor<Get, Post, Params>,
     params = {} as Params
   ) {
+    this.binaryType = binaryType;
     this.#clearCacheOnClose = clearCacheOnClose;
     this.#deduplicationWindow = time(deduplicationWindow);
     this.#encrypt = encrypt;
@@ -126,6 +141,12 @@ export class SocketClient<
     this.#href = getUri({ baseURL, url, params });
     this.#idleConnectionTimeout = time(idleConnectionTimeout);
     this.#messageSchema = messageSchema;
+    this.#messageFailurePolicy = {
+      decode: "close",
+      parse: "recover",
+      validation: "recover",
+      ...messageFailurePolicy,
+    };
     this.#log = log;
     this.#logCondition = logCondition;
     this.#maxJitterValue = maxJitterValue;
@@ -180,16 +201,31 @@ export class SocketClient<
     }
   };
 
-  #cleanup = () => {
+  #cleanup = ({
+    preserveError = false,
+    preserveFailure = false,
+  }: {
+    preserveError?: boolean;
+    preserveFailure?: boolean;
+  } = {}) => {
     clearTimeout(this.#reconnectionTimerId);
 
     this.#cleanupEventListeners();
+    this.#preserveTerminalMetadata = false;
     this.#setState({
       fetchStatus: "idle",
-      failureReason: null,
-      failureCount: 0,
-      error: null,
-      errorUpdatedAt: 0,
+      ...(preserveFailure
+        ? {}
+        : {
+            failureReason: null,
+            failureCount: 0,
+          }),
+      ...(preserveError
+        ? {}
+        : {
+            error: null,
+            errorUpdatedAt: 0,
+          }),
     });
   };
 
@@ -212,7 +248,7 @@ export class SocketClient<
 
   #cleanupWindowFocusListener = () => {
     if (this.#focusListener) {
-      window.removeEventListener("focus", this.#focusListener);
+      window.removeEventListener("focus", this.#focusListener, true);
       this.#focusListener = null;
     }
   };
@@ -244,14 +280,16 @@ export class SocketClient<
       }
     };
 
-    this.ws.onmessage = (ev: MessageEvent) => {
-      this.#setState({
-        status: "success",
-        dataUpdatedAt: Date.now(),
-      });
-
+    this.ws.onmessage = async (ev: MessageEvent) => {
       try {
-        this.#saveData(ev);
+        await this.#saveData(ev);
+
+        this.#setState({
+          status: "success",
+          dataUpdatedAt: Date.now(),
+          error: null,
+          errorUpdatedAt: 0,
+        });
 
         if (this.#shouldLog("message")) {
           const target = ev.target as WebSocket;
@@ -270,12 +308,54 @@ export class SocketClient<
             error: err,
           });
         }
+
+        const error = err instanceof Error ? err : new Error(String(err));
+
+        this.#setState({
+          status: "error",
+          error,
+          errorUpdatedAt: Date.now(),
+        });
+
+        if (this.#getMessageFailureAction(error) === "close") {
+          const closeCode = this.#getMessageFailureCode(error);
+
+          this.#preserveTerminalMetadata = true;
+          this.#setState({
+            failureReason: SocketCloseReason[closeCode] ?? error.message,
+            failureCount: this.failureCount + 1,
+          });
+
+          this.ws?.close();
+        }
       }
     };
 
     this.ws.onclose = (event: CloseEvent) => {
-      if (event.wasClean) return this.#cleanup();
-      if (this.#shouldRetryOnClose(event)) this.#reconnect();
+      this.ws = null;
+      clearTimeout(this.#reconnectionTimerId);
+      this.#setState({ fetchStatus: "disconnected" });
+
+      if (this.#clearCacheOnClose) {
+        this.cache.remove(this.path);
+      }
+
+      if (event.wasClean) {
+        return this.#cleanup({
+          preserveError: this.#preserveTerminalMetadata,
+          preserveFailure: this.#preserveTerminalMetadata,
+        });
+      }
+
+      if (this.#shouldRetryOnClose(event)) {
+        this.#reconnect();
+        return;
+      }
+
+      this.#cleanup({
+        preserveError: this.#preserveTerminalMetadata,
+        preserveFailure: this.#preserveTerminalMetadata,
+      });
     };
 
     this.ws.onerror = (event: Event) => {
@@ -298,28 +378,75 @@ export class SocketClient<
     this.#reconnectionTimerId = setTimeout(this.#connect, backoffDelay);
   };
 
-  #saveData = async ({ type, data }: SocketData) => {
-    if (type === "binary") {
-      if (this.binaryType === "arraybuffer") {
-        data = arrayBufferToBlob(data as ArrayBuffer);
-      }
-
-      if (this.binaryType === "blob") {
-        data = await blobToJson(data as Blob);
-      }
+  #decodeMessageData = async (data: SocketData["data"]): Promise<string> => {
+    try {
+      if (data instanceof ArrayBuffer) data = arrayBufferToBlob(data);
+      if (data instanceof Blob) return await blobToJson(data);
+      if (typeof data === "string") return data;
+    } catch (error) {
+      throw this.#createMessageFailure(error, "decode");
     }
 
-    const payload = this.#parseMessage(data as string);
+    throw this.#createMessageFailure(
+      new Error("Unsupported WebSocket payload type"),
+      "decode"
+    );
+  };
+
+  #saveData = async ({ data }: SocketData) => {
+    const payload = this.#parseMessage(await this.#decodeMessageData(data));
     this.cache.set(this.path, payload);
   };
 
   #parseMessage = (payload: string): string => {
-    if (!this.#messageSchema) return payload;
+    let parsed: unknown;
 
-    const result = this.#messageSchema.safeParse(JSON.parse(payload));
+    try {
+      parsed = JSON.parse(payload);
+    } catch (error) {
+      throw this.#createMessageFailure(error, "parse");
+    }
+
+    if (!this.#messageSchema) return JSON.stringify(parsed);
+
+    const result = this.#messageSchema.safeParse(parsed);
     if (result.success) return JSON.stringify(result.data);
 
-    throw new Error(result.error.message);
+    throw this.#createMessageFailure(
+      new Error(result.error.message),
+      "validation"
+    );
+  };
+
+  #createMessageFailure = (
+    error: unknown,
+    stage: SocketMessageFailureStage
+  ): SocketMessageFailure => {
+    const failure = error instanceof Error ? error : new Error(String(error));
+
+    const closeCode =
+      stage === "validation"
+        ? SocketCloseCode.POLICY_VIOLATION
+        : SocketCloseCode.INVALID_PAYLOAD_DATA;
+
+    return Object.assign(failure, {
+      closeCode,
+      stage,
+    });
+  };
+
+  #getMessageFailureCode = (error: Error): SocketCloseCode => {
+    if (this.#isMessageFailure(error)) return error.closeCode;
+    return SocketCloseCode.INVALID_PAYLOAD_DATA;
+  };
+
+  #getMessageFailureAction = (error: Error): SocketMessageFailureAction => {
+    if (!this.#isMessageFailure(error)) return "recover";
+    return this.#messageFailurePolicy[error.stage];
+  };
+
+  #isMessageFailure = (error: Error): error is SocketMessageFailure => {
+    return "closeCode" in error && "stage" in error;
   };
 
   #dispatchPayload = (payload: Post) => {
@@ -368,7 +495,7 @@ export class SocketClient<
       if (this.isIdle) this.#connect();
     };
 
-    window.addEventListener("focus", this.#focusListener);
+    window.addEventListener("focus", this.#focusListener, true);
   };
 
   #shouldLog = (event: SocketConnectionEvent): boolean => {
@@ -379,7 +506,8 @@ export class SocketClient<
   #shouldRetryOnClose = (event: CloseEvent): boolean => {
     const target = event.target as WebSocket;
     const errorCode = event.code as SocketCloseCode;
-    const reason = SocketCloseReason[errorCode];
+    const reason =
+      event.reason || SocketCloseReason[errorCode] || "Socket closed";
 
     if (this.#shouldLog("close")) {
       console.warn("WebSocket disconnected", {
@@ -393,7 +521,7 @@ export class SocketClient<
     if (this.#retry && this.failureCount < this.#retryCount) {
       this.#setState({
         fetchStatus: "disconnected",
-        failureReason: event.reason || reason,
+        failureReason: reason,
         failureCount: this.failureCount + 1,
         status: "idle",
       });
@@ -402,7 +530,17 @@ export class SocketClient<
       if (this.#retryOnSpecificCloseCodes.includes(errorCode)) return true;
     }
 
-    this.#cleanup();
+    if (!event.wasClean) {
+      this.#preserveTerminalMetadata = true;
+      this.#setState({
+        status: "error",
+        failureReason: reason,
+        failureCount: this.failureCount + 1,
+        error: this.error ?? new Error(reason),
+        errorUpdatedAt: this.errorUpdatedAt || Date.now(),
+      });
+    }
+
     return false;
   };
 
@@ -431,11 +569,14 @@ export class SocketClient<
 
     this.#cleanup();
     this.cache.subscribe(this.#setValue);
-    this.cache.initialize(this.path);
 
     this.#setupNetworkListener();
     this.#setupWindowFocusListener();
-    this.#connect();
+
+    void this.cache.initialize(this.path).finally(() => {
+      if (this.ws || this.#subscribers.size === 0) return;
+      this.#connect();
+    });
   };
 
   send = (payload: Post): boolean => {
@@ -493,10 +634,10 @@ export class SocketClient<
     };
   };
 
-  waitUntil(
+  waitUntil = (
     state: SocketConnectionEvent,
     timeout: UnitValue = "5 seconds"
-  ): Promise<void> {
+  ): Promise<void> => {
     let timerId: SocketTimeout;
 
     const hasReachedState = () => {
@@ -539,7 +680,7 @@ export class SocketClient<
 
       timerId = setTimeout(handleRejection, countdown);
     });
-  }
+  };
 
   get isError(): boolean {
     return this.status === "error";

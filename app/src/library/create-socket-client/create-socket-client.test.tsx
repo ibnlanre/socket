@@ -103,6 +103,39 @@ type TestParams = {
   room?: string;
 };
 
+async function connectManagedSocket<
+  TGet,
+  TPost,
+  TParams extends object,
+>(socket: {
+  open: () => void;
+  subscribe: (
+    listener: (state: { fetchStatus: string }) => void,
+    immediate?: boolean
+  ) => () => void;
+  fetchStatus: string;
+}) {
+  let resolveConnected: (() => void) | null = null;
+  const connected = new Promise<void>((resolve) => {
+    resolveConnected = resolve;
+  });
+
+  const unsubscribe = socket.subscribe((state) => {
+    if (state.fetchStatus === "connected") {
+      resolveConnected?.();
+      resolveConnected = null;
+    }
+  }, false);
+
+  socket.open();
+
+  if (socket.fetchStatus !== "connected") {
+    await connected;
+  }
+
+  return unsubscribe;
+}
+
 describe("createSocketClient", () => {
   const mockConfig = {
     baseURL: "wss://test.example.com",
@@ -133,6 +166,7 @@ describe("createSocketClient", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     client.closeAll();
   });
 
@@ -204,8 +238,13 @@ describe("createSocketClient", () => {
     });
 
     it("should stay idle when disabled", () => {
+      const binaryTypeClient = createSocketClient<TestData, never, TestParams>({
+        ...mockConfig,
+        binaryType: "arraybuffer",
+      });
+
       const { result } = renderHook(() =>
-        client.use({
+        binaryTypeClient.use({
           params: { userId: "123" },
           enabled: false,
           initialData: "waiting",
@@ -214,7 +253,11 @@ describe("createSocketClient", () => {
       );
 
       expect(result.current.data).toBe("waiting");
+      expect(result.current.binaryType).toBe("arraybuffer");
       expect(result.current.fetchStatus).toBe("idle");
+      expect(result.current.status).toBe("loading");
+
+      binaryTypeClient.closeAll();
     });
 
     it("should open once enabled becomes true", async () => {
@@ -353,6 +396,22 @@ describe("createSocketClient", () => {
 
       placeholderClient.closeAll();
     });
+
+    it("should expose a live state snapshot once connected", async () => {
+      const { result } = renderHook(() =>
+        client.use({
+          params: { userId: "123" },
+        })
+      );
+
+      await waitFor(
+        () => {
+          expect(result.current.fetchStatus).toBe("connected");
+          expect(result.current.status).toBe("success");
+        },
+        { timeout: 5000 }
+      );
+    });
   });
 
   describe("error handling", () => {
@@ -416,11 +475,11 @@ describe("createSocketClient", () => {
       });
 
       const socket = schemaClient.get();
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
 
       expect(() => socket.send({ event: "" })).toThrow();
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
@@ -474,7 +533,7 @@ describe("createSocketClient", () => {
 
       const socket = schemaClient.get();
       socket.send({ event: "subscribe" });
-      socket.open();
+      const unsubscribe = await connectManagedSocket(socket);
 
       await waitFor(
         () => {
@@ -487,6 +546,7 @@ describe("createSocketClient", () => {
         { timeout: 5000 }
       );
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
@@ -495,7 +555,13 @@ describe("createSocketClient", () => {
 
       const { result } = renderHook(() => client.use({ params }));
 
-      await result.current.waitUntil("open");
+      await waitFor(
+        () => {
+          expect(result.current.fetchStatus).toBe("connected");
+        },
+        { timeout: 5000 }
+      );
+
       result.current.send({ event: "subscribe" } as never);
 
       await waitFor(
@@ -547,23 +613,23 @@ describe("createSocketClient", () => {
     it("should send the payload and return true on first call", async () => {
       const schemaClient = createSocketClient(sendConfig);
       const socket = schemaClient.get();
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
 
       expect(socket.send({ event: "ping" })).toBe(true);
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
     it("should deduplicate identical payloads within the configured window", async () => {
       const schemaClient = createSocketClient(sendConfig);
       const socket = schemaClient.get();
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
 
       socket.send({ event: "ping" });
       expect(socket.send({ event: "ping" })).toBe(false);
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
@@ -573,24 +639,24 @@ describe("createSocketClient", () => {
         deduplicationWindow: 0,
       });
       const socket = schemaClient.get();
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
 
       expect(socket.send({ event: "ping" })).toBe(true);
       expect(socket.send({ event: "ping" })).toBe(true);
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
     it("should send distinct payloads independently", async () => {
       const schemaClient = createSocketClient(sendConfig);
       const socket = schemaClient.get();
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
 
       expect(socket.send({ event: "ping" })).toBe(true);
       expect(socket.send({ event: "pong" })).toBe(true);
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
@@ -600,13 +666,15 @@ describe("createSocketClient", () => {
         deduplicationWindow: 50,
       });
       const socket = schemaClient.get();
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
+
+      vi.useFakeTimers();
 
       socket.send({ event: "ping" });
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      await vi.advanceTimersByTimeAsync(60);
       expect(socket.send({ event: "ping" })).toBe(true);
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
@@ -618,33 +686,36 @@ describe("createSocketClient", () => {
 
       const socketA = schemaClient.get({ params: { userId: "a" } });
       const socketB = schemaClient.get({ params: { userId: "b" } });
-      socketA.open();
-      socketB.open();
-      await Promise.all([socketA.waitUntil("open"), socketB.waitUntil("open")]);
+      const [unsubscribeA, unsubscribeB] = await Promise.all([
+        connectManagedSocket(socketA),
+        connectManagedSocket(socketB),
+      ]);
 
       expect(socketA.send({ event: "ping" })).toBe(true);
       expect(socketB.send({ event: "ping" })).toBe(true);
 
+      unsubscribeA();
+      unsubscribeB();
       schemaClient.closeAll();
     });
 
     it("should reset dedup state for a new socket after close", async () => {
       const schemaClient = createSocketClient(sendConfig);
       const socket = schemaClient.get();
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
 
       socket.send({ event: "ping" });
       expect(socket.send({ event: "ping" })).toBe(false);
 
+      unsubscribe();
       schemaClient.close();
 
       const newSocket = schemaClient.get();
-      newSocket.open();
-      await newSocket.waitUntil("open");
+      const newUnsubscribe = await connectManagedSocket(newSocket);
 
       expect(newSocket.send({ event: "ping" })).toBe(true);
 
+      newUnsubscribe();
       schemaClient.closeAll();
     });
 
@@ -652,15 +723,18 @@ describe("createSocketClient", () => {
       const schemaClient = createSocketClient(sendConfig);
       const socket = schemaClient.get();
 
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(1_000));
+
       // Queue before open — flush will record sentAt on the entry
       socket.send({ event: "ping" });
 
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
 
       // Immediately after flush, the same payload is within the dedup window
       expect(socket.send({ event: "ping" })).toBe(false);
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
@@ -671,15 +745,18 @@ describe("createSocketClient", () => {
       });
       const socket = schemaClient.get();
 
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(1_000));
+
       socket.send({ event: "ping" });
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
 
       expect(socket.send({ event: "ping" })).toBe(false);
 
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      vi.setSystemTime(new Date(1_061));
       expect(socket.send({ event: "ping" })).toBe(true);
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
@@ -692,8 +769,7 @@ describe("createSocketClient", () => {
       expect(socket.send({ event: "ping" })).toBe(true);
       expect(socket.send({ event: "ping" })).toBe(true);
 
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
 
       // The single flushed message should trigger exactly one echo
       await waitFor(
@@ -707,6 +783,7 @@ describe("createSocketClient", () => {
         { timeout: 5000 }
       );
 
+      unsubscribe();
       schemaClient.closeAll();
     });
 
@@ -716,95 +793,17 @@ describe("createSocketClient", () => {
         deduplicationWindow: "50 milliseconds",
       });
       const socket = schemaClient.get();
-      socket.open();
-      await socket.waitUntil("open");
+      const unsubscribe = await connectManagedSocket(socket);
+
+      vi.useFakeTimers();
 
       socket.send({ event: "ping" });
       expect(socket.send({ event: "ping" })).toBe(false);
 
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      await vi.advanceTimersByTimeAsync(60);
       expect(socket.send({ event: "ping" })).toBe(true);
 
-      schemaClient.closeAll();
-    });
-
-    it("should dedup a queued payload within the window after the socket opens and flushes", async () => {
-      const schemaClient = createSocketClient(sendConfig);
-      const socket = schemaClient.get();
-
-      // Queue before open — flush will record sentAt on the entry
-      socket.send({ event: "ping" });
-
-      socket.open();
-      await socket.waitUntil("open");
-
-      // Immediately after flush, the same payload is within the dedup window
-      expect(socket.send({ event: "ping" })).toBe(false);
-
-      schemaClient.closeAll();
-    });
-
-    it("should allow the same payload to be re-sent after the window expires post-flush", async () => {
-      const schemaClient = createSocketClient({
-        ...sendConfig,
-        deduplicationWindow: 50,
-      });
-      const socket = schemaClient.get();
-
-      socket.send({ event: "ping" });
-      socket.open();
-      await socket.waitUntil("open");
-
-      expect(socket.send({ event: "ping" })).toBe(false);
-
-      await new Promise((resolve) => setTimeout(resolve, 60));
-      expect(socket.send({ event: "ping" })).toBe(true);
-
-      schemaClient.closeAll();
-    });
-
-    it("should queue multiple identical sends before open and dispatch only one wire message", async () => {
-      const schemaClient = createSocketClient(sendConfig);
-      const socket = schemaClient.get();
-
-      // All three return true (no time-based dedup for pending entries)
-      expect(socket.send({ event: "ping" })).toBe(true);
-      expect(socket.send({ event: "ping" })).toBe(true);
-      expect(socket.send({ event: "ping" })).toBe(true);
-
-      socket.open();
-      await socket.waitUntil("open");
-
-      // The single flushed message should trigger exactly one echo
-      await waitFor(
-        () => {
-          expect(socket.value).toEqual(
-            expect.objectContaining({
-              echo: expect.objectContaining({ event: "ping" }),
-            })
-          );
-        },
-        { timeout: 5000 }
-      );
-
-      schemaClient.closeAll();
-    });
-
-    it("should accept deduplicationWindow as a UnitValue string", async () => {
-      const schemaClient = createSocketClient({
-        ...sendConfig,
-        deduplicationWindow: "50 milliseconds",
-      });
-      const socket = schemaClient.get();
-      socket.open();
-      await socket.waitUntil("open");
-
-      socket.send({ event: "ping" });
-      expect(socket.send({ event: "ping" })).toBe(false);
-
-      await new Promise((resolve) => setTimeout(resolve, 60));
-      expect(socket.send({ event: "ping" })).toBe(true);
-
+      unsubscribe();
       schemaClient.closeAll();
     });
   });
