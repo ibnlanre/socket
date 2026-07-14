@@ -1,7 +1,9 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { ReconnectionPolicy } from "../reconnection-policy";
 import type { Init } from "./init";
 
-export interface EventSourceClientOptions extends Init, ReconnectionPolicy {
+export interface EventSourceClientOptions<Data = unknown>
+  extends Init, ReconnectionPolicy {
   /**
    * The URL to connect to
    *
@@ -23,4 +25,13 @@ export interface EventSourceClientOptions extends Init, ReconnectionPolicy {
    * @default true
    */
   enabled?: boolean;
+
+  /**
+   * A Standard Schema to validate parsed JSON message data before dispatching.
+   *
+   * When provided, the raw SSE data buffer is JSON-parsed and validated
+   * against this schema. Only valid messages are dispatched to listeners.
+   * Invalid messages are silently dropped.
+   */
+  messageSchema?: StandardSchemaV1<Data>;
 }

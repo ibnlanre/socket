@@ -22,7 +22,9 @@ export function createSocketClient<
 
     const result = configuration.paramsSchema["~standard"].validate(params);
     if (result instanceof Promise) return params;
-    if (result.issues) throw new Error(result.issues[0].message);
+    if (result.issues) {
+      throw new Error(result.issues[0].message, { cause: result.issues });
+    }
     return result.value as Params;
   }
 

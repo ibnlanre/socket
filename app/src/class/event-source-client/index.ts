@@ -4,12 +4,13 @@ import { getUri } from "@/library/get-uri";
 
 import type { ConnectionParams } from "@/types/connection-params";
 import type { EventSourceClientOptions } from "@/types/event-source/constructor";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 /**
  * https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
  */
 export class EventSourceClient<
-  Events extends Record<string, unknown>,
+  Data = unknown,
   Params extends ConnectionParams = never,
 > {
   #abortController: AbortController = new AbortController();
@@ -27,6 +28,7 @@ export class EventSourceClient<
   #minJitterValue: number;
   #retryCount: number;
   #retryBackoffStrategy: "fixed" | "exponential";
+  #messageSchema?: StandardSchemaV1<Data>;
 
   // Dedicated stream slice staging tracker
   #lineBuffer: string = "";
@@ -55,8 +57,9 @@ export class EventSourceClient<
       retryCount = 3,
       retryBackoffStrategy = "fixed",
       cache = "no-store",
+      messageSchema,
       ...init
-    }: EventSourceClientOptions,
+    }: EventSourceClientOptions<Data>,
     params = {} as Params
   ) {
     this.#cache = cache;
@@ -72,6 +75,7 @@ export class EventSourceClient<
     this.#minJitterValue = minJitterValue;
     this.#retryCount = retryCount;
     this.#retryBackoffStrategy = retryBackoffStrategy;
+    this.#messageSchema = messageSchema;
   }
 
   /**
@@ -219,8 +223,48 @@ export class EventSourceClient<
       this.dataBuffer = this.dataBuffer.slice(0, -1);
     }
 
+    let data: string | Data = this.dataBuffer;
+
+    if (this.#messageSchema) {
+      try {
+        const parsed = JSON.parse(this.dataBuffer);
+        const result = this.#messageSchema["~standard"].validate(parsed);
+        if (result instanceof Promise) {
+          this.#handleError(
+            new Error(
+              "EventSourceClient: async schema validation is not supported",
+              { cause: result }
+            )
+          );
+          this.dataBuffer = "";
+          this.eventTypeBuffer = "";
+          return;
+        }
+        if (result.issues) {
+          this.#handleError(
+            new Error("EventSourceClient: schema validation failed", {
+              cause: result.issues,
+            })
+          );
+          this.dataBuffer = "";
+          this.eventTypeBuffer = "";
+          return;
+        }
+        data = result.value;
+      } catch (error) {
+        this.#handleError(
+          new Error("EventSourceClient: failed to parse SSE data as JSON", {
+            cause: error,
+          })
+        );
+        this.dataBuffer = "";
+        this.eventTypeBuffer = "";
+        return;
+      }
+    }
+
     const event = new MessageEvent(this.eventTypeBuffer || "message", {
-      data: this.dataBuffer,
+      data,
       lastEventId: this.lastEventId,
       origin: new URL(this.#href).origin,
     });
@@ -306,10 +350,47 @@ export class EventSourceClient<
 
   /**
    * Handle incoming messages.
-   * @param data The message data.
+   * @param payload The transport string coming in.
    * @private
    */
-  #handleMessage = (data: string) => {
+  #handleMessage = (payload: string) => {
+    let data: string | Data = payload;
+
+    if (this.#messageSchema) {
+      try {
+        const parsed = JSON.parse(payload);
+        const result = this.#messageSchema["~standard"].validate(parsed);
+
+        if (result instanceof Promise) {
+          this.#handleError(
+            new Error(
+              "EventSourceClient: async schema validation is not supported",
+              { cause: result }
+            )
+          );
+          return;
+        }
+
+        if (result.issues) {
+          this.#handleError(
+            new Error("EventSourceClient: schema validation failed", {
+              cause: result.issues,
+            })
+          );
+          return;
+        }
+
+        data = result.value;
+      } catch (error) {
+        this.#handleError(
+          new Error("EventSourceClient: failed to parse SSE data as JSON", {
+            cause: error,
+          })
+        );
+        return;
+      }
+    }
+
     const event = new MessageEvent("message", { data });
     this.#listeners.forEach((listener, eventName) => {
       if (eventName === "message" || eventName === event.type) {
@@ -336,14 +417,13 @@ export class EventSourceClient<
    * @param listener The event listener.
    * @private
    */
-  #addEventListener = <K extends keyof Events>(
-    type: K,
-    listener: (event: MessageEvent<Events[K]>) => void
+  #addEventListener = <T extends "message" | (string & {})>(
+    type: T,
+    listener: T extends "message"
+      ? (event: MessageEvent<Data>) => void
+      : (event: MessageEvent<any>) => void
   ) => {
-    this.#listeners.set(
-      type as string,
-      listener as (event: MessageEvent) => void
-    );
+    this.#listeners.set(type, listener as (event: MessageEvent) => void);
   };
 
   /**
@@ -351,8 +431,8 @@ export class EventSourceClient<
    * @param type The event type.
    * @private
    */
-  #removeEventListener = <K extends keyof Events>(type: K) => {
-    this.#listeners.delete(type as string);
+  #removeEventListener = (type: string) => {
+    this.#listeners.delete(type);
   };
 
   /**
@@ -363,17 +443,15 @@ export class EventSourceClient<
    * @generator
    * @yields {MessageEvent} The next message event.
    */
-  async *[Symbol.asyncIterator]() {
+  async *[Symbol.asyncIterator](): AsyncGenerator<MessageEvent<Data>> {
     while (true) {
-      const event = await new Promise<MessageEvent<Events["message"]>>(
-        (resolve) => {
-          const listener = (event: MessageEvent) => {
-            this.#removeEventListener("message");
-            resolve(event);
-          };
-          this.#addEventListener("message", listener);
-        }
-      );
+      const event = await new Promise<MessageEvent<Data>>((resolve) => {
+        const listener = (event: MessageEvent) => {
+          this.#removeEventListener("message");
+          resolve(event);
+        };
+        this.#addEventListener("message", listener);
+      });
       yield event;
     }
   }

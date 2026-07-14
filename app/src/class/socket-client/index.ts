@@ -432,7 +432,7 @@ export class SocketClient<
     const result = await this.#validateAsync(this.#messageSchema, parsed);
     if (result.issues) {
       throw this.#createMessageFailure(
-        new Error(result.issues[0].message),
+        new Error(result.issues[0].message, { cause: result.issues }),
         "validation"
       );
     }
@@ -656,7 +656,12 @@ export class SocketClient<
 
     const result = this.#sendSchema["~standard"].validate(payload);
     if (result instanceof Promise) return payload;
-    if (result.issues) throw new Error(result.issues[0].message);
+    if (result.issues) {
+      throw this.#createMessageFailure(
+        new Error(result.issues[0].message, { cause: result.issues }),
+        "validation"
+      );
+    }
     return result.value as Post;
   };
 

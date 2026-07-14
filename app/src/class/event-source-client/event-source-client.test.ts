@@ -2,9 +2,16 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
+import { z } from "zod";
+
 import { EventSourceClient } from "./index";
 
 const TEST_URL = "https://example.com/events";
+
+const messageSchema = z.object({
+  type: z.literal("update"),
+  value: z.number(),
+});
 
 function createSSEStream(...chunks: string[]) {
   const encoder = new TextEncoder();
@@ -42,7 +49,7 @@ describe("EventSourceClient", () => {
         })
       );
 
-      const client = new EventSourceClient<{ message: string }>({
+      const client = new EventSourceClient<string>({
         url: TEST_URL,
         method: "POST",
       });
@@ -66,7 +73,7 @@ describe("EventSourceClient", () => {
         })
       );
 
-      const client = new EventSourceClient<{ message: string }>({
+      const client = new EventSourceClient<string>({
         url: TEST_URL,
         method: "POST",
       });
@@ -87,7 +94,7 @@ describe("EventSourceClient", () => {
         })
       );
 
-      const client = new EventSourceClient<{ message: string }>({
+      const client = new EventSourceClient<string>({
         url: TEST_URL,
         method: "POST",
         retry: true,
@@ -116,7 +123,7 @@ describe("EventSourceClient", () => {
         })
       );
 
-      const client = new EventSourceClient<{ message: string }>({
+      const client = new EventSourceClient<string>({
         url: TEST_URL,
         method: "POST",
       });
@@ -128,12 +135,76 @@ describe("EventSourceClient", () => {
 
   describe("close", () => {
     it("should abort the fetch request on close", () => {
-      const client = new EventSourceClient<{ message: string }>({
+      const client = new EventSourceClient<string>({
         url: TEST_URL,
         method: "POST",
       });
 
       client.open();
+      client.close();
+    });
+  });
+
+  describe("messageSchema validation", () => {
+    it("should dispatch validated data when schema matches", async () => {
+      server.use(
+        http.post(TEST_URL, () => {
+          return new HttpResponse(
+            createSSEStream('data: {"type":"update","value":42}\n\n'),
+            { headers: { "Content-Type": "text/event-stream" } }
+          );
+        })
+      );
+
+      const client = new EventSourceClient<{ type: string; value: number }>({
+        url: TEST_URL,
+        method: "POST",
+        messageSchema,
+      });
+      client.open();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      client.close();
+    });
+
+    it("should silently drop invalid messages when schema is configured", async () => {
+      server.use(
+        http.post(TEST_URL, () => {
+          return new HttpResponse(
+            createSSEStream(
+              'data: {"type":"invalid","value":"not-a-number"}\n\n'
+            ),
+            { headers: { "Content-Type": "text/event-stream" } }
+          );
+        })
+      );
+
+      const client = new EventSourceClient<{ type: string; value: number }>({
+        url: TEST_URL,
+        method: "POST",
+        messageSchema,
+      });
+      client.open();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      client.close();
+    });
+
+    it("should silently drop non-JSON data when schema is configured", async () => {
+      server.use(
+        http.post(TEST_URL, () => {
+          return new HttpResponse(
+            createSSEStream("data: this is not json\n\n"),
+            { headers: { "Content-Type": "text/event-stream" } }
+          );
+        })
+      );
+
+      const client = new EventSourceClient<{ type: string; value: number }>({
+        url: TEST_URL,
+        method: "POST",
+        messageSchema,
+      });
+      client.open();
+      await new Promise((resolve) => setTimeout(resolve, 100));
       client.close();
     });
   });
