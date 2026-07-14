@@ -155,9 +155,9 @@ export class EventSourceClient<
     }
   };
 
-  #processLine = (line: string) => {
+  #processLine = async (line: string) => {
     if (line === "") {
-      this.#dispatchEvent();
+      await this.#dispatchEvent();
     } else if (line.startsWith(":")) {
       // Intentionally ignored per WHATWG SSE Spec (Comment block)
     } else if (line.includes(":")) {
@@ -175,46 +175,35 @@ export class EventSourceClient<
     }
   };
 
-  #readBody = (
+  #readBody = async (
     reader: ReadableStreamDefaultReader<Uint8Array>
   ): Promise<void> => {
     const decoder = new TextDecoder();
 
-    return reader.read().then(({ done, value }) => {
-      if (done) {
-        this.#reconnect();
-        return;
-      }
+    const { done, value } = await reader.read();
+    if (done) {
+      this.#reconnect();
+      return;
+    }
 
-      const chunk = decoder.decode(value, { stream: true });
+    const chunk = decoder.decode(value, { stream: true });
 
-      /**
-       * Splits the concatenated string of `this.data` and `text` into an array of lines.
-       * The splitting is done based on different newline characters: `\r\n`, `\r`, or `\n`.
-       *
-       * @example
-       * ```typescript
-       * this.data = "Hello\r\nWorld";
-       * const text = "\nNew Line";
-       * const lines = (this.data + text).split(/\r\n|\r|\n/);
-       * // lines will be ["Hello", "World", "", "New Line"]
-       * ```
-       */
-      const lines = (this.#lineBuffer + chunk).split(/\r\n|\r|\n/);
+    const lines = (this.#lineBuffer + chunk).split(/\r\n|\r|\n/);
 
-      // Extract trailing incomplete block safely to avoid corrupting mutations
-      this.#lineBuffer = lines.pop() || "";
-      lines.forEach((line) => this.#processLine(line));
+    // Extract trailing incomplete block safely to avoid corrupting mutations
+    this.#lineBuffer = lines.pop() || "";
+    for (const line of lines) {
+      await this.#processLine(line);
+    }
 
-      return this.#readBody(reader);
-    });
+    return this.#readBody(reader);
   };
 
   /**
    * Dispatch the event to listeners.
    * @private
    */
-  #dispatchEvent = () => {
+  #dispatchEvent = async () => {
     // Drop execution if the active data store registers empty
     if (this.dataBuffer === "") return;
 
@@ -229,36 +218,26 @@ export class EventSourceClient<
       try {
         const parsed = JSON.parse(this.dataBuffer);
         const result = this.#messageSchema["~standard"].validate(parsed);
-        if (result instanceof Promise) {
-          this.#handleError(
-            new Error(
-              "EventSourceClient: async schema validation is not supported",
-              { cause: result }
-            )
-          );
-          this.dataBuffer = "";
-          this.eventTypeBuffer = "";
-          return;
-        }
-        if (result.issues) {
+
+        const resolved = result instanceof Promise ? await result : result;
+
+        if (resolved.issues) {
           this.#handleError(
             new Error("EventSourceClient: schema validation failed", {
-              cause: result.issues,
+              cause: resolved.issues,
             })
           );
           this.dataBuffer = "";
           this.eventTypeBuffer = "";
           return;
         }
-        data = result.value;
+
+        data = resolved.value;
       } catch (error) {
-        this.#handleError(
-          new Error("EventSourceClient: failed to parse SSE data as JSON", {
-            cause: error,
-          })
-        );
+        this.#handleError(error);
         this.dataBuffer = "";
         this.eventTypeBuffer = "";
+
         return;
       }
     }
@@ -353,34 +332,25 @@ export class EventSourceClient<
    * @param payload The transport string coming in.
    * @private
    */
-  #handleMessage = (payload: string) => {
+  #handleMessage = async (payload: string) => {
     let data: string | Data = payload;
 
     if (this.#messageSchema) {
       try {
         const parsed = JSON.parse(payload);
         const result = this.#messageSchema["~standard"].validate(parsed);
+        const resolved = result instanceof Promise ? await result : result;
 
-        if (result instanceof Promise) {
-          this.#handleError(
-            new Error(
-              "EventSourceClient: async schema validation is not supported",
-              { cause: result }
-            )
-          );
-          return;
-        }
-
-        if (result.issues) {
+        if (resolved.issues) {
           this.#handleError(
             new Error("EventSourceClient: schema validation failed", {
-              cause: result.issues,
+              cause: resolved.issues,
             })
           );
           return;
         }
 
-        data = result.value;
+        data = resolved.value;
       } catch (error) {
         this.#handleError(
           new Error("EventSourceClient: failed to parse SSE data as JSON", {
