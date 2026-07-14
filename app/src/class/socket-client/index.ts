@@ -88,7 +88,7 @@ export class SocketClient<
     useEffect(() => socket.subscribe(setClient), [socket]);
     useEffect(() => socket.open(enabled), [socket, enabled]);
 
-    const data = select(value);
+    const data = useMemo(() => select(value), [value, select]);
     return shallowMerge(socket, { data });
   };
 }
