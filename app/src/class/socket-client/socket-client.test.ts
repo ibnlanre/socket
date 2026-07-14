@@ -364,4 +364,89 @@ describe("SocketClient", () => {
       client.close();
     }, 10000);
   });
+
+  describe("bfcache lifecycle", () => {
+    it("should close the WebSocket on pagehide", async () => {
+      const client = new SocketClient({
+        url: "wss://echo.websocket.org",
+      });
+
+      client.open();
+      await client.waitUntil("open");
+
+      window.dispatchEvent(new Event("pagehide"));
+
+      expect(client.ws).toBeNull();
+      expect(client.isIdle).toBe(true);
+
+      client.close();
+    });
+
+    it("should reconnect on pageshow when persisted is true and idle", async () => {
+      const client = new SocketClient({
+        url: "wss://echo.websocket.org",
+      });
+
+      client.open();
+      await client.waitUntil("open");
+
+      // Simulate entering bfcache
+      window.dispatchEvent(new Event("pagehide"));
+      expect(client.ws).toBeNull();
+
+      // Simulate restore from bfcache
+      window.dispatchEvent(
+        new PageTransitionEvent("pageshow", { persisted: true })
+      );
+      await client.waitUntil("open");
+      expect(client.isConnected).toBe(true);
+
+      client.close();
+    });
+
+    it("should not reconnect on pageshow when persisted is false", async () => {
+      const client = new SocketClient({
+        url: "wss://echo.websocket.org",
+      });
+
+      client.open();
+      await client.waitUntil("open");
+
+      window.dispatchEvent(
+        new PageTransitionEvent("pageshow", { persisted: false })
+      );
+
+      // Connection remains open (no bfcache restore)
+      expect(client.isConnected).toBe(true);
+
+      client.close();
+    });
+
+    it("should not close the socket on pagehide if not connected", async () => {
+      const client = new SocketClient({
+        url: "wss://echo.websocket.org",
+      });
+
+      window.dispatchEvent(new Event("pagehide"));
+
+      expect(client.ws).toBeNull();
+      expect(client.fetchStatus).toBe("idle");
+    });
+
+    it("should clean up page lifecycle listeners on close", async () => {
+      const client = new SocketClient({
+        url: "wss://echo.websocket.org",
+      });
+
+      client.open();
+      await client.waitUntil("open");
+      client.close();
+
+      // After close, pagehide should not affect state
+      window.dispatchEvent(new Event("pagehide"));
+
+      expect(client.ws).toBeNull();
+      expect(client.fetchStatus).toBe("idle");
+    });
+  });
 });

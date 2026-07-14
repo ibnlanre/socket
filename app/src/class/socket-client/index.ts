@@ -61,6 +61,8 @@ export class SocketClient<
   #encryptPayload: boolean;
   #eventListeners: Map<string, EventListener> = new Map();
   #focusListener: (() => void) | null = null;
+  #pageHideListener: (() => void) | null = null;
+  #pageShowListener: ((event: PageTransitionEvent) => void) | null = null;
   #href: string;
   #idleConnectionTimeout: number;
   #idleConnectionTimerId: SocketTimeout = undefined;
@@ -75,6 +77,7 @@ export class SocketClient<
   #protocols: string | string[];
   #reconnectOnNetworkRestore: boolean;
   #reconnectOnWindowFocus: boolean;
+  #reconnectOnPageRestore: boolean;
   #retryCount: number;
   #retryBackoffStrategy: "fixed" | "exponential";
   #retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
@@ -119,6 +122,7 @@ export class SocketClient<
       protocols = [],
       reconnectOnNetworkRestore = true,
       reconnectOnWindowFocus = true,
+      reconnectOnPageRestore = true,
       retry = false,
       retryDelay = "5 seconds",
       retryCount = 3,
@@ -158,6 +162,7 @@ export class SocketClient<
     this.#protocols = protocols;
     this.#reconnectOnNetworkRestore = reconnectOnNetworkRestore;
     this.#reconnectOnWindowFocus = reconnectOnWindowFocus;
+    this.#reconnectOnPageRestore = reconnectOnPageRestore;
     this.#retry = retry;
     this.#retryBackoffStrategy = retryBackoffStrategy;
     this.#retryCount = retryCount;
@@ -251,6 +256,18 @@ export class SocketClient<
     if (this.#focusListener) {
       window.removeEventListener("focus", this.#focusListener, true);
       this.#focusListener = null;
+    }
+  };
+
+  #cleanupPageLifecycleListeners = () => {
+    if (this.#pageHideListener) {
+      window.removeEventListener("pagehide", this.#pageHideListener);
+      this.#pageHideListener = null;
+    }
+
+    if (this.#pageShowListener) {
+      window.removeEventListener("pageshow", this.#pageShowListener);
+      this.#pageShowListener = null;
     }
   };
 
@@ -507,6 +524,29 @@ export class SocketClient<
     window.addEventListener("focus", this.#focusListener, true);
   };
 
+  #setupPageLifecycleListeners = () => {
+    if (!this.#reconnectOnPageRestore) return;
+
+    this.#pageHideListener = () => {
+      const code = SocketCloseCode.NORMAL_CLOSURE;
+      const reason = SocketCloseReason[code];
+
+      if (this.ws?.readyState !== WebSocket.CLOSED) {
+        this.ws?.close(code, reason);
+      }
+
+      this.ws = null;
+      this.#cleanup();
+    };
+
+    this.#pageShowListener = (event: PageTransitionEvent) => {
+      if (event.persisted && this.isIdle) this.#connect();
+    };
+
+    window.addEventListener("pagehide", this.#pageHideListener);
+    window.addEventListener("pageshow", this.#pageShowListener);
+  };
+
   #shouldLog = (event: SocketConnectionEvent): boolean => {
     if (this.#logCondition(event)) return this.#log.includes(event);
     return false;
@@ -563,6 +603,7 @@ export class SocketClient<
     this.#cleanup();
     this.#cleanupNetworkListener();
     this.#cleanupWindowFocusListener();
+    this.#cleanupPageLifecycleListeners();
     this.#subscribers.clear();
 
     this.ws = null;
@@ -581,6 +622,7 @@ export class SocketClient<
 
     this.#setupNetworkListener();
     this.#setupWindowFocusListener();
+    this.#setupPageLifecycleListeners();
 
     this.#connect();
     void this.cache.initialize(this.path);

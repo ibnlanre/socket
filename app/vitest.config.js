@@ -14,5 +14,11 @@ export default defineConfig({
     pool: "forks",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "lcov"],
+      include: ["src/**"],
+      exclude: ["**/*.test.*", "**/*.spec.*", "src/mocks/**", "src/types/**"],
+    },
   },
 });

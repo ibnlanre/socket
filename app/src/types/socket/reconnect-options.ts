@@ -18,6 +18,17 @@ export interface SocketReconnectOptions extends ReconnectionPolicy {
   reconnectOnWindowFocus?: boolean;
 
   /**
+   * Whether to reconnect when the page is restored from the back/forward cache (bfcache).
+   *
+   * When enabled, the WebSocket is closed during `pagehide` so the page
+   * can be safely cached by the browser, and reconnected on `pageshow`
+   * when the user navigates back.
+   *
+   * @default true
+   */
+  reconnectOnPageRestore?: boolean;
+
+  /**
    * An array of specific close codes that should trigger a retry
    *
    * @default
