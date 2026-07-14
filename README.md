@@ -11,17 +11,16 @@
 
 `@ibnlanre/socket` is a fast, lightweight, and type-safe WebSocket client built to supercharge your developer experience (DX). Designed with a cache-first approach and flexible configuration, it makes managing WebSocket connections effortless and efficient.
 
-It is built for React apps that need a predictable way to open sockets, reuse them across components, validate messages, and recover cleanly from disconnects. You can use it declaratively through a hook or imperatively through the socket instance.
+It is built for React apps that need a predictable way to open sockets, reuse them across components, validate messages, and recover cleanly from disconnects. You can use it declaratively through a hook or imperatively through the socket instance. It also ships with an `EventSourceClient` for Server-Sent Events when you need a simpler one-way connection.
 
-In practice, the flow is simple: define one client per endpoint, let the library reuse sockets for identical params, and optionally add Zod schemas for runtime validation and type inference.
-
-This library targets browser-based React apps. It uses the browser `WebSocket` API and can persist cached payloads through the Cache API when that API is available. If the Cache API is unavailable, the socket still works, but cache persistence is skipped.
+In practice, the flow is simple: define one client per endpoint, let the library reuse sockets for identical params, and optionally plug in any Standard Schema-compatible validator (Zod, Valibot, ArkType, and others) for runtime validation and type inference.
 
 ## Features
 
 - **Cache-first state**: Surfaces previously received data quickly while fresh messages continue streaming in.
 - **React-friendly API**: Use one client through a hook for components or access the underlying socket directly when you need imperative control.
-- **Runtime-safe messaging**: Plug in Zod schemas to validate params, outgoing payloads, and incoming messages.
+- **Runtime-safe messaging**: Plug in any Standard Schema-compatible library (Zod, Valibot, ArkType, and others) to validate params, outgoing payloads, and incoming messages.
+- **bfcache-friendly**: Closes connections on `pagehide` and reconnects on `pageshow`, so the browser can cache your page without issues.
 - **Built-in reconnect behavior**: Retry with delays, backoff, jitter, and custom close-condition logic.
 
 ## Getting Started
@@ -34,7 +33,7 @@ To get started with `@ibnlanre/socket`:
 
 ## Installation
 
-`zod` is a peer dependency. Install both packages:
+The library uses Standard Schema under the hood, so it works with any Standard Schema-compatible validator. Bring your own — Zod, Valibot, ArkType, or whatever you prefer.
 
 <details open>
   <summary>
@@ -44,7 +43,7 @@ To get started with `@ibnlanre/socket`:
   <br />
 
   ```bash
-  npm install @ibnlanre/socket zod
+  npm install @ibnlanre/socket
   ```
 </details>
 
@@ -56,7 +55,7 @@ To get started with `@ibnlanre/socket`:
   <br />
 
   ```bash
-  yarn add @ibnlanre/socket zod
+  yarn add @ibnlanre/socket
   ```
 </details>
 
@@ -68,9 +67,17 @@ To get started with `@ibnlanre/socket`:
   <br />
 
   ```bash
-  pnpm add @ibnlanre/socket zod
+  pnpm add @ibnlanre/socket
   ```
 </details>
+
+If you want runtime validation, install your validator of choice alongside it:
+
+```bash
+pnpm add @ibnlanre/socket zod
+# or
+pnpm add @ibnlanre/socket valibot
+```
 
 ## Quick start
 
@@ -166,7 +173,8 @@ The hook returns the socket instance plus a reactive `data` field.
 - `fetchStatus`: One of `idle`, `connecting`, `connected`, or `disconnected`.
 - `isIdle`, `isConnecting`, `isConnected`, `isDisconnected`: Derived connection flags.
 - `isLoading`, `isSuccess`, `isError`, `isPending`, `isRefetching`, `isRefetchError`, `isStaleData`: Derived state flags.
-- `failureCount`, `failureReason`, `error`, `dataUpdatedAt`, `errorUpdatedAt`: Useful connection and failure metadata.
+- `failureCount`, `failureReason`, `error`, `dataUpdatedAt`, `errorUpdatedAt`, `isPlaceholderData`: Useful connection and failure metadata.
+- `binaryType`: The binary frame type (`"blob"` or `"arraybuffer"`).
 - `open`, `close`, `send`, `subscribe`, `waitUntil`, `on`: Imperative socket methods when you need them.
 
 ### Parameters
@@ -179,7 +187,7 @@ The hook returns the socket instance plus a reactive `data` field.
 - `messageSchema`: A runtime schema for WebSocket messages received from the server. It also becomes the inferred message type for `value`, `select`, and subscribers.
 - `paramsSchema`: A runtime schema for URL params passed through the client options object. It also becomes the inferred params type for `use`, `initialize`, and `cleanup`.
 - `sendSchema`: A runtime schema for messages sent through `send`. It also becomes the inferred payload type for those calls.
-- `enabled` (default: `true`): Whether to enable the WebSocket connection or not.
+- `binaryType` (default: `"blob"`): Preferred binary frame representation for the managed WebSocket.
 - `protocols`: The protocols to use for the WebSocket connection.
 
 **Caching**
@@ -189,10 +197,12 @@ The hook returns the socket instance plus a reactive `data` field.
 - `maxCacheAge` (default: `15mins`): The maximum age of the cached data.
 
 **Data Handling**
+- `deduplicationWindow`: The time window in which identical outbound payloads are deduplicated. Set to `0` to disable.
 - `decrypt`: A function to decrypt the received data.
-- `decryptData` (default: `false`): Whether to decrypt the received data or not.
+- `decryptData` (default: `true`): Whether to decrypt the received data or not.
 - `encrypt`: A function to encrypt the available data.
-- `encryptPayload` (default: `false`): Whether to encrypt the payload or not.
+- `encryptPayload` (default: `true`): Whether to encrypt the payload or not.
+- `messageFailurePolicy`: Configure how the socket handles decode, parse, and validation failures for inbound messages. Each stage can be `"recover"` (log and continue) or `"close"` (close the connection).
 - `placeholderData`: Seeds the socket with a complete message-shaped value before live data arrives. Your `select` function still runs against this value.
 - `setStateAction`: The reducer to construct the next state.
 
@@ -201,11 +211,12 @@ The hook returns the socket instance plus a reactive `data` field.
 - `logCondition`: A custom condition for logging.
 
 **Retry and reconnect**
-- `retry` (default: `true`): Whether to retry the WebSocket connection or not.
+- `retry` (default: `false`): Whether to retry the WebSocket connection or not.
 - `retryDelay` (default: `5secs`): The delay before retrying the WebSocket connection.
 - `retryCount` (default: `3`): The number of times to retry the WebSocket connection.
 - `reconnectOnNetworkRestore` (default: `true`): Whether to retry the connection when the network is restored.
 - `reconnectOnWindowFocus` (default: `true`): Whether to retry the connection when the window regains focus.
+- `reconnectOnPageRestore` (default: `true`): Whether to reconnect when the page is restored from the back/forward cache (bfcache). Closes the socket on `pagehide` and reconnects on `pageshow`.
 - `retryBackoffStrategy` (default: `fixed`): The strategy for increasing the delay between retries.
 - `maxRetryDelay` (default: `1min`): The maximum delay between retries.
 - `retryOnSpecificCloseCodes`: An array of specific close codes that should trigger a retry.
@@ -223,6 +234,8 @@ Calling `createSocketClient` returns a client with these methods:
 - `closeAll`: Closes and removes every managed socket created by the client.
 - `preset`: Returns the same options object, but keeps the selected data type attached so you can reuse the config cleanly.
 - `use`: React hook that subscribes to one managed socket and returns the socket instance plus a reactive `data` field.
+
+The library also exports `EventSourceClient` for Server-Sent Events. It supports both native `EventSource` (GET requests) and fetch-based streaming (any HTTP method) with the same retry and backoff patterns.
 
 Multiple calls with the same params reuse the same underlying socket instance. Different params create different managed sockets.
 
@@ -350,6 +363,30 @@ function SubscribeOnOpen() {
   const URI = getUri({ baseURL: "wss://example.com", url: "/ws/v1" });
   //    ^? "wss://example.com/ws/v1"
   ```
+</details>
+
+<details>
+  <summary>
+    <code>EventSourceClient</code>: A client for Server-Sent Events (SSE).
+  </summary>
+
+  Supports native `EventSource` for GET requests and fetch-based streaming for any HTTP method. Comes with retry, backoff, and event dispatch.
+
+  ```tsx
+  import { EventSourceClient } from "@ibnlanre/socket";
+
+  const client = new EventSourceClient({ url: "https://example.com/events" });
+  client.open();
+  client.close();
+  ```
+</details>
+
+<details>
+  <summary>
+    <code>EventSourceClientOptions</code>: Configuration options for the SSE client.
+  </summary>
+
+  Extends `RequestInit` with SSE-specific options like `url`, `baseURL`, `method`, `retry`, `retryDelay`, `retryCount`, `retryBackoffStrategy`, and `initialLastEventId`.
 </details>
 
 ## License

@@ -1,6 +1,6 @@
-import { defineConfig, type Options } from "tsup";
+import { defineConfig } from "tsup";
 
-const core: Options = {
+export default defineConfig({
   format: ["esm", "cjs"],
   dts: true,
   sourcemap: true,
@@ -9,6 +9,4 @@ const core: Options = {
   outDir: "dist",
   tsconfig: "./tsconfig.json",
   treeshake: true,
-};
-
-export default defineConfig([core]);
+});

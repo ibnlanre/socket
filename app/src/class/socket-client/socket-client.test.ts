@@ -258,13 +258,13 @@ describe("SocketClient", () => {
       client.open();
       await client.waitUntil("open");
 
-      // Give time for any extra echoes to arrive
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await vi.waitFor(() => {
+        expect(echoCount).toBe(1);
+      });
 
-      expect(echoCount).toBe(1);
       unsub();
       client.close();
-    }, 10000);
+    });
 
     it("should dedup within the window after a queued payload is flushed on open", async () => {
       const client = new SocketClient({
@@ -297,8 +297,10 @@ describe("SocketClient", () => {
       client.send({ event: "ping" });
       expect(client.send({ event: "ping" })).toBe(false);
 
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(Date.now() + 61));
       expect(client.send({ event: "ping" })).toBe(true);
+      vi.useRealTimers();
 
       client.close();
     });
@@ -447,6 +449,46 @@ describe("SocketClient", () => {
 
       expect(client.ws).toBeNull();
       expect(client.fetchStatus).toBe("idle");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should not register bfcache listeners when reconnectOnPageRestore is false", async () => {
+      const addEventListenerSpy = vi.spyOn(window, "addEventListener");
+      const client = new SocketClient({
+        url: "wss://echo.websocket.org",
+        reconnectOnPageRestore: false,
+      });
+
+      client.open();
+      await client.waitUntil("open");
+
+      expect(addEventListenerSpy).not.toHaveBeenCalledWith(
+        "pagehide",
+        expect.any(Function)
+      );
+
+      addEventListenerSpy.mockRestore();
+      client.close();
+    });
+
+    it("should not register network listener when reconnectOnNetworkRestore is false", async () => {
+      const addEventListenerSpy = vi.spyOn(window, "addEventListener");
+      const client = new SocketClient({
+        url: "wss://echo.websocket.org",
+        reconnectOnNetworkRestore: false,
+      });
+
+      client.open();
+      await client.waitUntil("open");
+
+      expect(addEventListenerSpy).not.toHaveBeenCalledWith(
+        "online",
+        expect.any(Function)
+      );
+
+      addEventListenerSpy.mockRestore();
+      client.close();
     });
   });
 });

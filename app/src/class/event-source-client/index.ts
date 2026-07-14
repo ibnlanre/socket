@@ -10,7 +10,7 @@ import type { EventSourceClientOptions } from "@/types/event-source/constructor"
  */
 export class EventSourceClient<
   Events extends Record<string, unknown>,
-  Params extends ConnectionParams = never
+  Params extends ConnectionParams = never,
 > {
   #abortController: AbortController = new AbortController();
   #cache: string;
@@ -28,9 +28,13 @@ export class EventSourceClient<
   #retryCount: number;
   #retryBackoffStrategy: "fixed" | "exponential";
 
-  data: string = "";
+  // Dedicated stream slice staging tracker
+  #lineBuffer: string = "";
+
+  // Pure event field buffers (Reset dynamically at event dispatch boundaries)
+  dataBuffer: string = "";
   lastEventId: string = "";
-  eventType: string = "";
+  eventTypeBuffer: string = "";
 
   /**
    * Constructor to initialize the EventSourceClient.
@@ -58,6 +62,7 @@ export class EventSourceClient<
     this.#cache = cache;
     this.#href = getUri({ url, baseURL, params });
     this.#lastEventId = initialLastEventId;
+    this.lastEventId = initialLastEventId || "";
     this.#init = init;
     this.#method = method;
     this.#retry = retry;
@@ -128,10 +133,10 @@ export class EventSourceClient<
   #processField = (field: string, value: string) => {
     switch (field) {
       case "event":
-        this.eventType = value;
+        this.eventTypeBuffer = value;
         break;
       case "data":
-        this.data += value + "\n";
+        this.dataBuffer += value + "\n";
         break;
       case "id":
         if (!value.includes("\u0000")) {
@@ -143,36 +148,41 @@ export class EventSourceClient<
           this.#retryDelay = parseInt(value, 10);
         }
         break;
-      default:
-        break;
     }
   };
 
   #processLine = (line: string) => {
     if (line === "") {
       this.#dispatchEvent();
-      this.data = "";
-      this.eventType = "";
     } else if (line.startsWith(":")) {
-      // Ignore the line
+      // Intentionally ignored per WHATWG SSE Spec (Comment block)
     } else if (line.includes(":")) {
-      const [field, ...data] = line.split(":");
-      const value = data.join(":").trimStart();
+      const index = line.indexOf(":");
+      const field = line.slice(0, index);
+      let value = line.slice(index + 1);
+
+      // Strict WHATWG Compliance: Strip exactly ONE leading space if present
+      if (value.startsWith(" ")) {
+        value = value.slice(1);
+      }
       this.#processField(field, value);
     } else {
       this.#processField(line, "");
     }
   };
 
-  #readBody = (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+  #readBody = (
+    reader: ReadableStreamDefaultReader<Uint8Array>
+  ): Promise<void> => {
+    const decoder = new TextDecoder();
+
     return reader.read().then(({ done, value }) => {
       if (done) {
         this.#reconnect();
         return;
       }
 
-      const decoder = new TextDecoder();
-      const text = decoder.decode(value, { stream: true });
+      const chunk = decoder.decode(value, { stream: true });
 
       /**
        * Splits the concatenated string of `this.data` and `text` into an array of lines.
@@ -186,10 +196,11 @@ export class EventSourceClient<
        * // lines will be ["Hello", "World", "", "New Line"]
        * ```
        */
-      const lines = (this.data + text).split(/\r\n|\r|\n/);
+      const lines = (this.#lineBuffer + chunk).split(/\r\n|\r|\n/);
 
-      this.data = lines.pop() || "";
-      lines.forEach(this.#processLine);
+      // Extract trailing incomplete block safely to avoid corrupting mutations
+      this.#lineBuffer = lines.pop() || "";
+      lines.forEach((line) => this.#processLine(line));
 
       return this.#readBody(reader);
     });
@@ -200,14 +211,16 @@ export class EventSourceClient<
    * @private
    */
   #dispatchEvent = () => {
-    if (this.data === "") return;
+    // Drop execution if the active data store registers empty
+    if (this.dataBuffer === "") return;
 
-    if (this.data.endsWith("\n")) {
-      this.data = this.data.slice(0, -1);
+    // Drop trailing carriage feed matching spec requirement
+    if (this.dataBuffer.endsWith("\n")) {
+      this.dataBuffer = this.dataBuffer.slice(0, -1);
     }
 
-    const event = new MessageEvent(this.eventType || "message", {
-      data: this.data,
+    const event = new MessageEvent(this.eventTypeBuffer || "message", {
+      data: this.dataBuffer,
       lastEventId: this.lastEventId,
       origin: new URL(this.#href).origin,
     });
@@ -217,6 +230,10 @@ export class EventSourceClient<
         listener(event);
       }
     });
+
+    // Mandatory complete boundary reset
+    this.dataBuffer = "";
+    this.eventTypeBuffer = "";
   };
 
   /**
@@ -323,7 +340,10 @@ export class EventSourceClient<
     type: K,
     listener: (event: MessageEvent<Events[K]>) => void
   ) => {
-    this.#listeners.set(type as string, listener as (event: MessageEvent) => void);
+    this.#listeners.set(
+      type as string,
+      listener as (event: MessageEvent) => void
+    );
   };
 
   /**
@@ -362,7 +382,7 @@ export class EventSourceClient<
    * Open the connection.
    */
   open = () => {
-    if (this.#init.method === "GET") this.#createEventSource();
+    if (this.#method === "GET") this.#createEventSource();
     else this.#connect();
   };
 
@@ -374,21 +394,4 @@ export class EventSourceClient<
     this.#eventSource?.close();
     this.#eventSource = null;
   };
-}
-
-// Example usage
-const eventSourceClient = new EventSourceClient<{
-  message: string;
-}>({
-  url: "/events",
-  retry: true,
-  retryCount: 10,
-  retryDelay: "5 seconds",
-  retryBackoffStrategy: "exponential",
-});
-
-eventSourceClient.open();
-
-for await (const event of eventSourceClient) {
-  console.log(event.data);
 }
