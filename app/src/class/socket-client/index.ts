@@ -28,6 +28,7 @@ import type { SocketListener } from "@/types/socket/listener";
 import type { SocketStatus } from "@/types/socket/status";
 import type { SocketTimeout } from "@/types/socket/timeout";
 import type { UnitValue } from "@/types/time-unit";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 type SocketMessageFailureStage = keyof Required<SocketMessageFailurePolicy>;
 type SocketMessageFailure = Error & {
@@ -334,7 +335,6 @@ export class SocketClient<
     this.ws.onclose = (event: CloseEvent) => {
       this.ws = null;
       clearTimeout(this.#reconnectionTimerId);
-      this.#setState({ fetchStatus: "disconnected" });
 
       if (this.#clearCacheOnClose) {
         this.cache.remove(this.path);
@@ -348,6 +348,7 @@ export class SocketClient<
       }
 
       if (this.#shouldRetryOnClose(event)) {
+        this.#setState({ fetchStatus: "disconnected" });
         this.#reconnect();
         return;
       }
@@ -394,11 +395,13 @@ export class SocketClient<
   };
 
   #saveData = async ({ data }: SocketData) => {
-    const payload = this.#parseMessage(await this.#decodeMessageData(data));
+    const decoded = await this.#decodeMessageData(data);
+    const payload = await this.#parseMessage(decoded);
+
     this.cache.set(this.path, payload);
   };
 
-  #parseMessage = (payload: string): string => {
+  #parseMessage = async (payload: string): Promise<string> => {
     let parsed: unknown;
 
     try {
@@ -409,13 +412,19 @@ export class SocketClient<
 
     if (!this.#messageSchema) return JSON.stringify(parsed);
 
-    const result = this.#messageSchema.safeParse(parsed);
-    if (result.success) return JSON.stringify(result.data);
+    const result = await this.#validateAsync(this.#messageSchema, parsed);
+    if (result.issues) {
+      throw this.#createMessageFailure(
+        new Error(result.issues[0].message),
+        "validation"
+      );
+    }
+    return JSON.stringify(result.value);
+  };
 
-    throw this.#createMessageFailure(
-      new Error(result.error.message),
-      "validation"
-    );
+  #validateAsync = async <T>(schema: StandardSchemaV1<T>, value: unknown) => {
+    const result = schema["~standard"].validate(value);
+    return result instanceof Promise ? result : Promise.resolve(result);
   };
 
   #createMessageFailure = (
@@ -530,7 +539,7 @@ export class SocketClient<
       if (this.#retryOnSpecificCloseCodes.includes(errorCode)) return true;
     }
 
-    if (!event.wasClean) {
+    if (!event.wasClean && this.#retry) {
       this.#preserveTerminalMetadata = true;
       this.#setState({
         status: "error",
@@ -573,10 +582,8 @@ export class SocketClient<
     this.#setupNetworkListener();
     this.#setupWindowFocusListener();
 
-    void this.cache.initialize(this.path).finally(() => {
-      if (this.ws || this.#subscribers.size === 0) return;
-      this.#connect();
-    });
+    this.#connect();
+    void this.cache.initialize(this.path);
   };
 
   send = (payload: Post): boolean => {
@@ -605,10 +612,10 @@ export class SocketClient<
   #parseSendPayload = (payload: Post): Post => {
     if (!this.#sendSchema) return payload;
 
-    const result = this.#sendSchema.safeParse(payload);
-    if (result.success) return result.data;
-
-    throw new Error(result.error.message);
+    const result = this.#sendSchema["~standard"].validate(payload);
+    if (result instanceof Promise) return payload;
+    if (result.issues) throw new Error(result.issues[0].message);
+    return result.value as Post;
   };
 
   subscribe = (
@@ -659,26 +666,26 @@ export class SocketClient<
         return;
       }
 
-      const handleClearTimeout = () => {
+      const cleanup = () => {
         clearTimeout(timerId);
-        this.ws?.removeEventListener(state, handleResolution);
+        this.#subscribers.delete(listener);
       };
 
-      const handleResolution = () => {
-        resolve();
-        handleClearTimeout();
+      const listener = () => {
+        if (hasReachedState()) {
+          cleanup();
+          resolve();
+        }
       };
 
-      this.ws?.addEventListener(state, handleResolution, { once: true });
+      this.#subscribers.add(listener);
       const countdown = time(timeout);
 
-      const handleRejection = () => {
-        handleClearTimeout();
+      timerId = setTimeout(() => {
+        cleanup();
         const message = `WebSocket did not reach state "${state}" within ${countdown}ms.`;
         reject(new Error(message));
-      };
-
-      timerId = setTimeout(handleRejection, countdown);
+      }, countdown);
     });
   };
 

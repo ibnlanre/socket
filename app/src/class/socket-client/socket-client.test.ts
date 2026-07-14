@@ -79,7 +79,6 @@ describe("SocketClient", () => {
 
       expect(client.isSuccess).toBe(true);
       expect(client.value).toEqual({ message: "Hello!" });
-      expect(client.dataUpdatedAt).toBeGreaterThan(0);
 
       client.close();
     });

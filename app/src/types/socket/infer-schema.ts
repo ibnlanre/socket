@@ -1,3 +1,4 @@
-import type { ZodType, output } from "zod";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 
-export type InferSocketSchema<Schema extends ZodType> = output<Schema>;
+export type InferSocketSchema<Schema extends StandardSchemaV1> =
+  StandardSchemaV1.InferOutput<Schema>;

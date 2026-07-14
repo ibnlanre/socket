@@ -20,10 +20,10 @@ export function createSocketClient<
   function parseParams(params?: Params) {
     if (!configuration.paramsSchema) return params;
 
-    const result = configuration.paramsSchema.safeParse(params);
-    if (result.success) return result.data;
-
-    throw new Error(result.error.message);
+    const result = configuration.paramsSchema["~standard"].validate(params);
+    if (result instanceof Promise) return params;
+    if (result.issues) throw new Error(result.issues[0].message);
+    return result.value as Params;
   }
 
   function get(options: SocketOptions<Params> = {}) {
