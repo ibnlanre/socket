@@ -62,4 +62,10 @@ export type SocketProtocolIdentifier =
   | "TLCP-2.5.0.lightstreamer.com"
   | "Redfish"
   | "bidib"
+  | "json.webpubsub.azure.v1"
+  | "protobuf.webpubsub.azure.v1"
+  | "json.reliable.webpubsub.azure.v1"
+  | "protobuf.reliable.webpubsub.azure.v1"
+  | "WebREPL.binary.v1"
+  | "camp"
   | (string & {});

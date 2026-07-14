@@ -1,7 +1,7 @@
 export { EventSourceClient } from "./class/event-source-client";
+export { Socket } from "./class/socket";
 export { SocketCache } from "./class/socket-cache";
 export { SocketClient } from "./class/socket-client";
-
 export { SocketCloseCode } from "./constants/socket-close-code";
 export { SocketCloseReason } from "./constants/socket-close-reason";
 
@@ -20,7 +20,7 @@ export type {
 export type { SocketFetchStatus } from "./types/socket/fetch-status";
 export type { InferSocketSchema } from "./types/socket/infer-schema";
 export type { SocketListener } from "./types/socket/listener";
-export type { SocketOptions, UseSocketOptions } from "./types/socket/options";
+export type { UseSocketOptions } from "./types/socket/options";
 export type { SocketParamsSerializer } from "./types/socket/params-serializer";
 export type { SocketReconnectOptions } from "./types/socket/reconnect-options";
 export type { SocketSchema } from "./types/socket/schema";

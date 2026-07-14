@@ -21,4 +21,12 @@ export default defineConfig({
       exclude: ["**/*.test.*", "**/*.spec.*", "src/mocks/**", "src/types/**"],
     },
   },
+  resolve: {
+    conditions: ["browser"],
+  },
+  ssr: {
+    resolve: {
+      conditions: ["browser"],
+    },
+  },
 });

@@ -10,16 +10,16 @@ import {
 } from "vitest";
 
 import { z } from "zod";
-import { SocketClient } from "./index";
+import { Socket } from "./index";
 
 beforeAll(() => server.listen());
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-describe("SocketClient", () => {
+describe("Socket", () => {
   describe("initialization", () => {
     it("should create a new instance", () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -27,7 +27,7 @@ describe("SocketClient", () => {
     });
 
     it("should have correct initial state before opening", () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -43,7 +43,7 @@ describe("SocketClient", () => {
 
     it("should apply placeholderData before connecting", () => {
       const placeholder = { message: "loading…" };
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         placeholderData: placeholder,
       });
@@ -56,7 +56,7 @@ describe("SocketClient", () => {
 
   describe("connection", () => {
     it("should connect to the server", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -70,7 +70,7 @@ describe("SocketClient", () => {
     });
 
     it("should receive the initial server message", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -84,7 +84,7 @@ describe("SocketClient", () => {
     });
 
     it("should transition to idle after a clean close", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -100,7 +100,7 @@ describe("SocketClient", () => {
     });
 
     it("should not open a second connection when already open", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -117,7 +117,7 @@ describe("SocketClient", () => {
 
   describe("retry", () => {
     it("should transition to idle after a clean close with a specific code", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         retry: true,
         retryCount: 2,
@@ -133,7 +133,7 @@ describe("SocketClient", () => {
     });
 
     it("should increment failureCount and enter disconnected state on an unclean close", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         retry: true,
         retryCount: 3,
@@ -163,7 +163,7 @@ describe("SocketClient", () => {
     });
 
     it("should not retry when retry is disabled", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         retry: false,
       });
@@ -191,7 +191,7 @@ describe("SocketClient", () => {
       const received: string[] = [];
       let lastValueStr = "";
 
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         sendSchema: z.object({ event: z.string() }),
       });
@@ -232,7 +232,7 @@ describe("SocketClient", () => {
       let echoCount = 0;
       let lastValueStr = "";
 
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         sendSchema: z.object({ event: z.string() }),
       });
@@ -267,7 +267,7 @@ describe("SocketClient", () => {
     });
 
     it("should dedup within the window after a queued payload is flushed on open", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         deduplicationWindow: 200,
         sendSchema: z.object({ event: z.string() }),
@@ -285,7 +285,7 @@ describe("SocketClient", () => {
     });
 
     it("should accept deduplicationWindow as a UnitValue string", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         deduplicationWindow: "50 milliseconds",
         sendSchema: z.object({ event: z.string() }),
@@ -309,7 +309,7 @@ describe("SocketClient", () => {
       const received: string[] = [];
       let lastValueStr = "";
 
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         deduplicationWindow: 50,
         sendSchema: z.object({ event: z.string() }),
@@ -369,7 +369,7 @@ describe("SocketClient", () => {
 
   describe("bfcache lifecycle", () => {
     it("should close the WebSocket on pagehide", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -385,7 +385,7 @@ describe("SocketClient", () => {
     });
 
     it("should reconnect on pageshow when persisted is true and idle", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -407,7 +407,7 @@ describe("SocketClient", () => {
     });
 
     it("should not reconnect on pageshow when persisted is false", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -425,7 +425,7 @@ describe("SocketClient", () => {
     });
 
     it("should not close the socket on pagehide if not connected", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -436,7 +436,7 @@ describe("SocketClient", () => {
     });
 
     it("should clean up page lifecycle listeners on close", async () => {
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
       });
 
@@ -455,7 +455,7 @@ describe("SocketClient", () => {
   describe("edge cases", () => {
     it("should not register bfcache listeners when reconnectOnPageRestore is false", async () => {
       const addEventListenerSpy = vi.spyOn(window, "addEventListener");
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         reconnectOnPageRestore: false,
       });
@@ -474,7 +474,7 @@ describe("SocketClient", () => {
 
     it("should not register network listener when reconnectOnNetworkRestore is false", async () => {
       const addEventListenerSpy = vi.spyOn(window, "addEventListener");
-      const client = new SocketClient({
+      const client = new Socket({
         url: "wss://echo.websocket.org",
         reconnectOnNetworkRestore: false,
       });

@@ -168,7 +168,6 @@ function Subscriber({
   renderState = false,
 }: SubscriberProps) {
   const socket = client.use({
-    initialData: "waiting",
     params,
     select(message: ExampleMessage | undefined) {
       if (!message) return "waiting";
@@ -311,7 +310,7 @@ export function App() {
   }, [cacheMessage, socketUrl]);
 
   useEffect(() => {
-    const managedSocket = client.get({ params: connection.params });
+    const managedSocket = client.get();
     const timerId = window.setInterval(() => {
       setManagedFetchStatus(managedSocket.fetchStatus);
     }, 20);
@@ -333,7 +332,7 @@ export function App() {
     store[marker] = true;
 
     try {
-      const accepted = client.get({ params: connection.params }).send({
+      const accepted = client.get().send({
         type: "ping",
         message,
       });

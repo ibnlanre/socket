@@ -8,7 +8,6 @@ import {
   beforeEach,
   describe,
   expect,
-  expectTypeOf,
   it,
   vi,
 } from "vitest";
@@ -177,15 +176,15 @@ describe("createSocketClient", () => {
 
     it("should reuse the same socket for the same params", () => {
       const params = { userId: "123", room: "chat" };
-      const socket1 = client.get({ params });
-      const socket2 = client.get({ params });
+      const socket1 = client.get(params);
+      const socket2 = client.get(params);
 
       expect(socket1).toBe(socket2);
     });
 
     it("should create different sockets for different params", () => {
-      const socket1 = client.get({ params: { userId: "123" } });
-      const socket2 = client.get({ params: { userId: "456" } });
+      const socket1 = client.get({ userId: "123" });
+      const socket2 = client.get({ userId: "456" });
 
       expect(socket1).not.toBe(socket2);
     });
@@ -194,30 +193,30 @@ describe("createSocketClient", () => {
   describe("close", () => {
     it("should close a specific socket", async () => {
       const params = { userId: "123" };
-      const socket = client.get({ params });
+      const socket = client.get(params);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      expect(client.close({ params })).toBe(true);
-      expect(client.get({ params })).not.toBe(socket);
+      client.close(params);
+      expect(client.get(params)).not.toBe(socket);
     });
 
-    it("should return false for a non-existent socket", () => {
-      expect(client.close({ params: { userId: "missing" } })).toBe(false);
+    it("should not throw for a non-existent socket", () => {
+      expect(() => client.close({ userId: "missing" })).not.toThrow();
     });
   });
 
   describe("closeAll", () => {
     it("should close all managed sockets", async () => {
-      const socket1 = client.get({ params: { userId: "123" } });
-      const socket2 = client.get({ params: { userId: "456" } });
+      const socket1 = client.get({ userId: "123" });
+      const socket2 = client.get({ userId: "456" });
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       client.closeAll();
 
-      expect(client.get({ params: { userId: "123" } })).not.toBe(socket1);
-      expect(client.get({ params: { userId: "456" } })).not.toBe(socket2);
+      expect(client.get({ userId: "123" })).not.toBe(socket1);
+      expect(client.get({ userId: "456" })).not.toBe(socket2);
     });
   });
 
@@ -247,8 +246,10 @@ describe("createSocketClient", () => {
         binaryTypeClient.use({
           params: { userId: "123" },
           enabled: false,
-          initialData: "waiting",
-          select: (data) => data?.message,
+          select: (data) => {
+            if (!data) return "waiting";
+            return data;
+          },
         })
       );
 
@@ -267,12 +268,9 @@ describe("createSocketClient", () => {
         client.use({
           params: { userId: "123" },
           enabled,
-          initialData: "waiting",
-          select: (data) => data?.message,
         })
       );
 
-      expect(result.current.data).toBe("waiting");
       expect(result.current.fetchStatus).toBe("idle");
 
       enabled = true;
@@ -280,7 +278,7 @@ describe("createSocketClient", () => {
 
       await waitFor(
         () => {
-          expect(result.current.data).toContain("Connected user 123");
+          expect(result.current.fetchStatus).toBe("connected");
         },
         { timeout: 5000 }
       );
@@ -307,7 +305,7 @@ describe("createSocketClient", () => {
     it("should handle param changes correctly", async () => {
       let params = { userId: "123" };
       const { result, rerender } = renderHook(() => client.use({ params }));
-      const firstSocket = client.get({ params });
+      const firstSocket = client.get(params);
 
       await waitFor(
         () => {
@@ -333,7 +331,7 @@ describe("createSocketClient", () => {
         { timeout: 5000 }
       );
 
-      expect(client.get({ params })).not.toBe(firstSocket);
+      expect(client.get(params)).not.toBe(firstSocket);
     });
 
     it("should apply selector transformations", async () => {
@@ -367,8 +365,10 @@ describe("createSocketClient", () => {
     it("should allow initialData before the first message arrives", () => {
       const { result } = renderHook(() =>
         client.use({
-          initialData: "Message not received yet",
-          select: (data) => data?.message,
+          select: (data) => {
+            if (!data) return "Message not received yet";
+            return data;
+          },
         })
       );
 
@@ -428,9 +428,7 @@ describe("createSocketClient", () => {
         }),
       });
 
-      expect(() =>
-        schemaClient.get({ params: { userId: 123 } as never })
-      ).toThrow();
+      expect(() => schemaClient.get({ userId: 123 } as never)).toThrow();
 
       schemaClient.closeAll();
     });
@@ -499,7 +497,7 @@ describe("createSocketClient", () => {
         }),
       });
 
-      schemaClient.get({ params: { userId: "123" } });
+      schemaClient.get({ userId: "123" });
 
       renderHook(() =>
         schemaClient.use({
@@ -570,19 +568,6 @@ describe("createSocketClient", () => {
         },
         { timeout: 5000 }
       );
-    });
-
-    it("should preserve typed preset options", () => {
-      const options = client.preset({
-        params: { userId: "123" },
-        enabled: true,
-        initialData: "waiting",
-        select: (data) => data?.message ?? "",
-      });
-
-      expectTypeOf(options.params).toMatchTypeOf<TestParams | undefined>();
-      expectTypeOf(options.initialData).toEqualTypeOf<string | undefined>();
-      expectTypeOf(options.enabled).toEqualTypeOf<boolean | undefined>();
     });
 
     it("should handle connection failures", () => {
@@ -684,8 +669,8 @@ describe("createSocketClient", () => {
         paramsSchema: z.object({ userId: z.string().optional() }),
       });
 
-      const socketA = schemaClient.get({ params: { userId: "a" } });
-      const socketB = schemaClient.get({ params: { userId: "b" } });
+      const socketA = schemaClient.get({ userId: "a" });
+      const socketB = schemaClient.get({ userId: "b" });
       const [unsubscribeA, unsubscribeB] = await Promise.all([
         connectManagedSocket(socketA),
         connectManagedSocket(socketB),

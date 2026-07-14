@@ -1,8 +1,6 @@
-import type { SocketClient } from "@/class/socket-client";
+import type { Socket } from "@/class/socket";
 import type { ConnectionParams } from "@/types/connection-params";
 
-export type SocketClientSubscriber<
-  Get,
-  Post,
-  Params extends ConnectionParams,
-> = (client: SocketClient<Get, Post, Params>) => void;
+export type SocketSubscriber<Get, Post, Params extends ConnectionParams> = (
+  client: Socket<Get, Post, Params>
+) => void;

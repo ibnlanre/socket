@@ -59,6 +59,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
+    "map.prototype.getorinsertcomputed": "^1.0.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "vite": "^8.1.4",

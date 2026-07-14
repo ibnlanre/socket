@@ -16,7 +16,7 @@ test.describe("socket library example", () => {
     await server.close();
   });
 
-  test("connects and sends through createSocketClient", async ({ page }) => {
+  test("connects and sends through the client", async ({ page }) => {
     await page.goto(`/?ws=${encodeURIComponent(server.url)}`);
 
     await expect(page.getByTestId("socket-url")).toHaveText(server.url);
