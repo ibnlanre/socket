@@ -1,6 +1,6 @@
+import { getUri } from "@/functions/get-uri";
 import { shallowMerge } from "@/functions/shallow-merge";
 import { time } from "@/functions/time";
-import { getUri } from "@/library/get-uri";
 
 import type { ConnectionParams } from "@/types/connection-params";
 import type { EventSourceClientOptions } from "@/types/event-source/constructor";

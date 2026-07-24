@@ -5,10 +5,6 @@ export { SocketClient } from "./class/socket-client";
 export { SocketCloseCode } from "./constants/socket-close-code";
 export { SocketCloseReason } from "./constants/socket-close-reason";
 
-export { paramsSerializer } from "./functions/params-serializer";
-export { createSocketClient } from "./library/create-socket-client";
-export { getUri } from "./library/get-uri";
-
 export type { EventSourceClientOptions } from "./types/event-source/constructor";
 export type { SocketCacheOptions } from "./types/socket/cache-options";
 export type { SocketConnectionEvent } from "./types/socket/connection-event";

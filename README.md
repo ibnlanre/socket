@@ -22,12 +22,13 @@ In practice, the flow is simple: define one client per endpoint, let the library
 - **Runtime-safe messaging**: Plug in any Standard Schema-compatible library (Zod, Valibot, ArkType, and others) to validate params, outgoing payloads, and incoming messages.
 - **bfcache-friendly**: Closes connections on `pagehide` and reconnects on `pageshow`, so the browser can cache your page without issues.
 - **Built-in reconnect behavior**: Retry with delays, backoff, jitter, and custom close-condition logic.
+- **Server-Sent Events**: Ships with an `EventSourceClient` that supports native `EventSource` (GET) and fetch-based streaming (any HTTP method) with async iterator support.
 
 ## Getting Started
 
 To get started with `@ibnlanre/socket`:
 
-1. Install the package and its Zod peer dependency.
+1. Install the package.
 2. Create a client for a single WebSocket endpoint.
 3. Use `client.use(...)` in React or `client.get(...)` when you want the socket instance directly.
 
@@ -84,17 +85,19 @@ pnpm add @ibnlanre/socket valibot
 This is the smallest useful setup: create one client, call `use`, and render the selected data.
 
 ```tsx
-import { createSocketClient } from "@ibnlanre/socket";
+import { SocketClient } from "@ibnlanre/socket";
 
-const priceClient = createSocketClient<string>({
+const priceClient = new SocketClient<string>({
   baseURL: "wss://example.com",
   url: "/prices",
 });
 
 export function PriceTicker() {
   const price = priceClient.use({
-    select: (message) => message,
-    initialData: "Waiting for price...",
+    select: (message) => {
+      if (!message) return "Waiting for price...";
+      return message;
+    },
   });
 
   return <div>{price.data}</div>;
@@ -111,7 +114,7 @@ pnpm test:e2e
 
 ## Mental model
 
-- One client represents one WebSocket endpoint.
+- One `SocketClient` instance represents one WebSocket endpoint.
 - `client.use(...)` is the React entrypoint. It subscribes to a managed socket and returns reactive state plus socket methods.
 - `client.get(...)` gives you the managed socket instance for imperative actions like `open`, `send`, and `waitUntil`.
 - The same params reuse the same underlying socket. Different params create different managed sockets.
@@ -120,13 +123,13 @@ pnpm test:e2e
 
 ### Create a client
 
-Use `createSocketClient` to define one reusable client for one endpoint. Runtime schemas are optional, but when you provide them they validate data at runtime and also drive TypeScript inference.
+Use `SocketClient` to define one reusable client for one endpoint. Runtime schemas are optional, but when you provide them they validate data at runtime and also drive TypeScript inference.
 
 ```tsx
-import { createSocketClient, SocketCloseCode } from "@ibnlanre/socket";
+import { SocketClient, SocketCloseCode } from "@ibnlanre/socket";
 import { z } from "zod";
 
-const marketSummaryOverviewClient = createSocketClient({
+const marketSummaryOverviewClient = new SocketClient({
   baseURL: "wss://new.base.url/",
   url: "/ws/new-endpoint/market_overview/unique_id",
   paramsSchema: z.object({
@@ -156,7 +159,7 @@ const marketSummaryOverviewClient = createSocketClient({
   retryDelay: 2000,
   minJitterValue: 0.9,
   retryCount: 5,
-  retryOnSpecificCloseCodes: [SocketCloseCode.AbnormalClosure],
+  retryOnSpecificCloseCodes: [SocketCloseCode.ABNORMAL_CLOSURE],
   retryOnCustomCondition: (event, socket) => {
     return event.code === SocketCloseCode.PROTOCOL_ERROR;
   },
@@ -167,7 +170,7 @@ const marketSummaryOverviewClient = createSocketClient({
 
 The hook returns the socket instance plus a reactive `data` field.
 
-- `data`: The selected value returned by your `select` function, or `initialData` before a message arrives.
+- `data`: The selected value returned by your `select` function. Before a message arrives, `select` runs against `undefined` (or `placeholderData` if configured).
 - `value`: The latest full socket message after schema parsing.
 - `status`: One of `loading`, `success`, `error`, `idle`, or `stale`.
 - `fetchStatus`: One of `idle`, `connecting`, `connected`, or `disconnected`.
@@ -179,7 +182,7 @@ The hook returns the socket instance plus a reactive `data` field.
 
 ### Parameters
 
-`createSocketClient` accepts a configuration object with these options:
+`SocketClient` accepts a configuration object with these options:
 
 **General**
 - `baseURL`: The base URL of the WebSocket server.
@@ -217,7 +220,7 @@ The hook returns the socket instance plus a reactive `data` field.
 - `reconnectOnNetworkRestore` (default: `true`): Whether to retry the connection when the network is restored.
 - `reconnectOnWindowFocus` (default: `true`): Whether to retry the connection when the window regains focus.
 - `reconnectOnPageRestore` (default: `true`): Whether to reconnect when the page is restored from the back/forward cache (bfcache). Closes the socket on `pagehide` and reconnects on `pageshow`.
-- `retryBackoffStrategy` (default: `fixed`): The strategy for increasing the delay between retries.
+- `retryBackoffStrategy` (default: `exponential`): The strategy for increasing the delay between retries.
 - `maxRetryDelay` (default: `1min`): The maximum delay between retries.
 - `retryOnSpecificCloseCodes`: An array of specific close codes that should trigger a retry.
 - `retryOnCustomCondition`: A custom function to determine whether to retry.
@@ -227,12 +230,11 @@ The hook returns the socket instance plus a reactive `data` field.
 
 ### Returns
 
-Calling `createSocketClient` returns a client with these methods:
+`SocketClient` provides these methods:
 
 - `get`: Returns the managed socket for a params key, creating it if needed.
 - `close`: Closes and removes one managed socket. Returns `true` when a socket existed.
 - `closeAll`: Closes and removes every managed socket created by the client.
-- `preset`: Returns the same options object, but keeps the selected data type attached so you can reuse the config cleanly.
 - `use`: React hook that subscribes to one managed socket and returns the socket instance plus a reactive `data` field.
 
 The library also exports `EventSourceClient` for Server-Sent Events. It supports both native `EventSource` (GET requests) and fetch-based streaming (any HTTP method) with the same retry and backoff patterns.
@@ -245,9 +247,8 @@ Multiple calls with the same params reuse the same underlying socket instance. D
 
 ```tsx
 function socketOptions(currency_code?: string) {
-  return marketSummaryOverviewClient.preset({
+  return {
     params: { currency_code },
-    initialData: "Message not received yet",
     select(response) {
       if (!response) {
         return "Message not received yet";
@@ -259,7 +260,7 @@ function socketOptions(currency_code?: string) {
 
       return response.data.messages.summary.status;
     },
-  });
+  };
 }
 
 export default function App() {
@@ -275,9 +276,6 @@ export default function App() {
 - `params`: Query params used to build the socket URL and cache key.
 - `enabled` defaulting to `true`: Stops `open()` from running until you are ready.
 - `select`: Maps the latest socket message into the shape your component wants.
-- `initialData`: Fallback for the selected return value before any socket message is available.
-
-`initialData` is for the selected output. `placeholderData` in the client config is different: it seeds the underlying socket with a full message-shaped value before live data arrives, and `select` still runs against it.
 
 ### Imperative usage
 
@@ -302,7 +300,6 @@ The hook result exposes the same socket methods, so React code can stay local wh
 function SubscribeOnOpen() {
   const marketSummaryOverview = marketSummaryOverviewClient.use({
     params: { currency_code: "USD" },
-    select: (response) => response,
   });
 
   useEffect(() => {
@@ -322,6 +319,30 @@ function SubscribeOnOpen() {
 
 <details>
   <summary>
+    <code>Socket</code>: The core WebSocket wrapper that manages connection, state, retry, caching, and event dispatch.
+  </summary>
+
+  Typically accessed through `client.get(...)` or `client.use(...)`. Exposes reactive state properties (`status`, `fetchStatus`, `value`, `error`, etc.) and imperative methods (`open`, `close`, `send`, `subscribe`, `waitUntil`, `on`).
+</details>
+
+<details>
+  <summary>
+    <code>SocketClient</code>: The top-level client that pools managed socket instances by params key.
+  </summary>
+
+  Instantiated with `new SocketClient(config)`. Provides `get`, `close`, `closeAll`, and `use` methods.
+</details>
+
+<details>
+  <summary>
+    <code>SocketCache</code>: Wraps the browser Cache API for socket data persistence.
+  </summary>
+
+  Handles cache initialization, read/write with expiry, encryption/decryption, and state observation. Exposes `clear`, `get`, `has`, `initialize`, `subscribe`, `remove`, `set`, and a `value` getter.
+</details>
+
+<details>
+  <summary>
     <code>SocketCloseCode</code>: An enumeration of WebSocket close codes.
   </summary>
 
@@ -330,7 +351,7 @@ function SubscribeOnOpen() {
   ```tsx
   import { SocketCloseCode } from "@ibnlanre/socket";
 
-  const CLOSURE =  SocketCloseCode.NormalClosure;
+  const CLOSURE = SocketCloseCode.NORMAL_CLOSURE;
   //    ^? 1000
   ```
 </details>
@@ -345,23 +366,8 @@ function SubscribeOnOpen() {
   ```tsx
   import { SocketCloseReason, SocketCloseCode } from "@ibnlanre/socket";
 
-  const REASON =  SocketCloseReason[SocketCloseCode.NormalClosure];
+  const REASON = SocketCloseReason[SocketCloseCode.NORMAL_CLOSURE];
   //    ^? "The connection was closed cleanly"
-  ```
-</details>
-
-<details>
-  <summary>
-    <code>getUri</code>: A function to get the URI of the WebSocket connection.
-  </summary>
-
-  ### Example
-
-  ```tsx
-  import { getUri } from "@ibnlanre/socket";
-
-  const URI = getUri({ baseURL: "wss://example.com", url: "/ws/v1" });
-  //    ^? "wss://example.com/ws/v1"
   ```
 </details>
 
@@ -370,7 +376,7 @@ function SubscribeOnOpen() {
     <code>EventSourceClient</code>: A client for Server-Sent Events (SSE).
   </summary>
 
-  Supports native `EventSource` for GET requests and fetch-based streaming for any HTTP method. Comes with retry, backoff, and event dispatch.
+  Supports native `EventSource` for GET requests and fetch-based streaming for any HTTP method. Comes with retry, backoff, event dispatch, and async iterator support.
 
   ```tsx
   import { EventSourceClient } from "@ibnlanre/socket";
@@ -378,6 +384,11 @@ function SubscribeOnOpen() {
   const client = new EventSourceClient({ url: "https://example.com/events" });
   client.open();
   client.close();
+
+  // Async iteration
+  for await (const event of client) {
+    console.log(event.data);
+  }
   ```
 </details>
 
@@ -386,7 +397,7 @@ function SubscribeOnOpen() {
     <code>EventSourceClientOptions</code>: Configuration options for the SSE client.
   </summary>
 
-  Extends `RequestInit` with SSE-specific options like `url`, `baseURL`, `method`, `retry`, `retryDelay`, `retryCount`, `retryBackoffStrategy`, and `initialLastEventId`.
+  Extends `RequestInit` with SSE-specific options like `url`, `baseURL`, `method`, `enabled`, `messageSchema`, and inherits retry/backoff options from `ReconnectionPolicy` (`retry`, `retryDelay`, `retryCount`, `retryBackoffStrategy`, `maxRetryDelay`, `minJitterValue`, `maxJitterValue`).
 </details>
 
 ## License

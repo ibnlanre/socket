@@ -6,8 +6,8 @@ import type { UseSocketResult } from "@/types/use-socket-result";
 import { useEffect, useMemo, useState } from "react";
 
 import { Socket } from "@/class/socket";
+import { getUri } from "@/functions/get-uri";
 import { shallowMerge } from "@/functions/shallow-merge";
-import { getUri } from "@/library/get-uri";
 
 export class SocketClient<
   Get = unknown,

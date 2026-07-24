@@ -8,10 +8,10 @@ import { arrayBufferToBlob } from "@/functions/array-buffer-to-blob";
 import { blobToJson } from "@/functions/blob-to-json";
 import { extractOrigin } from "@/functions/extract-origin";
 import { extractPathname } from "@/functions/extract-pathname";
+import { getUri } from "@/functions/get-uri";
 import { paramsSerializer } from "@/functions/params-serializer";
 import { shallowClone } from "@/functions/shallow-clone";
 import { time } from "@/functions/time";
-import { getUri } from "@/library/get-uri";
 
 import type { ConnectionParams } from "@/types/connection-params";
 import type { SocketCipher } from "@/types/socket/cipher";

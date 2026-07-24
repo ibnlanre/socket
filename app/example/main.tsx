@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { App } from "./index";
+import { ChatRoom } from "./index";
 
 const container = document.getElementById("root");
 
@@ -11,6 +11,6 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <ChatRoom room="general" />
   </StrictMode>
 );
