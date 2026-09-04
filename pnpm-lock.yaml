@@ -60,9 +60,6 @@ importers:
       '@vitest/ui':
         specifier: ^4.1.10
         version: 4.1.10(vitest@4.1.10)
-      map.prototype.getorinsertcomputed:
-        specifier: ^1.0.1
-        version: 1.0.1
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -1447,10 +1444,6 @@ packages:
   make-dir@4.0.0:
     resolution: {integrity: sha512-hXdUTZYIVOt1Ex//jAQi+wTZZpUpwBj/0QsOzqegb3rGMMeJiSEu5xLHnYfBrRV4RH2+OCSOO95Is/7x1WJ4bw==}
     engines: {node: '>=10'}
-
-  map.prototype.getorinsertcomputed@1.0.1:
-    resolution: {integrity: sha512-lrkQOGrXcv+21Rtrw6F4JA6qtVR/Px3uyVMAS7oqdu/OmaFANAF8tQ8uMZSDQ5tNUNuNiBAewK122zrsjx0Mug==}
-    engines: {node: '>= 0.4'}
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -3457,14 +3450,6 @@ snapshots:
   make-dir@4.0.0:
     dependencies:
       semver: 7.8.5
-
-  map.prototype.getorinsertcomputed@1.0.1:
-    dependencies:
-      call-bind: 1.0.9
-      define-properties: 1.2.1
-      es-abstract: 1.24.2
-      es-errors: 1.3.0
-      es-map: 2.0.1
 
   math-intrinsics@1.1.0: {}
 

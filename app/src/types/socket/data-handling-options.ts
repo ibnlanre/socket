@@ -48,7 +48,7 @@ export interface SocketDataHandlingOptions<Get = unknown> {
   /**
    * Whether to decrypt the received data or not.
    *
-   * @default false
+   * @default true
    */
   decryptData?: boolean;
 
@@ -60,7 +60,7 @@ export interface SocketDataHandlingOptions<Get = unknown> {
   /**
    * Whether to encrypt the payload or not.
    *
-   * @default false
+   * @default true
    */
   encryptPayload?: boolean;
 

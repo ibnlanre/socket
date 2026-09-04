@@ -1,6 +1,14 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { z } from "zod";
 
@@ -108,6 +116,43 @@ describe("EventSourceClient", () => {
       expect(callCount).toBeGreaterThan(1);
       client.close();
     });
+
+    it("should include the most recent event ID when reconnecting", async () => {
+      let callCount = 0;
+      let reconnectLastEventId: string | null = null;
+
+      server.use(
+        http.post(TEST_URL, ({ request }) => {
+          callCount += 1;
+
+          if (callCount > 1) {
+            reconnectLastEventId = request.headers.get("Last-Event-ID");
+          }
+
+          return new HttpResponse(
+            createSSEStream("id: event-42\ndata: once\n\n"),
+            { headers: { "Content-Type": "text/event-stream" } }
+          );
+        })
+      );
+
+      const client = new EventSourceClient<string>({
+        url: TEST_URL,
+        method: "POST",
+        retry: true,
+        retryCount: 1,
+        retryDelay: "10 milliseconds",
+      });
+
+      client.open();
+
+      await vi.waitFor(() => {
+        expect(callCount).toBe(2);
+      });
+
+      expect(reconnectLastEventId).toBe("event-42");
+      client.close();
+    });
   });
 
   describe("SSE protocol parsing", () => {
@@ -142,6 +187,41 @@ describe("EventSourceClient", () => {
 
       client.open();
       client.close();
+    });
+
+    it("should cancel a scheduled reconnect", async () => {
+      let callCount = 0;
+      let resolveFirstRequest: (() => void) | undefined;
+      const firstRequest = new Promise<void>((resolve) => {
+        resolveFirstRequest = resolve;
+      });
+
+      server.use(
+        http.post(TEST_URL, () => {
+          callCount += 1;
+          resolveFirstRequest?.();
+          resolveFirstRequest = undefined;
+
+          return new HttpResponse(createSSEStream("data: once\n\n"), {
+            headers: { "Content-Type": "text/event-stream" },
+          });
+        })
+      );
+
+      const client = new EventSourceClient<string>({
+        url: TEST_URL,
+        method: "POST",
+        retry: true,
+        retryCount: 1,
+        retryDelay: "50 milliseconds",
+      });
+
+      client.open();
+      await firstRequest;
+      client.close();
+      await new Promise((resolve) => setTimeout(resolve, 75));
+
+      expect(callCount).toBe(1);
     });
   });
 

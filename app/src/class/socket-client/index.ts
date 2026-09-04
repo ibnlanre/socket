@@ -66,9 +66,14 @@ export class SocketClient<
    */
   get = (params?: Params) => {
     const key = this.#stringify(params);
-    return this.#pool.getOrInsertComputed(key, () => {
-      return new Socket(this.#configuration, params);
-    });
+    const existingSocket = this.#pool.get(key);
+
+    if (existingSocket) return existingSocket;
+
+    const socket = new Socket(this.#configuration, params);
+    this.#pool.set(key, socket);
+
+    return socket;
   };
 
   use = <State = Get>({

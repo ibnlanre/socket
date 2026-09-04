@@ -113,6 +113,20 @@ describe("Socket", () => {
 
       client.close();
     });
+
+    it("should apply the configured binary type to the WebSocket", async () => {
+      const client = new Socket({
+        url: "wss://echo.websocket.org",
+        binaryType: "arraybuffer",
+      });
+
+      client.open();
+      await client.waitUntil("open");
+
+      expect(client.ws?.binaryType).toBe("arraybuffer");
+
+      client.close();
+    });
   });
 
   describe("retry", () => {

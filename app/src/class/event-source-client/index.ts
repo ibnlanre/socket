@@ -28,6 +28,8 @@ export class EventSourceClient<
   #minJitterValue: number;
   #retryCount: number;
   #retryBackoffStrategy: "fixed" | "exponential";
+  #reconnectionTimerId: NodeJS.Timeout | undefined;
+  #isClosed: boolean = true;
   #messageSchema?: StandardSchemaV1<Data>;
 
   // Dedicated stream slice staging tracker
@@ -145,6 +147,7 @@ export class EventSourceClient<
       case "id":
         if (!value.includes("\u0000")) {
           this.lastEventId = value;
+          this.#lastEventId = value;
         }
         break;
       case "retry":
@@ -295,9 +298,14 @@ export class EventSourceClient<
    * @private
    */
   #reconnect = () => {
-    if (this.#retry && this.#retryCount > 0) {
+    if (!this.#isClosed && this.#retry && this.#retryCount > 0) {
+      clearTimeout(this.#reconnectionTimerId);
+
       const backoffDelay = this.#calculateBackoff();
-      setTimeout(() => {
+      this.#reconnectionTimerId = setTimeout(() => {
+        this.#reconnectionTimerId = undefined;
+        if (this.#isClosed) return;
+
         this.#retryCount -= 1;
         this.open();
       }, backoffDelay);
@@ -430,6 +438,7 @@ export class EventSourceClient<
    * Open the connection.
    */
   open = () => {
+    this.#isClosed = false;
     if (this.#method === "GET") this.#createEventSource();
     else this.#connect();
   };
@@ -438,6 +447,9 @@ export class EventSourceClient<
    * Close the connection.
    */
   close = () => {
+    this.#isClosed = true;
+    clearTimeout(this.#reconnectionTimerId);
+    this.#reconnectionTimerId = undefined;
     this.#abortController.abort();
     this.#eventSource?.close();
     this.#eventSource = null;

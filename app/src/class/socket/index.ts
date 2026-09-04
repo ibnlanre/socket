@@ -273,6 +273,7 @@ export class Socket<
 
   #connect = () => {
     this.ws = new WebSocket(this.#href, this.#protocols);
+    this.ws.binaryType = this.binaryType;
     this.#setState({
       fetchStatus: "connecting",
       status: "loading",
