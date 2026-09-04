@@ -75,7 +75,7 @@ export default defineConfig({
   //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
   // },
   webServer: {
-    command: "pnpm --dir app example",
+    command: "pnpm --dir app e2e",
     url: "http://127.0.0.1:4173",
     reuseExistingServer: !process.env.CI,
   },

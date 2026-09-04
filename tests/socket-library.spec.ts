@@ -147,7 +147,7 @@ test.describe("socket library example", () => {
 
     await expect(page.getByTestId("socket-status")).toHaveText("error");
     await expect(page.getByTestId("error-message")).toContainText(
-      "Invalid input"
+      "message schema validation failed"
     );
     await expect(page.getByTestId("message-output")).toContainText(
       '"type":"connection"'

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "bundle": "tsup",
+    "e2e": "vite --config vite.e2e.config.ts",
     "example": "vite --config vite.example.config.ts",
     "tag": "git tag -a v$npm_package_version -m v$npm_package_version",
     "push": "git push origin v$npm_package_version",

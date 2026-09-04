@@ -66,6 +66,7 @@ export class Socket<
   #href: string;
   #idleConnectionTimeout: number;
   #idleConnectionTimerId: SocketTimeout = undefined;
+  #isOpen: boolean = false;
   #log: SocketConnectionEvent[];
   #logCondition: (logType: SocketConnectionEvent) => boolean;
   #retry: boolean;
@@ -272,11 +273,13 @@ export class Socket<
   };
 
   #connect = () => {
+    if (!this.#isOpen || this.ws) return;
+
     this.ws = new WebSocket(this.#href, this.#protocols);
     this.ws.binaryType = this.binaryType;
     this.#setState({
       fetchStatus: "connecting",
-      status: "loading",
+      status: this.value === undefined ? "loading" : "stale",
     });
 
     this.ws.onopen = (ev: Event) => {
@@ -433,9 +436,10 @@ export class Socket<
     const result = await this.#validateAsync(this.#messageSchema, parsed);
     if (result.issues) {
       throw this.#createMessageFailure(
-        new Error("Socket: message schema validation failed", {
-          cause: result.issues,
-        }),
+        new Error(
+          `Socket: message schema validation failed: ${this.#formatSchemaIssues(result.issues)}`,
+          { cause: result.issues }
+        ),
         "validation"
       );
     }
@@ -445,6 +449,10 @@ export class Socket<
   #validateAsync = async <T>(schema: StandardSchemaV1<T>, value: unknown) => {
     const result = schema["~standard"].validate(value);
     return result instanceof Promise ? result : Promise.resolve(result);
+  };
+
+  #formatSchemaIssues = (issues: ReadonlyArray<{ message: string }>) => {
+    return issues.map(({ message }) => message).join("; ");
   };
 
   #createMessageFailure = (
@@ -539,11 +547,15 @@ export class Socket<
       }
 
       this.ws = null;
+      this.#isOpen = false;
       this.#cleanup();
     };
 
     this.#pageShowListener = (event: PageTransitionEvent) => {
-      if (event.persisted && this.isIdle) this.#connect();
+      if (event.persisted && this.isIdle) {
+        this.#isOpen = true;
+        this.#connect();
+      }
     };
 
     window.addEventListener("pagehide", this.#pageHideListener);
@@ -600,6 +612,7 @@ export class Socket<
     const code = SocketCloseCode.NORMAL_CLOSURE;
     const reason = SocketCloseReason[code];
 
+    this.#isOpen = false;
     if (this.ws?.readyState !== WebSocket.CLOSED) this.ws?.close(code, reason);
     if (this.#clearCacheOnClose) this.cache.remove(this.path);
 
@@ -618,8 +631,9 @@ export class Socket<
   };
 
   open = (enabled: boolean = true) => {
-    if (!enabled || this.ws) return;
+    if (!enabled || this.ws || this.#isOpen) return;
 
+    this.#isOpen = true;
     this.#cleanup();
     this.cache.subscribe(this.#setValue);
 
@@ -627,8 +641,7 @@ export class Socket<
     this.#setupWindowFocusListener();
     this.#setupPageLifecycleListeners();
 
-    this.#connect();
-    void this.cache.initialize(this.path);
+    void this.cache.initialize(this.path).then(this.#connect, this.#connect);
   };
 
   send = (payload: Post): boolean => {
@@ -661,9 +674,10 @@ export class Socket<
     if (result instanceof Promise) return payload;
     if (result.issues) {
       throw this.#createMessageFailure(
-        new Error("Socket: send schema validation failed", {
-          cause: result.issues,
-        }),
+        new Error(
+          `Socket: send schema validation failed: ${this.#formatSchemaIssues(result.issues)}`,
+          { cause: result.issues }
+        ),
         "validation"
       );
     }
