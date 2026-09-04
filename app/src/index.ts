@@ -6,7 +6,10 @@ export { SocketCloseCode } from "./constants/socket-close-code";
 export { SocketCloseReason } from "./constants/socket-close-reason";
 
 export type { EventSourceClientOptions } from "./types/event-source/constructor";
+export type { EventSourceListener } from "./types/event-source/listener";
+export type { EventSourceStatus } from "./types/event-source/status";
 export type { SocketCacheOptions } from "./types/socket/cache-options";
+export type { SocketCommands } from "./types/socket/commands";
 export type { SocketConnectionEvent } from "./types/socket/connection-event";
 export type { SocketConstructor } from "./types/socket/constructor";
 export type {
@@ -21,6 +24,7 @@ export type { SocketParamsSerializer } from "./types/socket/params-serializer";
 export type { SocketReconnectOptions } from "./types/socket/reconnect-options";
 export type { SocketSchema } from "./types/socket/schema";
 export type { SocketSelector } from "./types/socket/selector";
+export type { SocketState } from "./types/socket/state";
 export type { SocketStatus } from "./types/socket/status";
 export type { SocketTimeout } from "./types/socket/timeout";
 export type { SocketURI } from "./types/socket/uri";

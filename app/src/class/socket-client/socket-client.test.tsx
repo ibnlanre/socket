@@ -197,12 +197,12 @@ describe("SocketClient", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      client.close(params);
+      expect(client.close(params)).toBe(true);
       expect(client.get(params)).not.toBe(socket);
     });
 
     it("should not throw for a non-existent socket", () => {
-      expect(() => client.close({ userId: "missing" })).not.toThrow();
+      expect(client.close({ userId: "missing" })).toBe(false);
     });
   });
 
@@ -220,10 +220,22 @@ describe("SocketClient", () => {
     });
   });
 
-  describe("use hook", () => {
+  describe("useSocket hook", () => {
+    it("should expose a read-only result through useSocket", async () => {
+      const { result } = renderHook(() => client.useSocket());
+
+      await waitFor(() => {
+        expect(result.current.isConnected).toBe(true);
+      });
+
+      expect(result.current).not.toHaveProperty("ws");
+      expect(result.current).not.toHaveProperty("cache");
+      expect(typeof result.current.send).toBe("function");
+    });
+
     it("should return transformed data", async () => {
       const { result } = renderHook(() =>
-        client.use({
+        client.useSocket({
           select: (data) => data?.message || "default",
         })
       );
@@ -243,7 +255,7 @@ describe("SocketClient", () => {
       });
 
       const { result } = renderHook(() =>
-        binaryTypeClient.use({
+        binaryTypeClient.useSocket({
           params: { userId: "123" },
           enabled: false,
           select: (data) => {
@@ -265,7 +277,7 @@ describe("SocketClient", () => {
       let enabled = false;
 
       const { result, rerender } = renderHook(() =>
-        client.use({
+        client.useSocket({
           params: { userId: "123" },
           enabled,
         })
@@ -286,7 +298,7 @@ describe("SocketClient", () => {
 
     it("should subscribe to socket updates", async () => {
       const { result } = renderHook(() =>
-        client.use({ params: { userId: "123" } })
+        client.useSocket({ params: { userId: "123" } })
       );
 
       await waitFor(
@@ -304,7 +316,9 @@ describe("SocketClient", () => {
 
     it("should handle param changes correctly", async () => {
       let params = { userId: "123" };
-      const { result, rerender } = renderHook(() => client.use({ params }));
+      const { result, rerender } = renderHook(() =>
+        client.useSocket({ params })
+      );
       const firstSocket = client.get(params);
 
       await waitFor(
@@ -336,7 +350,7 @@ describe("SocketClient", () => {
 
     it("should apply selector transformations", async () => {
       const { result } = renderHook(() =>
-        client.use({
+        client.useSocket({
           params: { userId: "123", room: "chat" },
           select: (data) => data?.message?.toUpperCase() || "",
         })
@@ -352,7 +366,7 @@ describe("SocketClient", () => {
     });
 
     it("should handle default params", async () => {
-      const { result } = renderHook(() => client.use());
+      const { result } = renderHook(() => client.useSocket());
 
       await waitFor(
         () => {
@@ -364,7 +378,7 @@ describe("SocketClient", () => {
 
     it("should allow initialData before the first message arrives", () => {
       const { result } = renderHook(() =>
-        client.use({
+        client.useSocket({
           select: (data) => {
             if (!data) return "Message not received yet";
             return data;
@@ -385,7 +399,7 @@ describe("SocketClient", () => {
       });
 
       const { result } = renderHook(() =>
-        placeholderClient.use({
+        placeholderClient.useSocket({
           select: (data) => data?.message,
         })
       );
@@ -397,7 +411,7 @@ describe("SocketClient", () => {
 
     it("should expose a live state snapshot once connected", async () => {
       const { result } = renderHook(() =>
-        client.use({
+        client.useSocket({
           params: { userId: "123" },
         })
       );
@@ -415,7 +429,7 @@ describe("SocketClient", () => {
   describe("error handling", () => {
     it("should handle empty params gracefully", () => {
       expect(() => client.get()).not.toThrow();
-      expect(() => renderHook(() => client.use())).not.toThrow();
+      expect(() => renderHook(() => client.useSocket())).not.toThrow();
     });
 
     it("should validate params with zod", () => {
@@ -431,6 +445,25 @@ describe("SocketClient", () => {
       schemaClient.closeAll();
     });
 
+    it("should throw for async params schemas instead of skipping validation", () => {
+      const schemaClient = new SocketClient({
+        ...mockConfig,
+        paramsSchema: {
+          "~standard": {
+            version: 1,
+            vendor: "test",
+            validate: () => Promise.resolve({ value: {} }),
+          },
+        } as never,
+      });
+
+      expect(() => schemaClient.get({ userId: "123" } as never)).toThrow(
+        "SocketClient: async params schemas are not supported. Validate params before creating or retrieving a socket."
+      );
+
+      schemaClient.closeAll();
+    });
+
     it("should validate incoming messages with zod", async () => {
       const schemaClient = new SocketClient({
         ...mockConfig,
@@ -442,7 +475,7 @@ describe("SocketClient", () => {
       });
 
       const { result } = renderHook(() =>
-        schemaClient.use({ params: { userId: "123" } })
+        schemaClient.useSocket({ params: { userId: "123" } })
       );
 
       await waitFor(
@@ -498,7 +531,7 @@ describe("SocketClient", () => {
       schemaClient.get({ userId: "123" });
 
       renderHook(() =>
-        schemaClient.use({
+        schemaClient.useSocket({
           params: { room: "chat" },
           select(message) {
             return message?.message;
@@ -549,7 +582,7 @@ describe("SocketClient", () => {
     it("should expose imperative actions on the hook result", async () => {
       const params = { userId: "123", room: "chat" };
 
-      const { result } = renderHook(() => client.use({ params }));
+      const { result } = renderHook(() => client.useSocket({ params }));
 
       await waitFor(
         () => {
@@ -574,7 +607,7 @@ describe("SocketClient", () => {
         url: "/ws/test",
       });
 
-      expect(() => renderHook(() => errorClient.use())).not.toThrow();
+      expect(() => renderHook(() => errorClient.useSocket())).not.toThrow();
 
       errorClient.closeAll();
     });

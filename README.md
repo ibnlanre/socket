@@ -9,7 +9,7 @@
 
 </div>
 
-`@ibnlanre/socket` is a fast, lightweight, and type-safe WebSocket client built to supercharge your developer experience (DX). Designed with a cache-first approach and flexible configuration, it makes managing WebSocket connections effortless and efficient.
+`@ibnlanre/socket` is a fast, lightweight, and type-safe **JSON WebSocket** client built to supercharge your developer experience (DX). Designed with a cache-first approach and flexible configuration, it makes managing WebSocket connections effortless and efficient.
 
 It is built for React apps that need a predictable way to open sockets, reuse them across components, validate messages, and recover cleanly from disconnects. You can use it declaratively through a hook or imperatively through the socket instance. It also ships with an `EventSourceClient` for Server-Sent Events when you need a simpler one-way connection.
 
@@ -30,7 +30,7 @@ To get started with `@ibnlanre/socket`:
 
 1. Install the package.
 2. Create a client for a single WebSocket endpoint.
-3. Use `client.use(...)` in React or `client.get(...)` when you want the socket instance directly.
+3. Use `client.useSocket(...)` in React or `client.get(...)` when you want the socket instance directly.
 
 ## Installation
 
@@ -82,7 +82,7 @@ pnpm add @ibnlanre/socket valibot
 
 ## Quick start
 
-This is the smallest useful setup: create one client, call `use`, and render the selected data.
+This is the smallest useful setup: create one client, call `useSocket`, and render the selected data.
 
 ```tsx
 import { SocketClient } from "@ibnlanre/socket";
@@ -93,7 +93,7 @@ const priceClient = new SocketClient<string>({
 });
 
 export function PriceTicker() {
-  const price = priceClient.use({
+  const price = priceClient.useSocket({
     select: (message) => {
       if (!message) return "Waiting for price...";
       return message;
@@ -106,7 +106,7 @@ export function PriceTicker() {
 
 ## End-to-End Testing
 
-The browser-level e2e test is meant to validate the socket library itself, not a separate demo surface. It drives the example app in `app/example` and connects that app to a real local WebSocket test server.
+The browser-level e2e test validates the socket library itself through its dedicated harness in `app/e2e`, connected to a real local WebSocket test server. The chat demo in `app/example` remains independent.
 
 ```bash
 pnpm test:e2e
@@ -115,7 +115,7 @@ pnpm test:e2e
 ## Mental model
 
 - One `SocketClient` instance represents one WebSocket endpoint.
-- `client.use(...)` is the React entrypoint. It subscribes to a managed socket and returns reactive state plus socket methods.
+- `client.useSocket(...)` is the React entrypoint. It subscribes to a managed socket and returns a read-only state snapshot plus connection commands.
 - `client.get(...)` gives you the managed socket instance for imperative actions like `open`, `send`, and `waitUntil`.
 - The same params reuse the same underlying socket. Different params create different managed sockets.
 
@@ -166,9 +166,9 @@ const marketSummaryOverviewClient = new SocketClient({
 });
 ```
 
-### What `use(...)` gives you back
+### What `useSocket(...)` gives you back
 
-The hook returns the socket instance plus a reactive `data` field.
+The hook returns a read-only reactive snapshot plus `open`, `close`, `send`, `waitUntil`, and `on` commands. Transport internals such as `ws`, cache storage, and the mutable socket instance stay behind `client.get(...)`.
 
 - `data`: The selected value returned by your `select` function. Before a message arrives, `select` runs against `undefined` (or `placeholderData` if configured).
 - `value`: The latest full socket message after schema parsing.
@@ -178,7 +178,7 @@ The hook returns the socket instance plus a reactive `data` field.
 - `isLoading`, `isSuccess`, `isError`, `isPending`, `isRefetching`, `isRefetchError`, `isStaleData`: Derived state flags.
 - `failureCount`, `failureReason`, `error`, `dataUpdatedAt`, `errorUpdatedAt`, `isPlaceholderData`: Useful connection and failure metadata.
 - `binaryType`: The binary frame type (`"blob"` or `"arraybuffer"`).
-- `open`, `close`, `send`, `subscribe`, `waitUntil`, `on`: Imperative socket methods when you need them.
+- `open`, `close`, `send`, `waitUntil`, `on`: Imperative commands when you need them. `on` returns an unsubscribe function; handlers are keyed by reference (distinct handlers each own a subscription, re-registering the same handler is a no-op); listeners survive automatic reconnects and are dropped when the socket is explicitly closed.
 
 ### Parameters
 
@@ -188,8 +188,8 @@ The hook returns the socket instance plus a reactive `data` field.
 - `baseURL`: The base URL of the WebSocket server.
 - `url`: The endpoint URL for the WebSocket connection.
 - `messageSchema`: A runtime schema for WebSocket messages received from the server. It also becomes the inferred message type for `value`, `select`, and subscribers.
-- `paramsSchema`: A runtime schema for URL params passed through the client options object. It also becomes the inferred params type for `use`, `initialize`, and `cleanup`.
-- `sendSchema`: A runtime schema for messages sent through `send`. It also becomes the inferred payload type for those calls.
+- `paramsSchema`: A synchronous runtime schema for URL params passed through the client options object. It also becomes the inferred params type for `useSocket` and `get`.
+- `sendSchema`: A synchronous runtime schema for JSON messages sent through `send`. It also becomes the inferred payload type for those calls.
 - `binaryType` (default: `"blob"`): Preferred binary frame representation for the managed WebSocket.
 - `protocols`: The protocols to use for the WebSocket connection.
 
@@ -198,6 +198,8 @@ The hook returns the socket instance plus a reactive `data` field.
 - `clearCacheOnClose` (default: `false`): Whether to clear the cache when the connection is closed.
 - `disableCache` (default: `false`): Whether to disable the cache or not.
 - `maxCacheAge` (default: `15mins`): The maximum age of the cached data.
+
+Cache data is stored through the browser Cache API. Do not enable it for sensitive messages unless your cache key, retention period, and encryption strategy are appropriate for your application.
 
 **Data Handling**
 - `deduplicationWindow`: The time window in which identical outbound payloads are deduplicated. Set to `0` to disable.
@@ -234,8 +236,8 @@ The hook returns the socket instance plus a reactive `data` field.
 
 - `get`: Returns the managed socket for a params key, creating it if needed.
 - `close`: Closes and removes one managed socket. Returns `true` when a socket existed.
-- `closeAll`: Closes and removes every managed socket created by the client.
-- `use`: React hook that subscribes to one managed socket and returns the socket instance plus a reactive `data` field.
+- `closeAll`: Closes and removes every managed socket created by the client, returning the number removed.
+- `useSocket`: React hook that subscribes to one managed socket and returns a reactive, read-only result plus commands.
 
 The library also exports `EventSourceClient` for Server-Sent Events. It supports both native `EventSource` (GET requests) and fetch-based streaming (any HTTP method) with the same retry and backoff patterns.
 
@@ -243,7 +245,7 @@ Multiple calls with the same params reuse the same underlying socket instance. D
 
 ### React usage
 
-`client.use(...)` is the reactive entrypoint. It opens the managed socket on mount unless `enabled` is `false`, subscribes to state changes, and returns the socket instance merged with the selected `data`.
+`client.useSocket(...)` is the reactive entrypoint. It opens the managed socket on mount unless `enabled` is `false`, subscribes to state changes, and returns a read-only snapshot merged with the selected `data`.
 
 ```tsx
 function socketOptions(currency_code?: string) {
@@ -265,13 +267,13 @@ function socketOptions(currency_code?: string) {
 
 export default function App() {
   const options = socketOptions("USD");
-  const marketSummaryOverview = marketSummaryOverviewClient.use(options);
+  const marketSummaryOverview = marketSummaryOverviewClient.useSocket(options);
 
   return <div>{marketSummaryOverview.data}</div>;
 }
 ```
 
-`use` accepts these options:
+`useSocket` accepts these options:
 
 - `params`: Query params used to build the socket URL and cache key.
 - `enabled` defaulting to `true`: Stops `open()` from running until you are ready.
@@ -279,7 +281,7 @@ export default function App() {
 
 ### Imperative usage
 
-Imperative actions live on the socket instance itself. You can get that instance either through `client.get(...)` or from the object returned by `client.use(...)`.
+Imperative actions live on the managed socket from `client.get(...)`. The hook result exposes safe connection commands but intentionally does not expose mutable transport internals.
 
 ```tsx
 const socket = marketSummaryOverviewClient.get({
@@ -298,7 +300,7 @@ The hook result exposes the same socket methods, so React code can stay local wh
 
 ```tsx
 function SubscribeOnOpen() {
-  const marketSummaryOverview = marketSummaryOverviewClient.use({
+  const marketSummaryOverview = marketSummaryOverviewClient.useSocket({
     params: { currency_code: "USD" },
   });
 
@@ -322,7 +324,7 @@ function SubscribeOnOpen() {
     <code>Socket</code>: The core WebSocket wrapper that manages connection, state, retry, caching, and event dispatch.
   </summary>
 
-  Typically accessed through `client.get(...)` or `client.use(...)`. Exposes reactive state properties (`status`, `fetchStatus`, `value`, `error`, etc.) and imperative methods (`open`, `close`, `send`, `subscribe`, `waitUntil`, `on`).
+  Typically accessed through `client.get(...)`. It exposes the full imperative API, including `subscribe`. `on` returns an unsubscribe function, supports multiple handlers for an event (keyed by handler reference — distinct handlers each own their subscription; registering the same handler again is a no-op), and carries subscriptions across automatic reconnects — subscriptions are torn down only when the socket is explicitly closed.
 </details>
 
 <details>
@@ -330,7 +332,7 @@ function SubscribeOnOpen() {
     <code>SocketClient</code>: The top-level client that pools managed socket instances by params key.
   </summary>
 
-  Instantiated with `new SocketClient(config)`. Provides `get`, `close`, `closeAll`, and `use` methods.
+  Instantiated with `new SocketClient(config)`. Provides `get`, `close`, `closeAll`, and `useSocket`.
 </details>
 
 <details>
@@ -376,14 +378,18 @@ function SubscribeOnOpen() {
     <code>EventSourceClient</code>: A client for Server-Sent Events (SSE).
   </summary>
 
-  Supports native `EventSource` for GET requests and fetch-based streaming for any HTTP method. Comes with retry, backoff, event dispatch, and async iterator support.
+  Supports native `EventSource` for GET requests and fetch-based streaming for any HTTP method — named events work on both transports. Comes with retry, backoff, named event subscriptions, async iteration, and observable `status` (`idle`, `connecting`, `open`, or `error`) and `error` fields.
 
   ```tsx
   import { EventSourceClient } from "@ibnlanre/socket";
 
   const client = new EventSourceClient({ url: "https://example.com/events" });
+  const unsubscribe = client.on("update", (event) => {
+    console.log(event.data);
+  });
   client.open();
   client.close();
+  unsubscribe();
 
   // Async iteration
   for await (const event of client) {
@@ -397,7 +403,7 @@ function SubscribeOnOpen() {
     <code>EventSourceClientOptions</code>: Configuration options for the SSE client.
   </summary>
 
-  Extends `RequestInit` with SSE-specific options like `url`, `baseURL`, `method`, `enabled`, `messageSchema`, and inherits retry/backoff options from `ReconnectionPolicy` (`retry`, `retryDelay`, `retryCount`, `retryBackoffStrategy`, `maxRetryDelay`, `minJitterValue`, `maxJitterValue`).
+  Extends `RequestInit` with SSE-specific options like `url`, `baseURL`, `method`, and `messageSchema`, and inherits retry/backoff options from `ReconnectionPolicy` (`retry`, `retryDelay`, `retryCount`, `retryBackoffStrategy`, `maxRetryDelay`, `minJitterValue`, `maxJitterValue`).
 </details>
 
 ## License

@@ -1,9 +1,12 @@
 import { getUri } from "@/functions/get-uri";
 import { shallowMerge } from "@/functions/shallow-merge";
 import { time } from "@/functions/time";
+import { toError } from "@/functions/to-error";
 
 import type { ConnectionParams } from "@/types/connection-params";
 import type { EventSourceClientOptions } from "@/types/event-source/constructor";
+import type { EventSourceListener } from "@/types/event-source/listener";
+import type { EventSourceStatus } from "@/types/event-source/status";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 /**
@@ -13,13 +16,18 @@ export class EventSourceClient<
   Data = unknown,
   Params extends ConnectionParams = never,
 > {
+  error: Error | null = null;
+  status: EventSourceStatus = "idle";
   #abortController: AbortController = new AbortController();
   #cache: string;
   #eventSource: EventSource | null = null;
   #lastEventId: string | null;
   #href: string;
   #init: RequestInit;
-  #listeners: Map<string, (event: MessageEvent) => void> = new Map();
+  #listeners: Map<string, Set<(event: MessageEvent) => void>> = new Map();
+  // One forwarding handler per subscribed named event, used to bridge events
+  // from a native EventSource (GET mode) into the shared listener dispatch.
+  #nativeForwarders: Map<string, EventListener> = new Map();
   #retry: boolean;
   #retryDelay: number;
   #maxJitterValue: number;
@@ -28,7 +36,7 @@ export class EventSourceClient<
   #minJitterValue: number;
   #retryCount: number;
   #retryBackoffStrategy: "fixed" | "exponential";
-  #reconnectionTimerId: NodeJS.Timeout | undefined;
+  #reconnectionTimerId: ReturnType<typeof setTimeout> | undefined;
   #isClosed: boolean = true;
   #messageSchema?: StandardSchemaV1<Data>;
 
@@ -89,6 +97,10 @@ export class EventSourceClient<
       withCredentials: this.#init.credentials === "include",
     });
 
+    this.#eventSource.onopen = () => {
+      this.status = "open";
+    };
+
     this.#eventSource.onmessage = (event) => {
       this.#handleMessage(event.data);
     };
@@ -98,6 +110,13 @@ export class EventSourceClient<
       this.#eventSource?.close();
       this.#reconnect();
     };
+
+    // Native EventSources only deliver events for names you subscribe to up
+    // front, so re-attach one forwarder per subscribed named event. This runs
+    // on every (re)connect because a fresh EventSource is created each time.
+    this.#nativeForwarders.forEach((forwarder, type) => {
+      this.#eventSource?.addEventListener(type, forwarder);
+    });
   };
 
   /**
@@ -116,7 +135,10 @@ export class EventSourceClient<
       })
       .then((body) => {
         if (!body) return this.#reconnect();
-        if (body.getReader) this.#readBody(body.getReader());
+        if (body.getReader) {
+          this.status = "open";
+          this.#readBody(body.getReader());
+        }
       })
       .catch((error) => {
         if (error.name === "AbortError") {
@@ -245,15 +267,19 @@ export class EventSourceClient<
       }
     }
 
+    // A delivered event proves the stream is live again after a message-level
+    // error flipped the status to "error".
+    this.status = "open";
+
     const event = new MessageEvent(this.eventTypeBuffer || "message", {
       data,
       lastEventId: this.lastEventId,
       origin: new URL(this.#href).origin,
     });
 
-    this.#listeners.forEach((listener, eventName) => {
+    this.#listeners.forEach((listeners, eventName) => {
       if (eventName === event.type) {
-        listener(event);
+        listeners.forEach((listener) => listener(event));
       }
     });
 
@@ -338,9 +364,10 @@ export class EventSourceClient<
   /**
    * Handle incoming messages.
    * @param payload The transport string coming in.
+   * @param type The SSE event type (defaults to "message").
    * @private
    */
-  #handleMessage = async (payload: string) => {
+  #handleMessage = async (payload: string, type = "message") => {
     let data: string | Data = payload;
 
     if (this.#messageSchema) {
@@ -369,10 +396,19 @@ export class EventSourceClient<
       }
     }
 
-    const event = new MessageEvent("message", { data });
-    this.#listeners.forEach((listener, eventName) => {
-      if (eventName === "message" || eventName === event.type) {
-        listener(event);
+    // A delivered event proves the stream is live again after a message-level
+    // error flipped the status to "error".
+    this.status = "open";
+
+    const event = new MessageEvent(type, {
+      data,
+      lastEventId: this.lastEventId,
+      origin: new URL(this.#href).origin,
+    });
+
+    this.#listeners.forEach((listeners, eventName) => {
+      if (eventName === type) {
+        listeners.forEach((listener) => listener(event));
       }
     });
   };
@@ -382,35 +418,79 @@ export class EventSourceClient<
    * @param error The error object.
    * @private
    */
-  #handleError = (error: any) => {
-    const event = new MessageEvent("error", { data: error });
-    this.#listeners.forEach((listener, eventName) => {
-      if (eventName === "error") listener(event);
+  #handleError = (error: unknown) => {
+    const failure = toError(error, "EventSource connection failed");
+    this.error = failure;
+    this.status = "error";
+
+    const event = new MessageEvent("error", { data: failure });
+    this.#listeners.forEach((listeners, eventName) => {
+      if (eventName === "error") {
+        listeners.forEach((listener) => listener(event));
+      }
     });
   };
 
   /**
-   * Add an event listener.
-   * @param type The event type.
-   * @param listener The event listener.
-   * @private
+   * Subscribe to an SSE event. Returns an unsubscribe function.
+   *
+   * The store is keyed by the handler that was passed: each distinct handler
+   * owns its own subscription, while registering the same handler again is a
+   * no-op that returns the shared unsubscribe.
    */
-  #addEventListener = <T extends "message" | (string & {})>(
-    type: T,
-    listener: T extends "message"
-      ? (event: MessageEvent<Data>) => void
-      : (event: MessageEvent<any>) => void
-  ) => {
-    this.#listeners.set(type, listener as (event: MessageEvent) => void);
+  on = <Name extends string>(
+    type: Name,
+    listener: EventSourceListener<Data>
+  ): (() => void) => {
+    let listeners = this.#listeners.get(type);
+    listeners ??= new Set();
+
+    const eventListener = listener as (event: MessageEvent) => void;
+    const isAbsent = !listeners.has(eventListener);
+
+    listeners.add(eventListener);
+    this.#listeners.set(type, listeners);
+
+    // Native EventSources only deliver events for names subscribed to up
+    // front, so ensure a forwarder exists for the native (GET) transport path.
+    if (isAbsent) this.#attachNativeForwarder(type);
+
+    return () => {
+      if (!listeners.has(eventListener)) return;
+      listeners.delete(eventListener);
+
+      if (listeners.size === 0) {
+        this.#listeners.delete(type);
+        this.#detachNativeForwarder(type);
+      }
+    };
   };
 
   /**
-   * Remove an event listener.
-   * @param type The event type.
-   * @private
+   * Register (or reuse) a forwarding listener for a named event. The forwarder
+   * re-enters the shared dispatch so the payload is schema-validated and routed
+   * to every listener for that type. Native EventSources only deliver events
+   * for names subscribed to up front, so registering before `open()` matters:
+   * the forwarder is stored now and attached to each freshly created EventSource.
    */
-  #removeEventListener = (type: string) => {
-    this.#listeners.delete(type);
+  #attachNativeForwarder = (type: string) => {
+    if (type === "message" || type === "error") return;
+    if (this.#nativeForwarders.has(type)) return;
+
+    const forwarder = (event: MessageEvent) => {
+      void this.#handleMessage(String(event.data), type);
+    };
+
+    this.#nativeForwarders.set(type, forwarder as EventListener);
+    this.#eventSource?.addEventListener(type, forwarder as EventListener);
+  };
+
+  #detachNativeForwarder = (type: string) => {
+    const forwarder = this.#nativeForwarders.get(type);
+    if (!forwarder) return;
+
+    this.#nativeForwarders.delete(type);
+    this.#eventSource?.removeEventListener(type, forwarder);
   };
 
   /**
@@ -424,11 +504,12 @@ export class EventSourceClient<
   async *[Symbol.asyncIterator](): AsyncGenerator<MessageEvent<Data>> {
     while (true) {
       const event = await new Promise<MessageEvent<Data>>((resolve) => {
+        let unsubscribe = () => {};
         const listener = (event: MessageEvent) => {
-          this.#removeEventListener("message");
+          unsubscribe();
           resolve(event);
         };
-        this.#addEventListener("message", listener);
+        unsubscribe = this.on("message", listener);
       });
       yield event;
     }
@@ -439,6 +520,8 @@ export class EventSourceClient<
    */
   open = () => {
     this.#isClosed = false;
+    this.status = "connecting";
+    this.error = null;
     if (this.#method === "GET") this.#createEventSource();
     else this.#connect();
   };
@@ -449,9 +532,13 @@ export class EventSourceClient<
   close = () => {
     this.#isClosed = true;
     clearTimeout(this.#reconnectionTimerId);
+
     this.#reconnectionTimerId = undefined;
     this.#abortController.abort();
     this.#eventSource?.close();
     this.#eventSource = null;
+    this.status = "idle";
+    this.#listeners.clear();
+    this.#nativeForwarders.clear();
   };
 }

@@ -127,6 +127,80 @@ describe("Socket", () => {
 
       client.close();
     });
+
+    it("should support multiple event listeners and unsubscribe independently", async () => {
+      const client = new Socket({ url: "wss://echo.websocket.org" });
+      const first = vi.fn();
+      const second = vi.fn();
+      const unsubscribeFirst = client.on("message", first);
+      const unsubscribeSecond = client.on("message", second);
+
+      client.open();
+      await client.waitUntil("message");
+
+      expect(first).toHaveBeenCalledTimes(1);
+      expect(second).toHaveBeenCalledTimes(1);
+
+      unsubscribeFirst();
+      client.send({ event: "another message" } as never);
+
+      await vi.waitFor(() => {
+        expect(second).toHaveBeenCalledTimes(2);
+      });
+      expect(first).toHaveBeenCalledTimes(1);
+
+      unsubscribeSecond();
+      client.close();
+    });
+
+    it("should treat re-registering the same handler as a no-op", async () => {
+      const client = new Socket({ url: "wss://echo.websocket.org" });
+      const listener = vi.fn();
+      const other = vi.fn();
+      const unsubscribeFirst = client.on("message", listener);
+      const unsubscribeSecond = client.on("message", listener); // no-op
+      const unsubscribeOther = client.on("message", other);
+
+      client.open();
+      await client.waitUntil("message");
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(other).toHaveBeenCalledTimes(1);
+
+      // A handler is keyed by its reference, so there is only one subscription
+      // to remove; both returned unsubscribes are safe to call.
+      unsubscribeFirst();
+      unsubscribeSecond();
+
+      client.send({ event: "ping" } as never);
+      await vi.waitFor(() => {
+        expect(other).toHaveBeenCalledTimes(2);
+      });
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      unsubscribeOther();
+      client.close();
+    });
+
+    it("should drop event listeners when the socket is explicitly closed", async () => {
+      const client = new Socket({ url: "wss://echo.websocket.org" });
+      const listener = vi.fn();
+      client.on("message", listener);
+
+      client.open();
+      await client.waitUntil("message");
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      client.close();
+      await client.waitUntil("close");
+
+      // Reopen a fresh connection — the server sends its initial message again,
+      // but the listener was torn down with the close, so it must not fire.
+      client.open();
+      await client.waitUntil("message");
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      client.close();
+    });
   });
 
   describe("retry", () => {
@@ -379,6 +453,27 @@ describe("Socket", () => {
       unsub2();
       client.close();
     }, 10000);
+  });
+
+  describe("send — schema validation", () => {
+    it("should throw when the send schema is async instead of skipping validation", () => {
+      const client = new Socket({
+        url: "wss://echo.websocket.org",
+        sendSchema: {
+          "~standard": {
+            version: 1,
+            vendor: "test",
+            validate: () => Promise.resolve({ value: {} }),
+          },
+        } as never,
+      });
+
+      expect(() => client.send({ event: "ping" } as never)).toThrow(
+        "Socket: async send schemas are not supported. Validate the payload before calling send."
+      );
+
+      client.close();
+    });
   });
 
   describe("bfcache lifecycle", () => {

@@ -32,7 +32,7 @@ interface ChatRoomProps {
 }
 
 export function ChatRoom({ room }: ChatRoomProps) {
-  const socket = chatClient.use({ params: { room } });
+  const socket = chatClient.useSocket({ params: { room } });
 
   const send = (content: string) => {
     socket.send({ content });

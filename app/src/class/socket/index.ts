@@ -12,10 +12,12 @@ import { getUri } from "@/functions/get-uri";
 import { paramsSerializer } from "@/functions/params-serializer";
 import { shallowClone } from "@/functions/shallow-clone";
 import { time } from "@/functions/time";
+import { toError } from "@/functions/to-error";
 
 import type { ConnectionParams } from "@/types/connection-params";
 import type { SocketCipher } from "@/types/socket/cipher";
 import type { SocketSubscriber } from "@/types/socket/client-subscriber";
+import type { SocketCommands } from "@/types/socket/commands";
 import type { SocketConnectionEvent } from "@/types/socket/connection-event";
 import type { SocketConstructor } from "@/types/socket/constructor";
 import type { SocketData } from "@/types/socket/data";
@@ -25,6 +27,7 @@ import type {
 } from "@/types/socket/data-handling-options";
 import type { SocketFetchStatus } from "@/types/socket/fetch-status";
 import type { SocketListener } from "@/types/socket/listener";
+import type { SocketState } from "@/types/socket/state";
 import type { SocketStatus } from "@/types/socket/status";
 import type { SocketTimeout } from "@/types/socket/timeout";
 import type { UnitValue } from "@/types/time-unit";
@@ -40,7 +43,10 @@ export class Socket<
   Get = unknown,
   Post = never,
   Params extends ConnectionParams = never,
-> {
+>
+  implements SocketState<Get>, SocketCommands<Post>
+{
+  /** A JSON WebSocket client. Incoming frames are decoded and JSON-parsed. */
   binaryType: "blob" | "arraybuffer" = "blob";
   cache: SocketCache<Get>;
   dataUpdatedAt: number = 0;
@@ -59,7 +65,7 @@ export class Socket<
   #clearCacheOnClose: boolean;
   #encrypt?: SocketCipher;
   #encryptPayload: boolean;
-  #eventListeners: Map<string, EventListener> = new Map();
+  #eventListeners: Map<string, Set<EventListener>> = new Map();
   #focusListener: (() => void) | null = null;
   #pageHideListener: (() => void) | null = null;
   #pageShowListener: ((event: PageTransitionEvent) => void) | null = null;
@@ -239,11 +245,11 @@ export class Socket<
   #cleanupEventListeners = () => {
     if (!this.ws) return;
 
-    this.#eventListeners.forEach((listener, event) => {
-      this.ws?.removeEventListener(event, listener);
+    this.#eventListeners.forEach((listeners, event) => {
+      listeners.forEach((listener) => {
+        this.ws?.removeEventListener(event, listener);
+      });
     });
-
-    this.#eventListeners.clear();
   };
 
   #cleanupNetworkListener = () => {
@@ -277,6 +283,11 @@ export class Socket<
 
     this.ws = new WebSocket(this.#href, this.#protocols);
     this.ws.binaryType = this.binaryType;
+    this.#eventListeners.forEach((listeners, event) => {
+      listeners.forEach((listener) => {
+        this.ws?.addEventListener(event, listener);
+      });
+    });
     this.#setState({
       fetchStatus: "connecting",
       status: this.value === undefined ? "loading" : "stale",
@@ -331,7 +342,7 @@ export class Socket<
           });
         }
 
-        const error = err instanceof Error ? err : new Error(String(err));
+        const error = toError(err);
 
         this.#setState({
           status: "error",
@@ -459,7 +470,7 @@ export class Socket<
     error: unknown,
     stage: SocketMessageFailureStage
   ): SocketMessageFailure => {
-    const failure = error instanceof Error ? error : new Error(String(error));
+    const failure = toError(error);
 
     const closeCode =
       stage === "validation"
@@ -620,18 +631,49 @@ export class Socket<
     this.#cleanupNetworkListener();
     this.#cleanupWindowFocusListener();
     this.#cleanupPageLifecycleListeners();
+
+    // Explicit close is a full teardown: drop transport listeners so a
+    // re-opened socket starts clean. Automatic reconnects never pass through
+    // here and therefore keep their subscriptions.
+    this.#eventListeners.clear();
     this.#subscribers.clear();
 
     this.ws = null;
   };
 
+  /**
+   * Subscribe to a native WebSocket event. Returns an unsubscribe function.
+   *
+   * The store is keyed by the handler that was passed: each distinct handler
+   * owns its own subscription, while registering the same handler again is a
+   * no-op that returns the shared unsubscribe. Consumers that share one pooled
+   * socket should pass their own handler so one unmount never detaches
+   * another's subscription.
+   */
   on: SocketListener = (event, callback) => {
-    this.ws?.addEventListener(event, callback);
-    this.#eventListeners.set(event, callback);
+    let listeners = this.#eventListeners.get(event);
+    listeners ??= new Set();
+
+    const listener = callback as EventListener;
+    const isAbsent = !listeners.has(listener);
+
+    listeners.add(listener);
+    this.#eventListeners.set(event, listeners);
+
+    // Native addEventListener is idempotent per (event, handler): only attach
+    // for a handler that is not subscribed yet.
+    if (isAbsent) this.ws?.addEventListener(event, listener);
+
+    return () => {
+      if (!listeners.has(listener)) return;
+      listeners.delete(listener);
+      this.ws?.removeEventListener(event, listener);
+      if (listeners.size === 0) this.#eventListeners.delete(event);
+    };
   };
 
-  open = (enabled: boolean = true) => {
-    if (!enabled || this.ws || this.#isOpen) return;
+  open = () => {
+    if (this.ws || this.#isOpen) return;
 
     this.#isOpen = true;
     this.#cleanup();
@@ -671,7 +713,11 @@ export class Socket<
     if (!this.#sendSchema) return payload;
 
     const result = this.#sendSchema["~standard"].validate(payload);
-    if (result instanceof Promise) return payload;
+    if (result instanceof Promise) {
+      throw new TypeError(
+        "Socket: async send schemas are not supported. Validate the payload before calling send."
+      );
+    }
     if (result.issues) {
       throw this.#createMessageFailure(
         new Error(

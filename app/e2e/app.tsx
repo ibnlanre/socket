@@ -35,12 +35,7 @@ const paramsSchema = z.record(z.string(), z.string());
 type ExampleMessage = z.infer<typeof messageSchema>;
 type ExampleParams = z.infer<typeof paramsSchema>;
 type ExampleSend = z.infer<typeof sendSchema>;
-type ExampleSocket = UseSocketResult<
-  ExampleMessage,
-  ExampleSend,
-  ExampleParams,
-  string
->;
+type ExampleSocket = UseSocketResult<ExampleMessage, ExampleSend, string>;
 type ExampleClient = SocketClient<ExampleMessage, ExampleSend, ExampleParams>;
 
 function getSearchParams() {
@@ -60,7 +55,9 @@ function getFailurePolicy(): SocketMessageFailurePolicy | undefined {
   const decode = getFailureAction("decodeFailureAction");
   const parse = getFailureAction("parseFailureAction");
   const validation = getFailureAction("validationFailureAction");
-  return decode || parse || validation ? { decode, parse, validation } : undefined;
+  return decode || parse || validation
+    ? { decode, parse, validation }
+    : undefined;
 }
 
 function numberOption(name: string, fallback: number) {
@@ -89,7 +86,7 @@ function Subscriber({
   params,
   renderState = false,
 }: SubscriberProps) {
-  const socket = client.use({
+  const socket = client.useSocket({
     params,
     select(message) {
       return message ? JSON.stringify(message) : "waiting";
@@ -113,7 +110,9 @@ function Subscriber({
       <p data-testid="failure-count">{socket.failureCount}</p>
       <p data-testid="failure-reason">{socket.failureReason ?? "none"}</p>
       <p data-testid="error-message">{socket.error?.message ?? "none"}</p>
-      <p data-testid="is-placeholder-data">{String(socket.isPlaceholderData)}</p>
+      <p data-testid="is-placeholder-data">
+        {String(socket.isPlaceholderData)}
+      </p>
       <pre data-testid="message-output">{socket.data}</pre>
     </>
   );
@@ -130,8 +129,12 @@ export function App() {
   const secondSubscriber = options.get("secondSubscriber") === "true";
   const [firstMounted, setFirstMounted] = useState(true);
   const [secondMounted, setSecondMounted] = useState(secondSubscriber);
-  const [primarySocket, setPrimarySocket] = useState<ExampleSocket | null>(null);
-  const [secondarySocket, setSecondarySocket] = useState<ExampleSocket | null>(null);
+  const [primarySocket, setPrimarySocket] = useState<ExampleSocket | null>(
+    null
+  );
+  const [secondarySocket, setSecondarySocket] = useState<ExampleSocket | null>(
+    null
+  );
   const [managedFetchStatus, setManagedFetchStatus] = useState("idle");
   const [sendResult, setSendResult] = useState("none");
   const [sendError, setSendError] = useState("none");
@@ -204,7 +207,9 @@ export function App() {
     if (!sendOnMount) return;
 
     try {
-      setSendResult(String(client.get(connection.params).send({ type: "ping", message })));
+      setSendResult(
+        String(client.get(connection.params).send({ type: "ping", message }))
+      );
       setSendError("none");
     } catch (error) {
       setSendResult("false");
@@ -232,7 +237,7 @@ export function App() {
       <p data-testid="send-error">{sendError}</p>
       <p data-testid="shared-socket">
         {primarySocket && secondarySocket
-          ? String(primarySocket.ws === secondarySocket.ws)
+          ? String(primarySocket.send === secondarySocket.send)
           : "n/a"}
       </p>
       {cacheReady && firstMounted ? (
@@ -250,7 +255,10 @@ export function App() {
           params={connection.params}
         />
       ) : null}
-      <button data-testid="send-button" onClick={() => send({ type: "ping", message })}>
+      <button
+        data-testid="send-button"
+        onClick={() => send({ type: "ping", message })}
+      >
         Send Ping
       </button>
       <button
@@ -259,10 +267,16 @@ export function App() {
       >
         Send Invalid
       </button>
-      <button data-testid="toggle-first-button" onClick={() => setFirstMounted((value) => !value)}>
+      <button
+        data-testid="toggle-first-button"
+        onClick={() => setFirstMounted((value) => !value)}
+      >
         Toggle First
       </button>
-      <button data-testid="toggle-second-button" onClick={() => setSecondMounted((value) => !value)}>
+      <button
+        data-testid="toggle-second-button"
+        onClick={() => setSecondMounted((value) => !value)}
+      >
         Toggle Second
       </button>
     </main>

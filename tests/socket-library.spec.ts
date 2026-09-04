@@ -294,6 +294,10 @@ test.describe("socket library example", () => {
       "connected"
     );
 
+    // Both subscribers resolve to one pooled socket, so only a single
+    // physical WebSocket connection should have been established.
+    expect(server.getUpgradeAttempts(server.url)).toBe(1);
+
     await page.getByTestId("toggle-first-button").click();
     await page.getByTestId("toggle-second-button").click();
 

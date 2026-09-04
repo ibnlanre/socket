@@ -20,13 +20,6 @@ export interface EventSourceClientOptions<Data = unknown>
   baseURL?: string;
 
   /**
-   * Whether to enable the WebSocket connection or not
-   *
-   * @default true
-   */
-  enabled?: boolean;
-
-  /**
    * A Standard Schema to validate parsed JSON message data before dispatching.
    *
    * When provided, the raw SSE data buffer is JSON-parsed and validated
