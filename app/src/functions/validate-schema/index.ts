@@ -1,5 +1,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
+export class AsyncSchemaError extends TypeError {}
+
 export function schemaValue<Value>(
   result: StandardSchemaV1.Result<Value>,
   message: string
@@ -22,7 +24,9 @@ export function validateSchema<Input, Output>(
   if ("then" in result) {
     // A synchronous caller cannot consume the result, but must handle rejection.
     void Promise.resolve(result).catch(() => {});
-    throw new TypeError(`${message}: async schemas require the async API.`);
+    throw new AsyncSchemaError(
+      `${message}: async schemas require the async API.`
+    );
   }
   return schemaValue(result, message);
 }

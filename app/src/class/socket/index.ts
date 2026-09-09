@@ -13,7 +13,11 @@ import { getUri } from "@/functions/get-uri";
 import { shallowClone } from "@/functions/shallow-clone";
 import { time } from "@/functions/time";
 import { toError } from "@/functions/to-error";
-import { schemaValue, validateSchema } from "@/functions/validate-schema";
+import {
+  AsyncSchemaError,
+  schemaValue,
+  validateSchema,
+} from "@/functions/validate-schema";
 
 import type {
   SocketDiagnostic,
@@ -104,6 +108,7 @@ export class Socket<
   #messages: Promise<void> = Promise.resolve();
   #controller: AbortController | null = null;
   #disposed: boolean = false;
+  #waiters = new Set<() => void>();
   #snapshot: Socket<Get, Post, Params> | undefined;
   #prepareConnection?: SocketPrepareConnection;
   #onDiagnostic?: (event: SocketDiagnostic) => void;
@@ -262,6 +267,9 @@ export class Socket<
     this.#preserveTerminalMetadata = false;
     this.#setState({
       fetchStatus: "idle",
+      ...(preserveError
+        ? {}
+        : { status: this.value === undefined ? "idle" : "stale" }),
       ...(preserveFailure
         ? {}
         : {
@@ -665,6 +673,7 @@ export class Socket<
     this.#pageHideListener = () => {
       const code = SocketCloseCode.NORMAL_CLOSURE;
       const reason = SocketCloseReason[code];
+      this.#cleanupEventListeners();
 
       if (this.ws?.readyState !== WebSocket.CLOSED) {
         this.ws?.close(code, reason);
@@ -752,6 +761,7 @@ export class Socket<
     if (this.#clearCacheOnClose) this.cache.remove(this.path);
 
     this.#cleanup();
+    this.#waiters.forEach((cancel) => cancel());
     this.#cleanupNetworkListener();
     this.#cleanupWindowFocusListener();
     this.#cleanupPageLifecycleListeners();
@@ -848,19 +858,25 @@ export class Socket<
 
   send = (payload: Post): boolean => {
     this.#assertActive();
+    let value: unknown = payload;
     try {
-      const value = this.#sendSchema
-        ? validateSchema(
-            this.#sendSchema,
-            payload,
-            "Socket: send schema validation failed"
-          )
-        : payload;
-      return this.#outbox.send(value);
+      if (this.#sendSchema)
+        value = validateSchema(
+          this.#sendSchema,
+          payload,
+          "Socket: send schema validation failed"
+        );
     } catch (error) {
-      if (error instanceof TypeError) throw error;
-      throw this.#createMessageFailure(error, "validation");
+      if (error instanceof AsyncSchemaError) throw error;
+      const failure = this.#createMessageFailure(error, "validation");
+      this.#diagnostic({
+        type: "validation",
+        direction: "outgoing",
+        error: failure,
+      });
+      throw failure;
     }
+    return this.#outbox.send(value);
   };
 
   sendAsync = (
@@ -911,8 +927,10 @@ export class Socket<
 
   waitUntil = (
     state: SocketConnectionEvent,
-    timeout: UnitValue = "5 seconds"
+    timeout: UnitValue = "5 seconds",
+    { signal }: { signal?: AbortSignal } = {}
   ): Promise<void> => {
+    this.#assertActive();
     let timerId: SocketTimeout;
 
     const hasReachedState = () => {
@@ -929,6 +947,10 @@ export class Socket<
     };
 
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(signal.reason);
+        return;
+      }
       if (hasReachedState()) {
         resolve();
         return;
@@ -937,6 +959,14 @@ export class Socket<
       const cleanup = () => {
         clearTimeout(timerId);
         this.#subscribers.delete(listener);
+        this.#waiters.delete(cancel);
+        signal?.removeEventListener("abort", cancel);
+      };
+      const cancel = () => {
+        cleanup();
+        reject(
+          signal?.reason ?? new DOMException("Socket closed", "AbortError")
+        );
       };
 
       const listener = () => {
@@ -947,6 +977,8 @@ export class Socket<
       };
 
       this.#subscribers.add(listener);
+      this.#waiters.add(cancel);
+      signal?.addEventListener("abort", cancel, { once: true });
       const countdown = time(timeout);
 
       timerId = setTimeout(() => {

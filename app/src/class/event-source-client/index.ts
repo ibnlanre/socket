@@ -43,6 +43,7 @@ export class EventSourceClient<
   #maxPendingMessages: number;
   #messages: Promise<void> = Promise.resolve();
   #disposed = false;
+  #iterators = new Set<() => void>();
   #attempt = 0;
   #messageSchema?: StandardSchemaV1<unknown, Data>;
 
@@ -456,6 +457,8 @@ export class EventSourceClient<
     type: Name,
     listener: EventSourceListener<Data>
   ): (() => void) => {
+    if (this.#disposed)
+      throw new Error("EventSourceClient: this instance has been disposed.");
     let listeners = this.#listeners.get(type);
     listeners ??= new Set();
 
@@ -518,18 +521,72 @@ export class EventSourceClient<
    * @generator
    * @yields {MessageEvent} The next message event.
    */
-  async *[Symbol.asyncIterator](): AsyncGenerator<MessageEvent<Data>> {
-    while (true) {
-      const event = await new Promise<MessageEvent<Data>>((resolve) => {
-        let unsubscribe = () => {};
-        const listener = (event: MessageEvent) => {
-          unsubscribe();
-          resolve(event);
-        };
-        unsubscribe = this.on("message", listener);
-      });
-      yield event;
-    }
+  events = ({
+    signal,
+    maxQueueSize = 1000,
+  }: {
+    signal?: AbortSignal;
+    maxQueueSize?: number;
+  } = {}): AsyncIterableIterator<MessageEvent<Data>> => {
+    if (!Number.isInteger(maxQueueSize) || maxQueueSize < 1)
+      throw new RangeError("maxQueueSize must be a positive integer.");
+    const queue: MessageEvent<Data>[] = [];
+    const waiting: {
+      resolve: (result: IteratorResult<MessageEvent<Data>>) => void;
+      reject: (error: unknown) => void;
+    }[] = [];
+    let ended = false;
+    let failure: unknown;
+    let unsubscribe = () => {};
+    const stop = (error?: unknown) => {
+      if (ended) return;
+      ended = true;
+      failure = error;
+      queue.length = 0;
+      unsubscribe();
+      signal?.removeEventListener("abort", abort);
+      this.#iterators.delete(close);
+      for (const waiter of waiting.splice(0)) {
+        if (error) waiter.reject(error);
+        else waiter.resolve({ done: true, value: undefined });
+      }
+    };
+    const abort = () =>
+      stop(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    const close = () => stop();
+    unsubscribe = this.on("message", (event) => {
+      const waiter = waiting.shift();
+      if (waiter)
+        waiter.resolve({ done: false, value: event as MessageEvent<Data> });
+      else if (queue.length >= maxQueueSize)
+        stop(new RangeError("EventSourceClient: iterator queue is full."));
+      else queue.push(event as MessageEvent<Data>);
+    });
+    this.#iterators.add(close);
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+    return {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      next() {
+        if (failure) return Promise.reject(failure);
+        if (ended) return Promise.resolve({ done: true, value: undefined });
+        const event = queue.shift();
+        if (event) return Promise.resolve({ done: false, value: event });
+        return new Promise((resolve, reject) =>
+          waiting.push({ resolve, reject })
+        );
+      },
+      return() {
+        stop();
+        return Promise.resolve({ done: true, value: undefined });
+      },
+    };
+  };
+
+  [Symbol.asyncIterator](): AsyncIterableIterator<MessageEvent<Data>> {
+    return this.events();
   }
 
   /**
@@ -565,6 +622,7 @@ export class EventSourceClient<
    */
   close = () => {
     this.#isClosed = true;
+    this.#iterators.forEach((stop) => stop());
     this.#generation += 1;
     this.#messages = Promise.resolve();
     this.#pendingMessages = 0;

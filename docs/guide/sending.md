@@ -1,6 +1,6 @@
 # Sending messages
 
-`socket.send(payload)` is the imperative way to push a JSON payload over the connection. It returns a boolean indicating whether the payload was dispatched.
+`socket.send(payload)` is the imperative way to push a JSON payload over the connection. It returns a boolean indicating whether the payload was accepted for dispatch or queuing.
 
 ## Signatures
 
@@ -34,7 +34,7 @@ await socket.waitUntil("open"); // queue flushes here, in order
 
 ## Deduplication
 
-With `deduplicationWindow` set, identical outbound payloads (same serialized params key) within the window collapse into **one** wire message.
+With `deduplicationWindow` set, identical outbound payloads (same canonical JSON value) within the window collapse into **one** wire message.
 
 ```tsx
 const client = new SocketClient({
@@ -57,7 +57,7 @@ When your `sendSchema` is asynchronous, use `sendAsync` instead of `send`:
 const accepted = await socket.sendAsync({ type: "subscribe", symbol: "BTC" }); // true | false
 ```
 
-`sendAsync` validates, then accepts the payload into the same ordered queue. It rejects on validation failure or if the payload is expired or dropped by overflow, and accepts an `AbortSignal` to cancel while validating.
+`sendAsync` validates, then accepts the payload into the same ordered queue. It rejects on validation failure, or cancellation/expiry/overflow while validation is pending. Once accepted, expiry or dropping is reported through diagnostics; an already-resolved Promise cannot report later delivery failure.
 
 ## `waitUntil`
 
@@ -78,3 +78,11 @@ await socket.waitUntil("close");
 To permanently release a socket (clearing its listeners and subscriptions), use `client.close(params)` / `client.evict(params)` or `socket.dispose()`.
 
 Waiting sends are bounded by `maxQueueSize`, `queueMaxAge`, and `queueOverflow` — see [Reference → Options](/api/options).
+
+## Queue guarantees
+
+With deduplication disabled, repeated calls remain separate messages even while disconnected. When enabled, duplicate pending messages return `false`. JSON object-key order does not affect deduplication; array order does.
+
+`sendAsync` reserves its place before validation. Later synchronous or asynchronous sends cannot overtake that place. Validation failure, cancellation, or expiry releases it. Closing clears waiting sends and cancels pending validation waits.
+
+The default queue holds at most 1000 sends for one minute. Full queues reject by default; `queueOverflow: "drop-oldest"` opts into dropping. `true` means locally accepted, not received or acknowledged by the server. Observe `onDiagnostic` for later queue expiry/drop/transmission events.

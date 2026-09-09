@@ -50,6 +50,7 @@ export default defineConfig({
             { text: "Mental model", link: "/guide/mental-model" },
             { text: "Installation", link: "/guide/installation" },
             { text: "Getting started", link: "/guide/getting-started" },
+            { text: "Migration notes", link: "/guide/migration" },
           ],
         },
         {

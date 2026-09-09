@@ -561,3 +561,44 @@ describe("SSE async message lifecycle", () => {
     client.dispose();
   });
 });
+
+describe("SSE iteration lifecycle", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    FakeEventSource.instances = [];
+  });
+  it("buffers messages between reads and settles pending reads on close", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const client = new EventSourceClient<string>({ url: TEST_URL });
+    client.open();
+    const iterator = client.events();
+    const source = FakeEventSource.instances.at(-1)!;
+    source.emit("message", "one");
+    source.emit("message", "two");
+    expect((await iterator.next()).value.data).toBe("one");
+    expect((await iterator.next()).value.data).toBe("two");
+    const waiting = iterator.next();
+    client.close();
+    expect((await waiting).done).toBe(true);
+    client.dispose();
+  });
+  it("bounds iteration and supports cancellation without closing the connection", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const client = new EventSourceClient({ url: TEST_URL });
+    client.open();
+    const iterator = client.events({ maxQueueSize: 1 });
+    const source = FakeEventSource.instances.at(-1)!;
+    source.emit("message", "one");
+    source.emit("message", "two");
+    await expect(iterator.next()).rejects.toThrow("full");
+    const controller = new AbortController();
+    const cancelled = client.events({ signal: controller.signal });
+    const waiting = expect(cancelled.next()).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    controller.abort();
+    await waiting;
+    expect(source.closed).toBe(false);
+    client.dispose();
+  });
+});

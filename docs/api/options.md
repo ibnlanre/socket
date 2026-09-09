@@ -21,7 +21,7 @@ The `SocketClient` / `Socket` constructor configuration (`SocketConstructor`) is
 | `cacheKey` | origin of the URL | Cache name to use |
 | `maxCacheAge` | `"15 minutes"` | Entry lifetime before expiry |
 | `clearCacheOnClose` | `false` | Clear the cache when the socket closes |
-| `disableCache` | `false` | Skip Cache API writes (keep in-memory mirror) |
+| `disableCache` | `false` | Skip Cache API reads and writes (keep in-memory mirror) |
 
 ## Data handling
 
@@ -51,7 +51,7 @@ Default: `{ decode: "close", parse: "recover", validation: "recover" }`.
 Each stage runs after the previous succeeds: **decode** (frame → text), **parse** (`JSON.parse`), **validation** (`messageSchema`).
 
 - `"recover"` — drop the offending message and keep the connection alive.
-- `"close"` — terminate the socket, recording terminal failure metadata (`failureReason`, `failureCount + 1`, close code). Validation failures close with code `1008` (`POLICY_VIOLATION`); decode/parse failures with `1007` (`INVALID_PAYLOAD_DATA`).
+- `"close"` — terminate the socket, recording terminal failure metadata (`failureReason`, `failureCount + 1`, close code). Failures carry local classifications `1008` (`POLICY_VIOLATION`) for validation and `1007` (`INVALID_PAYLOAD_DATA`) for decode/parse. The browser transport is closed normally; these reserved codes are not passed to `WebSocket.close()`.
 
 ## Outgoing queue
 
@@ -66,14 +66,14 @@ Sends route through an ordered, bounded outbox shared by `send()` and `sendAsync
 | `maxPendingMessages` | `1000` | Maximum in-flight incoming validations before the connection is closed |
 | `maxDeduplicationEntries` | `1000` | Maximum retained deduplication keys |
 
-When `deduplicationWindow` is `0`, deduplication is disabled and every send is accepted. When greater than `0`, identical payloads within the window collapse to one wire message and dedup history is bounded by `maxDeduplicationEntries`.
+When `deduplicationWindow` is `0`, deduplication is disabled and repeated sends remain distinct, subject to queue limits. When greater than `0`, identical payloads within the window collapse to one wire message and dedup history is bounded by `maxDeduplicationEntries`.
 
 ## Connection preparation & diagnostics
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `prepareConnection` | `SocketPrepareConnection` | — | Runs before every transport attempt (e.g. auth/token refresh). Returning `{ url, protocols }` overrides that attempt only; pool and cache identity are unchanged. |
-| `onDiagnostic` | `(event: SocketDiagnostic) => void` | — | Receives structured `connection` / `retry` / `queue` / `validation` / `cache` events. Payloads and credentials are never included. |
+| `onDiagnostic` | `(event: SocketDiagnostic) => void` | — | Receives structured `connection` / `retry` / `queue` / `validation` / `cache` events. Events do not directly include payloads or URLs; validation errors may include details from the schema. |
 
 On `SocketClient`, `maxPoolSize` (default `1000`) bounds the number of pooled sockets; exceeding it throws a `RangeError` rather than silently evicting.
 
@@ -104,3 +104,20 @@ See [Guide → Reconnection](/guide/reconnection) for the retry decision logic a
 | --- | --- | --- |
 | `log` | `["open", "close", "error"]` | Which connection events to log (message excluded by default) |
 | `logCondition` | `() => NODE_ENV === "development"` | Predicate controlling whether a log line is emitted |
+
+### Preparing fresh credentials
+
+```ts
+prepareConnection: async ({ url, signal }) => {
+  const response = await fetch("/api/socket-token", { signal });
+  if (!response.ok) throw new Error("Could not prepare socket credentials");
+  const { token } = await response.json();
+  const target = new URL(url);
+  target.searchParams.set("token", token);
+  return { url: target.href };
+}
+```
+
+Closing aborts preparation and discards a late result. Preparation errors follow retry count/delay when retry is enabled. Include stable account or tenant identity in subscription parameters when data must be isolated: per-attempt authentication does not change the pool/cache key.
+
+Queue expiry and browser-buffer availability are checked on a short timer. `maxBufferedAmount` controls pressure before a send, not maximum individual frame size. A `sent` diagnostic means handed to the browser transport, not acknowledged by the server. Diagnostic callback exceptions do not alter connection behavior.

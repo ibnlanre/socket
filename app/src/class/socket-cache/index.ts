@@ -54,6 +54,7 @@ export class SocketCache<State = unknown> {
   clear = async (): Promise<void> => {
     if (!this.#cache) return;
 
+    await this.#writes;
     const keys = await this.#cache.keys();
     await Promise.all(keys.map((request) => this.#cache!.delete(request)));
   };
@@ -111,7 +112,9 @@ export class SocketCache<State = unknown> {
 
   subscribe = (observer: (value: State) => void): (() => void) => {
     this.#observers.add(observer);
-    return () => { this.#observers.delete(observer); };
+    return () => {
+      this.#observers.delete(observer);
+    };
   };
 
   remove = async (path: string): Promise<boolean> => {

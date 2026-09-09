@@ -23,7 +23,7 @@ export interface SocketConstructor<
   /** Runs before every transport attempt; does not change pool/cache identity. */
   prepareConnection?: SocketPrepareConnection;
 
-  /** Structured operational events; payloads and credentials are never included. */
+  /** Structured operational events without direct payload/URL fields. Schema errors may contain validation details. */
   onDiagnostic?: (event: SocketDiagnostic) => void;
 
   /**

@@ -16,7 +16,7 @@ The synchronous entry points keep their contracts — `send()` returns a boolean
 
 `paramsSchema` validates — and can transform — parameters when the client resolves a socket. Parameters are validated and normalized **once**, and that exact result drives both sides of identity: the pool key **and** the connection URL. A schema transform therefore decides which socket and URL are used, so normalize deliberately.
 
-Render-time lookup stays synchronous. It accepts either plain params (validated synchronously) or an already-**prepared** value (see below). For asynchronous parameter work — token refresh, async schemas — use `prepare()` and pass the result to `get`/`useSocket`, or use the `usePreparedParams` hook:
+Render-time lookup stays synchronous. It accepts either plain params (validated synchronously) or an already-**prepared** value (see below). For asynchronous parameter validation — use `prepare()` and pass the result to `get`/`useSocket`, or use the `usePreparedParams` hook:
 
 ```tsx
 import { z } from "zod";
@@ -94,3 +94,37 @@ The full signature is `SocketClient<Get, Post, Params, ParamsInput>` where:
 Schemas are typed `SocketSchema<Input, Output>`, where `Output` defaults to `Input` — a schema may transform between the two. Explicit generic arguments select the input and output types.
 
 Keep WebSocket message output JSON-compatible: the validated value is re-serialized through JSON before entering the cache, so objects such as `Date` do not retain their runtime identity through that path.
+
+## Preparing parameters in React
+
+Keep the consuming hook in a child component. While preparation is pending, no prepared value exists; passing `undefined` to `useSocket` would attempt ordinary synchronous lookup.
+
+```tsx
+const client = new SocketClient({
+  baseURL: "wss://example.com",
+  url: "/rooms",
+  paramsSchema: z.string().transform(async (room) => ({
+    room: room.trim().toLowerCase(),
+  })),
+});
+
+function Room({ name }: { name: string }) {
+  const { params, error, isPending } = client.usePreparedParams(name);
+  if (error) return <p>{error.message}</p>;
+  if (isPending || !params) return <p>Preparing room…</p>;
+  return <RoomStream params={params} />;
+}
+
+function RoomStream({ params }: {
+  params: Awaited<ReturnType<typeof client.prepare>>;
+}) {
+  const socket = client.useSocket({ params });
+  return <pre>{JSON.stringify(socket.data)}</pre>;
+}
+```
+
+For imperative code, `const prepared = await client.prepare(input)` followed by `client.get(prepared)` avoids a second validation. `getAsync(input)` combines both steps. `closeAsync(input)` prepares and removes the matching instance.
+
+Concurrent preparations of the same JSON-serializable input share validation work. Aborting one caller cancels its wait without cancelling another caller’s work. Standard Schema does not provide a cancellation argument to validators: underlying work may continue, but a cancelled caller does not create a socket. `closeAll()` invalidates outstanding preparations.
+
+For fresh credentials on each reconnection, use [connection preparation](/api/options#connection-preparation-diagnostics) rather than adding a changing token to stable subscription identity.

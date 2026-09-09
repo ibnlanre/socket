@@ -1,10 +1,6 @@
 import type { SocketSelector } from "./selector";
 
-export type UseSocketOptions<
-  Get = unknown,
-  State = Get,
-  Params = never,
-> = {
+export type UseSocketOptions<Get = unknown, State = Get, Params = never> = {
   /**
    * The URL params used for the connection.
    */

@@ -61,7 +61,7 @@ on<Name extends string>(type: Name, listener: EventSourceListener<Data>): () => 
 Yields `"message"` events only.
 
 ```ts
-async *[Symbol.asyncIterator](): AsyncGenerator<MessageEvent<Data>>;
+[Symbol.asyncIterator](): AsyncIterableIterator<MessageEvent<Data>>;
 ```
 
 ## Fields
@@ -103,3 +103,9 @@ client.close();
 ```
 
 Transport gotchas and behavior details: [Guide → Server-Sent Events](/guide/event-source).
+
+## Async processing and ownership
+
+Message validation preserves arrival order across native named/default events and fetch streams. Closing discards pending results and preserves event subscriptions for reopening. `dispose()` permanently closes and clears listeners. `maxPendingMessages` bounds native events awaiting validation (default 1000); overflow closes and reports an error.
+
+`events({ signal, maxQueueSize })` creates a cancellable iterator with a default capacity of 1000 buffered events. Buffer overflow rejects the iterator; closing the client settles pending reads as done. Returning from iteration removes its subscription without closing the shared connection.

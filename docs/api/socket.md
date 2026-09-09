@@ -48,7 +48,7 @@ send(payload: Post): boolean;
 
 ### `sendAsync(payload, options?)`
 
-For asynchronous `sendSchema` validation. Validates, then accepts the payload into the same ordered queue. Resolves `true` on accept (a deduplicated send resolves `false`); rejects on validation failure or if the payload is expired or dropped by overflow.
+For asynchronous `sendSchema` validation. Validates, then accepts the payload into the same ordered queue. Resolves `true` on accept (a deduplicated send resolves `false`); rejects on validation failure, or cancellation/expiry/overflow while validation is still pending. Later queue expiry/drop is reported through diagnostics.
 
 ```ts
 sendAsync(
@@ -145,3 +145,5 @@ const unsubscribe = socket.on("message", (event) => console.log(event));
 
 socket.close();
 ```
+
+`waitUntil(state, timeout, { signal })` supports cancellation. Closing settles a pending close wait and rejects other pending waits with an `AbortError`.

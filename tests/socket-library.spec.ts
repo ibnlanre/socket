@@ -73,6 +73,10 @@ test.describe("socket library example", () => {
 
     await page.goto(`/?ws=${encodeURIComponent(focusUrl)}`);
 
+    // Initial idle is not evidence that the first connection has closed.
+    await expect(page.getByTestId("message-output")).toContainText(
+      '"attempt":1'
+    );
     await expect(page.getByTestId("fetch-status")).toHaveText("idle");
 
     await page.evaluate(() => {
@@ -92,6 +96,10 @@ test.describe("socket library example", () => {
 
     await page.goto(`/?ws=${encodeURIComponent(onlineUrl)}`);
 
+    // Initial idle is not evidence that the first connection has closed.
+    await expect(page.getByTestId("message-output")).toContainText(
+      '"attempt":1'
+    );
     await expect(page.getByTestId("fetch-status")).toHaveText("idle");
 
     await page.evaluate(() => {

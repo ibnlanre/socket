@@ -85,3 +85,5 @@ for await (const event of client) {
   console.log(event.data);
 }
 ```
+
+Iterators buffer events between reads (default capacity 1000). Use `client.events({ signal, maxQueueSize })` to configure cancellation/capacity. Closing settles pending reads; overflow rejects instead of silently dropping.

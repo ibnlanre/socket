@@ -174,3 +174,48 @@ describe("connection lifecycle", () => {
     expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
   });
 });
+
+it("rejects pending waits on cancellation and disconnection", async () => {
+  const socket = create();
+  const controller = new AbortController();
+  const cancelled = expect(
+    socket.waitUntil("open", "5 seconds", { signal: controller.signal })
+  ).rejects.toMatchObject({ name: "AbortError" });
+  controller.abort();
+  await cancelled;
+  const pending = expect(socket.waitUntil("message")).rejects.toMatchObject({
+    name: "AbortError",
+  });
+  socket.close();
+  await pending;
+});
+
+it("bounds incoming validation while preserving the overflow error", async () => {
+  const socket = create({
+    maxPendingMessages: 1,
+    messageSchema: {
+      "~standard": {
+        version: 1,
+        vendor: "test",
+        validate: () => new Promise(() => {}),
+      },
+    },
+  });
+  const transport = await connect(socket);
+  transport.message(1);
+  transport.message(2);
+  expect(socket.ws).toBeNull();
+  expect(socket.error?.message).toContain("queue is full");
+});
+
+it.each(["focus", "online"])(
+  "reconnects on %s after an established transport closes cleanly",
+  async (event) => {
+    const socket = create();
+    const first = await connect(socket);
+    first.onclose?.(new CloseEvent("close", { wasClean: true }));
+    expect(socket.isIdle).toBe(true);
+    window.dispatchEvent(new Event(event));
+    await vi.waitFor(() => expect(Transport.instances).toHaveLength(2));
+  }
+);

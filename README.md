@@ -134,3 +134,11 @@ pnpm --filter @ibnlanre/socket-docs build   # build docs
 
 [license]: LICENSE
 [bsd-3]: https://opensource.org/license/bsd-3-clause
+
+### Async validation and ownership
+
+`client.prepare(input, { signal })` normalizes parameters once; pass its result to `get` or the React hooks. `getAsync` combines both steps, and `usePreparedParams` exposes preparation state in React. `sendAsync` supports async send schemas while preserving invocation order. Schema input and output types may differ.
+
+`socket.close()` disconnects while preserving subscriptions. `socket.dispose()` is permanent; `client.evict(params)` disposes and removes a pooled instance. Queues and pools are bounded. `onDiagnostic` exposes retry, queue, validation, and cache activity; `prepareConnection` supports fresh credentials before every transport attempt.
+
+See [migration notes](docs/guide/migration.md) for changed encoding, queue, and ownership behavior.

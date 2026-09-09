@@ -33,5 +33,8 @@ export type { UseSocketResult } from "./types/use-socket-result";
 export type { PreparedParams } from "./types/socket/prepared-params";
 export type { SocketQueueOptions } from "./types/socket/queue-options";
 export type { SocketDiagnostic } from "./types/socket/diagnostic";
-export type { SocketConnectionPreparation, SocketPrepareConnection } from "./types/socket/prepare-connection";
+export type {
+  SocketConnectionPreparation,
+  SocketPrepareConnection,
+} from "./types/socket/prepare-connection";
 export type { SocketClientConstructor } from "./types/socket/client-constructor";

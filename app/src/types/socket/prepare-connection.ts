@@ -7,4 +7,6 @@ export interface SocketConnectionPreparation {
 
 export type SocketPrepareConnection = (
   context: SocketConnectionPreparation
-) => { url?: string; protocols?: string | string[] } | Promise<{ url?: string; protocols?: string | string[] }>;
+) =>
+  | { url?: string; protocols?: string | string[] }
+  | Promise<{ url?: string; protocols?: string | string[] }>;
