@@ -6,21 +6,17 @@ There are three schema slots, each with a distinct job:
 
 | Schema | Validates | Where used | Async? |
 | --- | --- | --- | --- |
-| `paramsSchema` | URL params | Builds the pool key & connection URL | ❌ sync only |
-| `sendSchema` | Outbound payloads | `socket.send(payload)` | ❌ sync only |
+| `paramsSchema` | URL params | Pool identity + connection URL | ✅ via `prepare()`; sync for render-time lookup |
+| `sendSchema` | Outbound payloads | `send()` / `sendAsync()` | ✅ async via `sendAsync()` |
 | `messageSchema` | Inbound messages | After `JSON.parse` | ✅ async OK |
 
-::: warning Async constraint
-`paramsSchema` and `sendSchema` must be **synchronous** Standard Schemas. If their `~standard.validate` returns a Promise, the library throws a `TypeError`. `messageSchema` may be async.
-:::
+The synchronous entry points keep their contracts — `send()` returns a boolean and render-time lookup (`get`, `useSocket`) returns a socket immediately. Where validation is asynchronous it lives on the matching async API: `sendAsync()` for sends and `prepare()` / `getAsync()` / `usePreparedParams` for parameters.
 
 ## Params
 
-`paramsSchema` validates parameters when the client looks up a socket.
+`paramsSchema` validates — and can transform — parameters when the client resolves a socket. Parameters are validated and normalized **once**, and that exact result drives both sides of identity: the pool key **and** the connection URL. A schema transform therefore decides which socket and URL are used, so normalize deliberately.
 
-::: warning Parameter transforms
-Currently, schema output is used to construct the pool key, but the socket receives the original parameters for its connection URL. Normalize parameters before passing them to the client, and use `paramsSchema` for validation without transforms until these paths are aligned.
-:::
+Render-time lookup stays synchronous. It accepts either plain params (validated synchronously) or an already-**prepared** value (see below). For asynchronous parameter work — token refresh, async schemas — use `prepare()` and pass the result to `get`/`useSocket`, or use the `usePreparedParams` hook:
 
 ```tsx
 import { z } from "zod";
@@ -41,7 +37,9 @@ client.useSocket({ params: { room: "general" } });
 
 ## Outgoing payloads
 
-`sendSchema` validates (and can transform) what you pass to `send`. On sync failure the library throws an error carrying `closeCode: SocketCloseCode.POLICY_VIOLATION` (`1008`) and `stage: "validation"`.
+`sendSchema` validates (and can transform) what you pass to `send` — synchronously. On failure the library throws an error carrying `closeCode: SocketCloseCode.POLICY_VIOLATION` (`1008`) and `stage: "validation"`.
+
+When your `sendSchema` is asynchronous, use `sendAsync(payload, { signal })` instead: it validates, then accepts the payload into the ordered send queue.
 
 ```tsx
 const sendSchema = z.object({
@@ -78,22 +76,21 @@ type PriceMessage = z.infer<typeof messageSchema>;
 new SocketClient<PriceMessage>({ url: "/prices", messageSchema });
 ```
 
-The full signature is `SocketClient<Get, Post, Params>` where:
+The full signature is `SocketClient<Get, Post, Params, ParamsInput>` where:
 
 - `Get` — the parsed message type (`value`).
 - `Post` — the accepted send payload type (default `never`).
-- `Params` — the params object type (default `never`, must extend `ConnectionParams`).
+- `Params` — the normalized params type (default `never`, must extend `ConnectionParams`).
+- `ParamsInput` — the accepted input params type before validation (defaults to `Params`).
 
-## Async validation and connection identity
+## Async validation, ordering, and identity
 
-Incoming WebSocket messages and both SSE transports accept asynchronous message validation. `send` and client lookup remain synchronous: `send` returns a boolean, while `get` immediately returns a pooled socket. Returning a Promise from their schemas throws rather than changing those contracts.
-
-For asynchronous parameter preparation, finish the work before passing parameters to `get` or mounting a component that calls `useSocket`. Keep the client’s parameter schema synchronous. Setting `enabled: false` prevents the hook from opening a connection; it does not skip parameter validation or pool lookup.
-
-Async incoming validation currently runs independently for WebSocket frames and native SSE events. A slower earlier message may finish after a newer one. Prefer synchronous validation when arrival order matters until ordered processing is available.
+- **Incoming messages (`messageSchema`)** may be async on WebSocket and on both SSE transports. On a `Socket`, frames are processed **in arrival order** (each message waits on the previous one), and work from a closed or superseded connection is discarded — a slower earlier message can’t overwrite newer data after the connection has changed.
+- **Outgoing payloads (`sendSchema`)** stay synchronous on `send()` (returns a boolean). Asynchronous validation uses `sendAsync()`, which validates and then accepts into the ordered send queue.
+- **Parameters (`paramsSchema`)** validate synchronously for render-time lookup. For async parameter work, call `prepare(params)` (or `getAsync`, or the `usePreparedParams` hook) and pass the returned prepared value to `get`/`useSocket`. `enabled: false` prevents a hook from opening a connection; it does not skip pool lookup or parameter handling.
 
 ## Transform boundaries
 
-The current `SocketSchema<T>` uses the same type for schema input and output. Same-type transforms are easier to express than transforms that change the type. Explicit generic arguments do not remove that limitation.
+Schemas are typed `SocketSchema<Input, Output>`, where `Output` defaults to `Input` — a schema may transform between the two. Explicit generic arguments select the input and output types.
 
-WebSocket message output is also serialized through JSON before entering the cache. Keep transformed values JSON-compatible; objects such as `Date` do not retain their runtime identity through this path.
+Keep WebSocket message output JSON-compatible: the validated value is re-serialized through JSON before entering the cache, so objects such as `Date` do not retain their runtime identity through that path.

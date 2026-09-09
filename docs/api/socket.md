@@ -24,18 +24,37 @@ open(): void;
 
 ### `close()`
 
-Full teardown: sends a normal close (`1000`), clears caches if `clearCacheOnClose`, removes window listeners, and clears transport listeners + state subscribers.
+Disconnects the transport: sends a normal close (`1000`), clears caches if `clearCacheOnClose`, removes window listeners, and nulls the socket. **Subscriptions and event listeners are preserved**, so a later `open()` reconnects the same consumers. To permanently release an instance, use `dispose()`.
 
 ```ts
 close(): void;
 ```
 
+### `dispose()`
+
+Permanent teardown for an instance that will not be reused. Disconnects (via `close()`), then clears transport listeners and state subscribers and marks the instance inactive — further calls throw.
+
+```ts
+dispose(): void;
+```
+
 ### `send(payload)`
 
-Sends a JSON payload. Returns `false` when deduplicated, `true` otherwise (queues until `open` when disconnected). See [Sending messages](/guide/sending).
+Validates synchronously (when `sendSchema` is set), then accepts a JSON payload into the ordered send queue. Returns `true` when dispatched or queued, `false` when deduplicated within `deduplicationWindow`. Queued payloads flush in order on `open`. See [Sending messages](/guide/sending).
 
 ```ts
 send(payload: Post): boolean;
+```
+
+### `sendAsync(payload, options?)`
+
+For asynchronous `sendSchema` validation. Validates, then accepts the payload into the same ordered queue. Resolves `true` on accept (a deduplicated send resolves `false`); rejects on validation failure or if the payload is expired or dropped by overflow.
+
+```ts
+sendAsync(
+  payload: Post,
+  options?: { signal?: AbortSignal },
+): Promise<boolean>;
 ```
 
 ### `on`
@@ -74,6 +93,8 @@ subscribe(
 ```
 
 The last subscriber unsubscribing arms `close()` after `idleConnectionTimeout` (default 5 minutes).
+
+`getSnapshot()` returns the current immutable state snapshot (a frozen clone) backing `subscribe` and the React hooks via `useSyncExternalStore`; the reference is stable between state changes.
 
 ## State
 

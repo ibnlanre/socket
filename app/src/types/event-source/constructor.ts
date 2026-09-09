@@ -11,6 +11,9 @@ export interface EventSourceClientOptions<Data = unknown>
    */
   url: string;
 
+  /** Maximum queued native events awaiting validation. @default 1000 */
+  maxPendingMessages?: number;
+
   /**
    * The base URL to use for the Server-Sent Events connection
    *
@@ -26,5 +29,5 @@ export interface EventSourceClientOptions<Data = unknown>
    * against this schema. Only valid messages are dispatched to listeners.
    * Invalid messages are silently dropped.
    */
-  messageSchema?: StandardSchemaV1<Data>;
+  messageSchema?: StandardSchemaV1<unknown, Data>;
 }

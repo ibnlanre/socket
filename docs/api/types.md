@@ -15,12 +15,13 @@ SocketCloseCode, SocketCloseReason
 
 ```ts
 EventSourceClientOptions, EventSourceListener, EventSourceStatus,
-SocketCacheOptions, SocketCommands, SocketConnectionEvent, SocketConstructor,
+SocketCacheOptions, SocketClientConstructor, SocketCommands, SocketConnectionEvent,
+SocketConnectionPreparation, SocketConstructor, SocketPrepareConnection,
 SocketMessageFailureAction, SocketMessageFailurePolicy, SocketFetchStatus,
 InferSocketSchema, SocketListener, UseSocketOptions, SocketParamsSerializer,
-SocketReconnectOptions, SocketSchema, SocketSelector, SocketState,
-SocketStatus, SocketTimeout, SocketURI, TimeUnit, Unit, UnitValue,
-UseSocketResult
+SocketQueueOptions, SocketReconnectOptions, SocketSchema, SocketSelector,
+SocketState, SocketStatus, SocketTimeout, SocketURI, TimeUnit, Unit, UnitValue,
+UseSocketResult, PreparedParams, SocketDiagnostic
 ```
 
 ## Status unions
@@ -94,6 +95,7 @@ interface SocketCommands<Post> {
   on: SocketListener;
   open: () => void;
   send: (payload: Post) => boolean;
+  sendAsync: (payload: Post, options?: { signal?: AbortSignal }) => Promise<boolean>;
   waitUntil: (state: SocketConnectionEvent, timeout?: UnitValue) => Promise<void>;
 }
 ```
@@ -102,7 +104,8 @@ interface SocketCommands<Post> {
 
 ```ts
 // Any Standard Schema V1 implementation (Zod, Valibot, ArkType, …)
-type SocketSchema<T = unknown> = StandardSchemaV1<T>;
+// Output defaults to Input; a schema may transform between the two.
+type SocketSchema<Input = unknown, Output = Input> = StandardSchemaV1<Input, Output>;
 
 // Output type inference from a schema
 type InferSocketSchema<Schema extends StandardSchemaV1> =
@@ -126,6 +129,28 @@ type SocketCipher = <Data>(data: Data) => unknown;
 type SocketURI = { url: string; baseURL?: string; params?: ConnectionParams };
 type SocketData = MessageEvent<string | Blob | ArrayBuffer>;
 type SocketTimeout = ReturnType<typeof setTimeout> | number | undefined;
+```
+
+## Prepared params
+
+```ts
+interface PreparedParams<Params> {
+  readonly params: Readonly<Params>;
+  readonly key: string; // fully resolved pool key / connection URL
+}
+```
+
+## Queue & diagnostics
+
+`SocketQueueOptions` bounds the ordered send queue (see [Reference → Options](/api/options)); `SocketDiagnostic` is the structured event shape passed to `onDiagnostic`:
+
+```ts
+type SocketDiagnostic =
+  | { type: "connection"; phase: "preparing" | "connecting" | "open" | "closed"; timestamp: number }
+  | { type: "retry"; attempt: number; delay: number; timestamp: number }
+  | { type: "queue"; size: number; action: "queued" | "sent" | "expired" | "dropped" | "deduplicated"; timestamp: number }
+  | { type: "validation"; direction: "incoming" | "outgoing"; error: Error; timestamp: number }
+  | { type: "cache"; action: "hit" | "error"; error?: Error; timestamp: number };
 ```
 
 ## Time units

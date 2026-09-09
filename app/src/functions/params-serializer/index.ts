@@ -25,12 +25,12 @@ export function paramsSerializer(
       if (isNull(value, exclude)) return;
       if (isEmpty(value, exclude)) return;
 
-      const item = encodeURIComponent(value);
+      const item = String(value);
       searchParams.append(key, item);
     };
   }
 
-  for (const key in params) {
+  for (const key of Object.keys(params).sort()) {
     const value = params[key];
     const setQueryParam = createSetQueryParam(key);
 

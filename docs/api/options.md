@@ -10,9 +10,9 @@ The `SocketClient` / `Socket` constructor configuration (`SocketConstructor`) is
 | `baseURL` | `string` | `""` | Base URL prepended to `url` |
 | `binaryType` | `"blob" \| "arraybuffer"` | `"blob"` | Preferred binary frame representation |
 | `protocols` | `SocketProtocolIdentifier \| SocketProtocolIdentifier[]` | `[]` | Subprotocols for the WebSocket handshake (accepts IANA names or arbitrary strings) |
-| `messageSchema` | `SocketSchema<Get>` | — | Validates inbound messages after `JSON.parse` (async OK) |
-| `paramsSchema` | `SocketSchema<Params>` | — | Validates/transforms URL params (sync only) |
-| `sendSchema` | `SocketSchema<Post>` | — | Validates/transforms outbound payloads (sync only) |
+| `messageSchema` | `SocketSchema<unknown, Get>` | — | Validates/transforms inbound messages after `JSON.parse` (async OK) |
+| `paramsSchema` | `SocketSchema<ParamsInput, Params>` | — | Validates/transforms URL params; async via `prepare()` |
+| `sendSchema` | `SocketSchema<Post, unknown>` | — | Validates/transforms outbound payloads; async via `sendAsync()` |
 
 ## Cache options
 
@@ -52,6 +52,30 @@ Each stage runs after the previous succeeds: **decode** (frame → text), **pars
 
 - `"recover"` — drop the offending message and keep the connection alive.
 - `"close"` — terminate the socket, recording terminal failure metadata (`failureReason`, `failureCount + 1`, close code). Validation failures close with code `1008` (`POLICY_VIOLATION`); decode/parse failures with `1007` (`INVALID_PAYLOAD_DATA`).
+
+## Outgoing queue
+
+Sends route through an ordered, bounded outbox shared by `send()` and `sendAsync()`. Waiting payloads flush in order on `open`.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `maxQueueSize` | `1000` | Maximum waiting sends (including async validation) |
+| `queueMaxAge` | `"1 minute"` | Maximum age of a waiting send before it is expired |
+| `queueOverflow` | `"reject"` | Full-queue behavior: `"reject"` throws; `"drop-oldest"` drops the oldest waiting send |
+| `maxBufferedAmount` | `1048576` | Bytes already buffered by the browser beyond which dispatch pauses |
+| `maxPendingMessages` | `1000` | Maximum in-flight incoming validations before the connection is closed |
+| `maxDeduplicationEntries` | `1000` | Maximum retained deduplication keys |
+
+When `deduplicationWindow` is `0`, deduplication is disabled and every send is accepted. When greater than `0`, identical payloads within the window collapse to one wire message and dedup history is bounded by `maxDeduplicationEntries`.
+
+## Connection preparation & diagnostics
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `prepareConnection` | `SocketPrepareConnection` | — | Runs before every transport attempt (e.g. auth/token refresh). Returning `{ url, protocols }` overrides that attempt only; pool and cache identity are unchanged. |
+| `onDiagnostic` | `(event: SocketDiagnostic) => void` | — | Receives structured `connection` / `retry` / `queue` / `validation` / `cache` events. Payloads and credentials are never included. |
+
+On `SocketClient`, `maxPoolSize` (default `1000`) bounds the number of pooled sockets; exceeding it throws a `RangeError` rather than silently evicting.
 
 ## Reconnection
 

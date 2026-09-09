@@ -54,7 +54,7 @@ SocketClient                 pool + React hook
 `Socket` implements two public contracts:
 
 - `SocketState<Get>` — the read-only snapshot (`value`, `status`, `fetchStatus`, flags, timestamps, …).
-- `SocketCommands<Post>` — the actions (`open`, `close`, `send`, `on`, `waitUntil`).
+- `SocketCommands<Post>` — the actions (`open`, `close`, `send`, `sendAsync`, `on`, `waitUntil`).
 
 `useSocket` returns a `UseSocketResult` that is `SocketState` + `SocketCommands` + a selected `data` field — composed by interface extension so it can never drift from `Socket`.
 
@@ -80,6 +80,16 @@ Pooling currently follows the serialized URL, including query-key order. Without
 
 ## Shared connection, shared commands
 
-Calling the hook’s `close()` closes the underlying shared socket for every consumer. It also clears the socket’s subscriptions; it is not a way to unsubscribe just one component. Normal hook unmounting removes that hook’s subscription and allows the idle timeout to close an unused connection.
+A pooled `Socket` is shared, so its commands are shared too — compare `a.send === b.send` to confirm two handles point at one connection.
 
-`enabled: false` prevents that hook from opening the socket. It does not close a connection another consumer already opened, and the hook still subscribes to its state.
+Ownership is explicit. Four operations mean four different things:
+
+| Operation | Scope | Effect |
+| --- | --- | --- |
+| `socket.close()` (also the hook’s `close`) | connection | Disconnects the transport. **Subscriptions and event listeners are preserved**, so a later `open()` reconnects the same consumers. |
+| `socket.dispose()` | instance | Permanent teardown: disconnects, then clears listeners and subscribers. The instance can no longer be used. |
+| `client.close(params)` / `client.evict(params)` | pool | Disposes that pooled socket and removes it from the pool. |
+| hook unmount | subscription | Removes that one hook’s subscription. When the last subscriber leaves, the idle timeout closes an unused connection. |
+
+- Calling `close()` on a shared socket disconnects it for every consumer. It is not a way to unsubscribe just one component.
+- `enabled: false` prevents that hook from opening the socket. It does not close a connection another consumer already opened, and the hook still subscribes to its state.

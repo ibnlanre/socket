@@ -458,7 +458,7 @@ describe("SocketClient", () => {
       });
 
       expect(() => schemaClient.get({ userId: "123" } as never)).toThrow(
-        "SocketClient: async params schemas are not supported. Validate params before creating or retrieving a socket."
+        "async schemas require the async API."
       );
 
       schemaClient.closeAll();
@@ -780,10 +780,10 @@ describe("SocketClient", () => {
       const schemaClient = new SocketClient(sendConfig);
       const socket = schemaClient.get();
 
-      // All three return true (no time-based dedup for pending entries)
+      // Pending duplicates are explicitly reported when deduplication is enabled.
       expect(socket.send({ event: "ping" })).toBe(true);
-      expect(socket.send({ event: "ping" })).toBe(true);
-      expect(socket.send({ event: "ping" })).toBe(true);
+      expect(socket.send({ event: "ping" })).toBe(false);
+      expect(socket.send({ event: "ping" })).toBe(false);
 
       const unsubscribe = await connectManagedSocket(socket);
 

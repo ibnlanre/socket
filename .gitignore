@@ -137,3 +137,6 @@ dist
 /playwright/.cache/
 .vercel
 .env*
+
+# pnpm store (local cache; never commit)
+.pnpm-store/

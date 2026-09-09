@@ -39,7 +39,7 @@ off1(); // removes the handler entirely
 
 ### Listeners survive reconnects
 
-Automatic reconnects re-attach listeners, so you don't re-subscribe on every retry. An **explicit `socket.close()`** is a full teardown and clears all listeners.
+Automatic reconnects re-attach listeners, so you don't re-subscribe on every retry. An **explicit `socket.close()`** disconnects but preserves listeners and subscriptions — a later `open()` re-attaches them. Only a permanent release (`socket.dispose()`, or `client.close(params)` / `client.evict(params)` on a pooled socket) clears listeners and subscribers.
 
 ## `socket.subscribe(...)` — state observers
 

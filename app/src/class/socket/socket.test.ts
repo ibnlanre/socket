@@ -181,7 +181,7 @@ describe("Socket", () => {
       client.close();
     });
 
-    it("should drop event listeners when the socket is explicitly closed", async () => {
+    it("should preserve event listeners when the socket is closed and reopened", async () => {
       const client = new Socket({ url: "wss://echo.websocket.org" });
       const listener = vi.fn();
       client.on("message", listener);
@@ -193,11 +193,9 @@ describe("Socket", () => {
       client.close();
       await client.waitUntil("close");
 
-      // Reopen a fresh connection — the server sends its initial message again,
-      // but the listener was torn down with the close, so it must not fire.
+      // A reversible disconnect keeps the subscription for the next transport.
       client.open();
-      await client.waitUntil("message");
-      expect(listener).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(2));
 
       client.close();
     });
@@ -316,12 +314,13 @@ describe("Socket", () => {
       client.close();
     }, 10000);
 
-    it("should only dispatch once when the same payload is queued multiple times before open", async () => {
+    it("should explicitly deduplicate queued payloads when configured", async () => {
       let echoCount = 0;
       let lastValueStr = "";
 
       const client = new Socket({
         url: "wss://echo.websocket.org",
+        deduplicationWindow: 200,
         sendSchema: z.object({ event: z.string() }),
       });
 
@@ -338,10 +337,10 @@ describe("Socket", () => {
         }
       }, false);
 
-      // Queue the same payload three times — map key deduplication means only one entry
+      // Duplicate pending entries are reported rather than silently coalesced.
       expect(client.send({ event: "ping" })).toBe(true);
-      expect(client.send({ event: "ping" })).toBe(true);
-      expect(client.send({ event: "ping" })).toBe(true);
+      expect(client.send({ event: "ping" })).toBe(false);
+      expect(client.send({ event: "ping" })).toBe(false);
 
       client.open();
       await client.waitUntil("open");
@@ -469,7 +468,7 @@ describe("Socket", () => {
       });
 
       expect(() => client.send({ event: "ping" } as never)).toThrow(
-        "Socket: async send schemas are not supported. Validate the payload before calling send."
+        "async schemas require the async API."
       );
 
       client.close();

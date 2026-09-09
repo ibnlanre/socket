@@ -25,6 +25,7 @@ export class SocketCache<State = unknown> {
   #origin: string;
   #setStateAction?: SocketSetStateAction<State>;
   #state: State | undefined;
+  #writes: Promise<void> = Promise.resolve();
 
   constructor({
     decrypt,
@@ -54,7 +55,7 @@ export class SocketCache<State = unknown> {
     if (!this.#cache) return;
 
     const keys = await this.#cache.keys();
-    for (const request of keys) this.#cache.delete(request);
+    await Promise.all(keys.map((request) => this.#cache!.delete(request)));
   };
 
   decrypt = (data: State) => {
@@ -67,6 +68,7 @@ export class SocketCache<State = unknown> {
   get = async (path: string): Promise<State | undefined> => {
     if (!this.#cache) return;
 
+    await this.#writes;
     const response = await this.#cache.match(path);
 
     if (response) {
@@ -90,29 +92,32 @@ export class SocketCache<State = unknown> {
   has = async (path: string): Promise<boolean> => {
     if (!this.#cache) return false;
 
+    await this.#writes;
     const response = await this.#cache.match(path);
     return response !== undefined;
   };
 
-  initialize = async (path: string): Promise<void> => {
-    if (!SocketCache.isAvailable) return;
+  initialize = async (path: string, current = () => true): Promise<void> => {
+    if (!SocketCache.isAvailable || this.#disableCache) return;
 
     this.#cache = await caches.open(this.#origin);
     const cachedData = await this.get(path);
 
-    if (isJSON(cachedData)) {
+    if (current() && isJSON(cachedData)) {
       this.#state = cachedData;
       this.#notifyObservers();
     }
   };
 
-  subscribe = (observer: Function): void => {
+  subscribe = (observer: (value: State) => void): (() => void) => {
     this.#observers.add(observer);
+    return () => { this.#observers.delete(observer); };
   };
 
   remove = async (path: string): Promise<boolean> => {
     if (!this.#cache) return false;
 
+    await this.#writes;
     return await this.#cache.delete(path);
   };
 
@@ -152,7 +157,10 @@ export class SocketCache<State = unknown> {
       headers,
     });
 
-    await this.#cache.put(path, response);
+    const cache = this.#cache;
+    const write = this.#writes.then(() => cache.put(path, response));
+    this.#writes = write.catch(() => {});
+    await write;
   };
 
   get value(): State | undefined {

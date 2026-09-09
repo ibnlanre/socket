@@ -10,7 +10,7 @@ import type { SocketListener } from "./listener";
  * by extending it rather than carving methods out of the full socket class.
  */
 export interface SocketCommands<Post> {
-  /** Explicitly close the connection and tear down transport-level listeners. */
+  /** Close the connection, preserving subscriptions for reopening. */
   close: () => void;
   /** Subscribe to a native WebSocket event. Returns an unsubscribe function. */
   on: SocketListener;
@@ -18,6 +18,8 @@ export interface SocketCommands<Post> {
   open: () => void;
   /** Send a JSON payload. Returns false when deduplicated within the window. */
   send: (payload: Post) => boolean;
+  /** Validate asynchronously, then accept into the ordered send queue. */
+  sendAsync: (payload: Post, options?: { signal?: AbortSignal }) => Promise<boolean>;
   /** Resolve once the socket reaches the given connection state. */
   waitUntil: (
     state: SocketConnectionEvent,

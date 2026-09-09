@@ -17,7 +17,7 @@ describe("paramsSerializer", () => {
   it("should serialize simple key-value pairs", () => {
     const params: ConnectionParams = { foo: "bar", baz: "qux" };
     const result = paramsSerializer(params);
-    expect(result).toBe("foo=bar&baz=qux");
+    expect(result).toBe("baz=qux&foo=bar");
   });
 
   it("should ignore empty values", () => {
@@ -47,7 +47,8 @@ describe("paramsSerializer", () => {
   it("should encode special characters", () => {
     const params: ConnectionParams = { foo: "bar baz", qux: "quux&corge" };
     const result = paramsSerializer(params);
-    expect(decodeURIComponent(result)).toBe("foo=bar%20baz&qux=quux%26corge");
+    expect(new URLSearchParams(result).get("foo")).toBe("bar baz");
+    expect(new URLSearchParams(result).get("qux")).toBe("quux&corge");
   });
 
   it("should handle custom ignore values", () => {

@@ -465,3 +465,99 @@ describe("EventSourceClient", () => {
     });
   });
 });
+
+describe("SSE async message lifecycle", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    FakeEventSource.instances = [];
+  });
+
+  it("orders asynchronous named and default events together", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let release!: () => void;
+    const validate = vi.fn(async (value: unknown) => {
+      if (value === 1)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return { value };
+    });
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      messageSchema: { "~standard": { version: 1, vendor: "test", validate } },
+    });
+    const received: unknown[] = [];
+    client.on("update", (event) => received.push(event.data));
+    client.on("message", (event) => received.push(event.data));
+    client.open();
+    const source = FakeEventSource.instances.at(-1)!;
+    source.emit("update", "1", "a");
+    source.emit("message", "2", "b");
+    await vi.waitFor(() => expect(validate).toHaveBeenCalledTimes(1));
+    release();
+    await vi.waitFor(() => expect(received).toEqual([1, 2]));
+    expect(client.lastEventId).toBe("b");
+    client.dispose();
+  });
+
+  it("discards old async results and keeps listeners across reopen", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let release!: () => void;
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      messageSchema: {
+        "~standard": {
+          version: 1,
+          vendor: "test",
+          validate: async (value: unknown) => {
+            if (value === "old")
+              await new Promise<void>((resolve) => {
+                release = resolve;
+              });
+            return { value };
+          },
+        },
+      },
+    });
+    const received: unknown[] = [];
+    client.on("update", (event) => received.push(event.data));
+    client.open();
+    const old = FakeEventSource.instances.at(-1)!;
+    old.emit("update", '"old"');
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    client.close();
+    client.open();
+    FakeEventSource.instances.at(-1)!.emit("update", '"new"');
+    await vi.waitFor(() => expect(received).toEqual(["new"]));
+    release();
+    old.emit("update", '"stale"');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(received).toEqual(["new"]);
+    client.dispose();
+  });
+
+  it("preserves UTF-8 and CRLF boundaries across fetch chunks", async () => {
+    const bytes = new TextEncoder().encode("data: café\r\n\r\n");
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream))
+    );
+    const client = new EventSourceClient({ url: TEST_URL, method: "POST" });
+    const listener = vi.fn();
+    client.on("message", listener);
+    client.open();
+    await vi.waitFor(() =>
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ data: "café" })
+      )
+    );
+    expect(listener).toHaveBeenCalledTimes(1);
+    client.dispose();
+  });
+});

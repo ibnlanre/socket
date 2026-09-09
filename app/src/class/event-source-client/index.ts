@@ -38,10 +38,13 @@ export class EventSourceClient<
   #retryBackoffStrategy: "fixed" | "exponential";
   #reconnectionTimerId: ReturnType<typeof setTimeout> | undefined;
   #isClosed: boolean = true;
-  #messageSchema?: StandardSchemaV1<Data>;
-
-  // Dedicated stream slice staging tracker
-  #lineBuffer: string = "";
+  #generation = 0;
+  #pendingMessages = 0;
+  #maxPendingMessages: number;
+  #messages: Promise<void> = Promise.resolve();
+  #disposed = false;
+  #attempt = 0;
+  #messageSchema?: StandardSchemaV1<unknown, Data>;
 
   // Pure event field buffers (Reset dynamically at event dispatch boundaries)
   dataBuffer: string = "";
@@ -68,10 +71,14 @@ export class EventSourceClient<
       retryBackoffStrategy = "fixed",
       cache = "no-store",
       messageSchema,
+      maxPendingMessages = 1000,
       ...init
     }: EventSourceClientOptions<Data>,
     params = {} as Params
   ) {
+    this.#maxPendingMessages = maxPendingMessages;
+    if (!Number.isInteger(maxPendingMessages) || maxPendingMessages < 1)
+      throw new RangeError("maxPendingMessages must be a positive integer.");
     this.#cache = cache;
     this.#href = getUri({ url, baseURL, params });
     this.#lastEventId = initialLastEventId;
@@ -97,57 +104,59 @@ export class EventSourceClient<
       withCredentials: this.#init.credentials === "include",
     });
 
+    const source = this.#eventSource;
+    const generation = this.#generation;
+    const current = () => !this.#isClosed && generation === this.#generation;
     this.#eventSource.onopen = () => {
+      if (!current()) return;
       this.status = "open";
     };
 
     this.#eventSource.onmessage = (event) => {
-      this.#handleMessage(event.data);
+      if (current()) this.#enqueueMessage(event, generation);
     };
 
     this.#eventSource.onerror = (error) => {
+      if (!current()) return;
       this.#handleError(error);
-      this.#eventSource?.close();
+      source.close();
+      this.#generation += 1;
       this.#reconnect();
     };
 
     // Native EventSources only deliver events for names you subscribe to up
     // front, so re-attach one forwarder per subscribed named event. This runs
     // on every (re)connect because a fresh EventSource is created each time.
-    this.#nativeForwarders.forEach((forwarder, type) => {
-      this.#eventSource?.addEventListener(type, forwarder);
-    });
+    this.#nativeForwarders.clear();
+    this.#listeners.forEach((_, type) => this.#attachNativeForwarder(type));
   };
 
   /**
    * Connect using the fetch API and process the event stream.
    * @private
    */
-  #connect = () => {
+  #connect = async () => {
+    const generation = this.#generation;
     const requestInit = this.#initialize();
-
-    fetch(this.#href, requestInit)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.body;
-      })
-      .then((body) => {
-        if (!body) return this.#reconnect();
-        if (body.getReader) {
-          this.status = "open";
-          this.#readBody(body.getReader());
-        }
-      })
-      .catch((error) => {
-        if (error.name === "AbortError") {
-          console.log("Fetch aborted");
-        } else {
-          this.#handleError(error);
-          this.#reconnect();
-        }
-      });
+    try {
+      const response = await fetch(this.#href, requestInit);
+      if (this.#isClosed || generation !== this.#generation) {
+        await response.body?.cancel();
+        return;
+      }
+      if (!response.ok)
+        throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.body) {
+        this.#reconnect();
+        return;
+      }
+      this.status = "open";
+      await this.#readBody(response.body.getReader(), generation);
+    } catch (error) {
+      if (this.#isClosed || generation !== this.#generation) return;
+      this.#handleError(error);
+      this.#reconnect();
+    }
   };
 
   /**
@@ -180,9 +189,9 @@ export class EventSourceClient<
     }
   };
 
-  #processLine = async (line: string) => {
+  #processLine = async (line: string, generation: number) => {
     if (line === "") {
-      await this.#dispatchEvent();
+      await this.#dispatchEvent(generation);
     } else if (line.startsWith(":")) {
       // Intentionally ignored per WHATWG SSE Spec (Comment block)
     } else if (line.includes(":")) {
@@ -201,91 +210,54 @@ export class EventSourceClient<
   };
 
   #readBody = async (
-    reader: ReadableStreamDefaultReader<Uint8Array>
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    generation: number
   ): Promise<void> => {
     const decoder = new TextDecoder();
-
-    const { done, value } = await reader.read();
-    if (done) {
-      this.#reconnect();
-      return;
+    let buffer = "";
+    try {
+      while (!this.#isClosed && generation === this.#generation) {
+        const { done, value } = await reader.read();
+        if (this.#isClosed || generation !== this.#generation) return;
+        buffer += done
+          ? decoder.decode()
+          : decoder.decode(value, { stream: true });
+        let index: number;
+        while ((index = buffer.search(/[\r\n]/)) >= 0) {
+          if (!done && buffer[index] === "\r" && index === buffer.length - 1)
+            break;
+          const length = buffer.slice(index, index + 2) === "\r\n" ? 2 : 1;
+          const line = buffer.slice(0, index);
+          buffer = buffer.slice(index + length);
+          await this.#processLine(line, generation);
+          if (this.#isClosed || generation !== this.#generation) return;
+        }
+        if (done) {
+          this.#reconnect();
+          return;
+        }
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
-
-    const chunk = decoder.decode(value, { stream: true });
-
-    const lines = (this.#lineBuffer + chunk).split(/\r\n|\r|\n/);
-
-    // Extract trailing incomplete block safely to avoid corrupting mutations
-    this.#lineBuffer = lines.pop() || "";
-    for (const line of lines) {
-      await this.#processLine(line);
-    }
-
-    return this.#readBody(reader);
   };
 
   /**
    * Dispatch the event to listeners.
    * @private
    */
-  #dispatchEvent = async () => {
-    // Drop execution if the active data store registers empty
-    if (this.dataBuffer === "") return;
-
-    // Drop trailing carriage feed matching spec requirement
-    if (this.dataBuffer.endsWith("\n")) {
-      this.dataBuffer = this.dataBuffer.slice(0, -1);
-    }
-
-    let data: string | Data = this.dataBuffer;
-
-    if (this.#messageSchema) {
-      try {
-        const parsed = JSON.parse(this.dataBuffer);
-        const result = this.#messageSchema["~standard"].validate(parsed);
-
-        const resolved = result instanceof Promise ? await result : result;
-
-        if (resolved.issues) {
-          this.#handleError(
-            new Error("EventSourceClient: schema validation failed", {
-              cause: resolved.issues,
-            })
-          );
-          this.dataBuffer = "";
-          this.eventTypeBuffer = "";
-          return;
-        }
-
-        data = resolved.value;
-      } catch (error) {
-        this.#handleError(error);
-        this.dataBuffer = "";
-        this.eventTypeBuffer = "";
-
-        return;
-      }
-    }
-
-    // A delivered event proves the stream is live again after a message-level
-    // error flipped the status to "error".
-    this.status = "open";
-
-    const event = new MessageEvent(this.eventTypeBuffer || "message", {
-      data,
-      lastEventId: this.lastEventId,
-      origin: new URL(this.#href).origin,
-    });
-
-    this.#listeners.forEach((listeners, eventName) => {
-      if (eventName === event.type) {
-        listeners.forEach((listener) => listener(event));
-      }
-    });
-
-    // Mandatory complete boundary reset
+  #dispatchEvent = async (generation: number) => {
+    const payload = this.dataBuffer.endsWith("\n")
+      ? this.dataBuffer.slice(0, -1)
+      : this.dataBuffer;
+    const type = this.eventTypeBuffer || "message";
+    const hasData = this.dataBuffer !== "";
+    const lastEventId = this.lastEventId;
     this.dataBuffer = "";
     this.eventTypeBuffer = "";
+    if (hasData)
+      await this.#handleMessage(payload, type, generation, lastEventId);
   };
 
   /**
@@ -324,7 +296,7 @@ export class EventSourceClient<
    * @private
    */
   #reconnect = () => {
-    if (!this.#isClosed && this.#retry && this.#retryCount > 0) {
+    if (!this.#isClosed && this.#retry && this.#attempt < this.#retryCount) {
       clearTimeout(this.#reconnectionTimerId);
 
       const backoffDelay = this.#calculateBackoff();
@@ -332,8 +304,8 @@ export class EventSourceClient<
         this.#reconnectionTimerId = undefined;
         if (this.#isClosed) return;
 
-        this.#retryCount -= 1;
-        this.open();
+        this.#attempt += 1;
+        this.#start();
       }, backoffDelay);
     }
   };
@@ -349,7 +321,7 @@ export class EventSourceClient<
         return Math.min(this.#retryDelay, this.#maxRetryDelay);
       case "exponential":
         const delay = Math.min(
-          this.#retryDelay * Math.pow(2, this.#retryCount),
+          this.#retryDelay * Math.pow(2, this.#attempt),
           this.#maxRetryDelay
         );
 
@@ -367,14 +339,22 @@ export class EventSourceClient<
    * @param type The SSE event type (defaults to "message").
    * @private
    */
-  #handleMessage = async (payload: string, type = "message") => {
+  #handleMessage = async (
+    payload: string,
+    type: string,
+    generation: number,
+    lastEventId: string
+  ) => {
+    const current = () => !this.#isClosed && generation === this.#generation;
+    if (!current()) return;
     let data: string | Data = payload;
 
     if (this.#messageSchema) {
       try {
         const parsed = JSON.parse(payload);
         const result = this.#messageSchema["~standard"].validate(parsed);
-        const resolved = result instanceof Promise ? await result : result;
+        const resolved = await result;
+        if (!current()) return;
 
         if (resolved.issues) {
           this.#handleError(
@@ -387,6 +367,7 @@ export class EventSourceClient<
 
         data = resolved.value;
       } catch (error) {
+        if (!current()) return;
         this.#handleError(
           new Error("EventSourceClient: failed to parse SSE data as JSON", {
             cause: error,
@@ -398,11 +379,15 @@ export class EventSourceClient<
 
     // A delivered event proves the stream is live again after a message-level
     // error flipped the status to "error".
+    if (!current()) return;
     this.status = "open";
+    this.error = null;
+    this.lastEventId = lastEventId;
+    this.#lastEventId = lastEventId;
 
     const event = new MessageEvent(type, {
       data,
-      lastEventId: this.lastEventId,
+      lastEventId,
       origin: new URL(this.#href).origin,
     });
 
@@ -411,6 +396,35 @@ export class EventSourceClient<
         listeners.forEach((listener) => listener(event));
       }
     });
+  };
+
+  #enqueueMessage = (event: MessageEvent, generation: number) => {
+    if (event.currentTarget && event.currentTarget !== this.#eventSource)
+      return;
+    const { data, type, lastEventId } = event;
+    if (!this.#messageSchema) {
+      void this.#handleMessage(String(data), type, generation, lastEventId);
+      return;
+    }
+    if (this.#pendingMessages >= this.#maxPendingMessages) {
+      this.close();
+      this.#handleError(
+        new RangeError("EventSourceClient: incoming message queue is full.")
+      );
+      return;
+    }
+    this.#pendingMessages += 1;
+    this.#messages = this.#messages
+      .then(() =>
+        this.#handleMessage(String(data), type, generation, lastEventId)
+      )
+      .catch((error) => {
+        if (!this.#isClosed && generation === this.#generation)
+          this.#handleError(error);
+      })
+      .finally(() => {
+        if (generation === this.#generation) this.#pendingMessages -= 1;
+      });
   };
 
   /**
@@ -477,8 +491,11 @@ export class EventSourceClient<
     if (type === "message" || type === "error") return;
     if (this.#nativeForwarders.has(type)) return;
 
+    const generation = this.#generation;
+    const source = this.#eventSource;
     const forwarder = (event: MessageEvent) => {
-      void this.#handleMessage(String(event.data), type);
+      if (source !== this.#eventSource) return;
+      this.#enqueueMessage(event, generation);
     };
 
     this.#nativeForwarders.set(type, forwarder as EventListener);
@@ -518,12 +535,29 @@ export class EventSourceClient<
   /**
    * Open the connection.
    */
-  open = () => {
-    this.#isClosed = false;
+  #start = () => {
+    this.#generation += 1;
+    this.#messages = Promise.resolve();
+    this.#pendingMessages = 0;
+    this.dataBuffer = "";
+    this.eventTypeBuffer = "";
     this.status = "connecting";
     this.error = null;
     if (this.#method === "GET") this.#createEventSource();
-    else this.#connect();
+    else void this.#connect();
+  };
+
+  open = () => {
+    if (this.#disposed)
+      throw new Error("EventSourceClient: this instance has been disposed.");
+    if (
+      !this.#isClosed &&
+      (this.status === "open" || this.status === "connecting")
+    )
+      return;
+    this.#isClosed = false;
+    this.#attempt = 0;
+    this.#start();
   };
 
   /**
@@ -531,6 +565,9 @@ export class EventSourceClient<
    */
   close = () => {
     this.#isClosed = true;
+    this.#generation += 1;
+    this.#messages = Promise.resolve();
+    this.#pendingMessages = 0;
     clearTimeout(this.#reconnectionTimerId);
 
     this.#reconnectionTimerId = undefined;
@@ -538,6 +575,11 @@ export class EventSourceClient<
     this.#eventSource?.close();
     this.#eventSource = null;
     this.status = "idle";
+  };
+
+  dispose = () => {
+    this.close();
+    this.#disposed = true;
     this.#listeners.clear();
     this.#nativeForwarders.clear();
   };

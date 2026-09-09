@@ -49,6 +49,16 @@ socket.send({ type: "subscribe", symbol: "BTC" }); // false — suppressed
 
 All callers still observe the shared response — deduplication only removes redundant **outbound** frames. This is handy when multiple components subscribe to the same thing on one pooled socket.
 
+## Async sends
+
+When your `sendSchema` is asynchronous, use `sendAsync` instead of `send`:
+
+```ts
+const accepted = await socket.sendAsync({ type: "subscribe", symbol: "BTC" }); // true | false
+```
+
+`sendAsync` validates, then accepts the payload into the same ordered queue. It rejects on validation failure or if the payload is expired or dropped by overflow, and accepts an `AbortSignal` to cancel while validating.
+
 ## `waitUntil`
 
 `waitUntil` resolves when the socket reaches a given connection event, with an optional timeout:
@@ -63,4 +73,8 @@ await socket.waitUntil("close");
 
 ## Tearing down
 
-`socket.close()` performs a clean teardown: sends a normal close (`1000`), clears caches if `clearCacheOnClose` is set, removes window listeners, and clears both transport listeners and state subscribers. It uses `SocketCloseReason` as the close reason string.
+`socket.close()` disconnects and clears caches if `clearCacheOnClose` is set. Subscriptions and event listeners are **preserved**, so a later `open()` reconnects the same consumers. It uses `SocketCloseReason` as the close reason string.
+
+To permanently release a socket (clearing its listeners and subscriptions), use `client.close(params)` / `client.evict(params)` or `socket.dispose()`.
+
+Waiting sends are bounded by `maxQueueSize`, `queueMaxAge`, and `queueOverflow` — see [Reference → Options](/api/options).

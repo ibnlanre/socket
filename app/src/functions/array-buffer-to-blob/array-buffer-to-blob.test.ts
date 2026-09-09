@@ -5,7 +5,7 @@ describe("arrayBufferToBlob", () => {
   it("should convert ArrayBuffer to Blob with application/json type", () => {
     const data = JSON.stringify({ test: "data" });
     const buffer = new TextEncoder().encode(data).buffer;
-    const blob = arrayBufferToBlob(buffer);
+    const blob = arrayBufferToBlob(buffer as ArrayBuffer);
 
     expect(blob).toBeInstanceOf(Blob);
     expect(blob.type).toBe("application/json");

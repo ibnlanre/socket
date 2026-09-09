@@ -1,16 +1,31 @@
 import type { SocketCacheOptions } from "./cache-options";
 import type { SocketDataHandlingOptions } from "./data-handling-options";
+import type { SocketDiagnostic } from "./diagnostic";
 import type { SocketLoggingOptions } from "./logging-options";
+import type { SocketPrepareConnection } from "./prepare-connection";
 import type { SocketProtocolIdentifier } from "./protocol-identifier";
+import type { SocketQueueOptions } from "./queue-options";
 import type { SocketReconnectOptions } from "./reconnect-options";
 import type { SocketSchema } from "./schema";
 
-export interface SocketConstructor<Get = unknown, Post = never, Params = never>
+export interface SocketConstructor<
+  Get = unknown,
+  Post = never,
+  Params = never,
+  ParamsInput = Params,
+>
   extends
     SocketDataHandlingOptions<Get>,
     SocketCacheOptions,
     SocketLoggingOptions,
-    SocketReconnectOptions {
+    SocketReconnectOptions,
+    SocketQueueOptions {
+  /** Runs before every transport attempt; does not change pool/cache identity. */
+  prepareConnection?: SocketPrepareConnection;
+
+  /** Structured operational events; payloads and credentials are never included. */
+  onDiagnostic?: (event: SocketDiagnostic) => void;
+
   /**
    * The base URL to use for the WebSocket connection
    *
@@ -33,17 +48,17 @@ export interface SocketConstructor<Get = unknown, Post = never, Params = never>
   /**
    * Validates and optionally transforms incoming websocket messages.
    */
-  messageSchema?: SocketSchema<Get>;
+  messageSchema?: SocketSchema<unknown, Get>;
 
   /**
    * Validates and optionally transforms URL params used for the connection.
    */
-  paramsSchema?: SocketSchema<Params>;
+  paramsSchema?: SocketSchema<ParamsInput, Params>;
 
   /**
    * Validates and optionally transforms outbound messages before send.
    */
-  sendSchema?: SocketSchema<Post>;
+  sendSchema?: SocketSchema<Post, unknown>;
 
   /**
    * The protocols to use for the WebSocket connection

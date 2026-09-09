@@ -3,8 +3,13 @@
 The React hook host + **pool** of shared [`Socket`](/api/socket) instances for one WebSocket endpoint.
 
 ```ts
-class SocketClient<Get = unknown, Post = never, Params extends ConnectionParams = never> {
-  constructor(configuration: SocketConstructor<Get, Post, Params>);
+class SocketClient<
+  Get = unknown,
+  Post = never,
+  Params extends ConnectionParams = never,
+  ParamsInput = Params,
+> {
+  constructor(configuration: SocketClientConstructor<Get, Post, Params, ParamsInput>);
 }
 ```
 
@@ -14,7 +19,8 @@ class SocketClient<Get = unknown, Post = never, Params extends ConnectionParams 
 | --- | --- |
 | `Get` | The parsed message type (`value`). Default `unknown`. |
 | `Post` | The accepted send payload type. Default `never`. |
-| `Params` | The params object type. Default `never`, must extend `ConnectionParams` (`Record<string, ParamValue>`). |
+| `Params` | The normalized params type. Default `never`, must extend `ConnectionParams` (`Record<string, ParamValue>`). |
+| `ParamsInput` | The input params type accepted before validation. Defaults to `Params`. |
 
 Types are set **explicitly** — they are not inferred from the schemas.
 
@@ -37,7 +43,7 @@ socket.open();
 
 ### `useSocket(options?)`
 
-The **only** React hook (there is no deprecated alias). Subscribes to the pooled socket, opens it when `enabled` (default `true`), and returns a reactive result.
+The primary React hook. It subscribes to the pooled socket through `useSyncExternalStore`, opens it when `enabled` (default `true`), and returns a reactive result.
 
 ```ts
 useSocket<State = Get>(
@@ -67,14 +73,14 @@ Notes:
 
 - `data` is `select(value)` and is memoized on `[value, select]`.
 - If the pooled socket changes between renders (e.g. `params` change), the snapshot is reset **during render** so old state never mixes with the new socket's commands.
-- The returned commands are bound to the pooled `Socket` — components sharing a socket get identical `send`/`on`/`open`/`close`/`waitUntil` references.
+- The returned commands are bound to the pooled `Socket` — components sharing a socket get identical `send`/`sendAsync`/`on`/`open`/`close`/`waitUntil` references.
 
 ### `close(params?)`
 
-Closes the pooled socket for `params`, clears its cache, and removes it from the pool.
+Closes (disposes) the pooled socket for `params`, clearing its cache and removing it from the pool. `evict(params)` is an alias.
 
 ```ts
-close(params?: Params): boolean; // false when no such socket exists
+close(params?: ParamsInput | PreparedParams<Params>): boolean; // false when no such socket exists
 ```
 
 ### `closeAll()`
@@ -84,6 +90,25 @@ Closes every pooled socket and returns the number closed.
 ```ts
 closeAll(): number;
 ```
+
+### Parameter preparation & selection
+
+Parameters are validated **once** and normalized into a `PreparedParams` value that drives both the pool key and the connection URL. The synchronous methods (`get`, `useSocket`, `close`) accept raw params or an already-prepared value. Async parameter work uses the preparation API:
+
+```ts
+prepare(params, options?: { signal?: AbortSignal }): Promise<PreparedParams<Params>>;
+getAsync(params?, options?: { signal?: AbortSignal }): Promise<Socket<Get, Post, Params>>;
+closeAsync(params?, options?: { signal?: AbortSignal }): Promise<boolean>;
+```
+
+For React, `usePreparedParams(params, enabled)` returns `{ params?, error, isPending }` (cancelling in-flight work when the params or `enabled` change), and `useValue(options)` subscribes to just the selected value so unrelated connection changes don’t re-render:
+
+```tsx
+const { params, isPending } = client.usePreparedParams({ room });
+const message = client.useSocket({ params }); // pass the prepared value
+```
+
+The pool is bounded by `maxPoolSize` (default `1000`); creating a socket beyond the limit throws a `RangeError` — evict unused sockets to make room.
 
 ## Example
 

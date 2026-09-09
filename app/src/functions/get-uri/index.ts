@@ -9,7 +9,12 @@ export function getUri({ url, baseURL = "", params }: SocketURI): string {
 
   const serializedParams = paramsSerializer(params);
   const pathname = new URL(fullPath);
-  pathname.search = serializedParams;
 
+  for (const key of Object.keys(params)) pathname.searchParams.delete(key);
+  new URLSearchParams(serializedParams).forEach((value, key) => {
+    return pathname.searchParams.append(key, value);
+  });
+
+  pathname.searchParams.sort();
   return pathname.href;
 }
