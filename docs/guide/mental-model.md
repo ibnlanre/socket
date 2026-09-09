@@ -7,7 +7,7 @@ Understanding a few core ideas makes the rest of the API feel obvious.
 A `SocketClient` represents **one WebSocket endpoint**. You construct it once with the endpoint's `url` (and optionally a `baseURL`, schemas, and connection options), and reuse it everywhere that endpoint is needed.
 
 ```ts
-const chatClient = new SocketClient({
+const chatClient = new SocketClient<unknown, never, { room: string }>({
   baseURL: "wss://chat.example.com",
   url: "/ws",
 });
@@ -62,6 +62,24 @@ SocketClient                 pool + React hook
 
 `open()` loads from the cache **before** dialing the socket. When a valid cached value exists, it renders immediately (`status: "stale"`, `isStaleData: true`) until the first live message flips it to `"success"`.
 
-## React is optional
+## Framework and runtime boundaries
 
-Only `SocketClient` imports React. `Socket`, `SocketCache`, and `EventSourceClient` are framework-free and usable anywhere (Node, React Native-style environments, workers, etc.).
+`SocketClient` includes the React hook. `Socket`, `SocketCache`, and `EventSourceClient` do not import React directly, but that does not guarantee support in every JavaScript runtime. The socket lifecycle uses browser APIs such as `window` and `WebSocket`, and persistence uses the Cache API when available. The package also currently declares React and React DOM as peer dependencies.
+
+Treat browser applications as the supported starting point. Other runtimes require checking their transport and lifecycle APIs rather than assuming that framework independence means runtime independence.
+
+## Parameters describe a subscription
+
+For a backend that chooses its stream from URL parameters, the parameters are the subscription: a room, instrument, filter, or report. Render the desired parameters and let the client find that stream’s socket.
+
+Changing parameters selects another connection. It does not send an update frame to the existing connection. Returning to an existing serialized URL reuses its pooled socket. Use `send` for protocols that accept commands over an established connection.
+
+Keep parameter values stable. A search field that changes on every keystroke can create many pooled sockets; debounce the committed subscription parameters when appropriate.
+
+Pooling currently follows the serialized URL, including query-key order. Without a schema that consistently rebuilds the object, construct parameter objects in a consistent order to ensure reuse.
+
+## Shared connection, shared commands
+
+Calling the hook’s `close()` closes the underlying shared socket for every consumer. It also clears the socket’s subscriptions; it is not a way to unsubscribe just one component. Normal hook unmounting removes that hook’s subscription and allows the idle timeout to close an unused connection.
+
+`enabled: false` prevents that hook from opening the socket. It does not close a connection another consumer already opened, and the hook still subscribes to its state.

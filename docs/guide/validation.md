@@ -16,7 +16,11 @@ There are three schema slots, each with a distinct job:
 
 ## Params
 
-`paramsSchema` validates and **transforms** the params object. The validated value is what gets URL-serialized and used as the pool key — so distinct inputs that normalize to the same output share a socket.
+`paramsSchema` validates parameters when the client looks up a socket.
+
+::: warning Parameter transforms
+Currently, schema output is used to construct the pool key, but the socket receives the original parameters for its connection URL. Normalize parameters before passing them to the client, and use `paramsSchema` for validation without transforms until these paths are aligned.
+:::
 
 ```tsx
 import { z } from "zod";
@@ -51,7 +55,7 @@ socket.send({ type: "message", content: "" });   // throws validation error
 
 ## Incoming messages
 
-`messageSchema` runs after the frame is decoded and `JSON.parse`d. It may be async (e.g. Zod's `.promise()` or async refinements). How a failure is handled depends on the [message failure policy](/api/options#messagefailurepolicy):
+`messageSchema` runs after the frame is decoded and `JSON.parse`d. It may be async, for example through an asynchronous refinement. How a failure is handled depends on the [message failure policy](/api/options#messagefailurepolicy):
 
 - a validated message becomes the socket's `value` with `status: "success"`;
 - an invalid message follows the configured per-stage action (`"recover"` drops it, `"close"` terminates the socket).
@@ -65,7 +69,7 @@ const messageSchema = z.discriminatedUnion("type", [
 
 ## Type inference
 
-Types are set **explicitly** on the client generic parameters — the library does not infer them from the schemas:
+TypeScript can infer client generic parameters from compatible schemas. You can also supply them explicitly, particularly when no schema is provided:
 
 ```ts
 // Infer message types from a Zod schema
@@ -79,3 +83,17 @@ The full signature is `SocketClient<Get, Post, Params>` where:
 - `Get` — the parsed message type (`value`).
 - `Post` — the accepted send payload type (default `never`).
 - `Params` — the params object type (default `never`, must extend `ConnectionParams`).
+
+## Async validation and connection identity
+
+Incoming WebSocket messages and both SSE transports accept asynchronous message validation. `send` and client lookup remain synchronous: `send` returns a boolean, while `get` immediately returns a pooled socket. Returning a Promise from their schemas throws rather than changing those contracts.
+
+For asynchronous parameter preparation, finish the work before passing parameters to `get` or mounting a component that calls `useSocket`. Keep the client’s parameter schema synchronous. Setting `enabled: false` prevents the hook from opening a connection; it does not skip parameter validation or pool lookup.
+
+Async incoming validation currently runs independently for WebSocket frames and native SSE events. A slower earlier message may finish after a newer one. Prefer synchronous validation when arrival order matters until ordered processing is available.
+
+## Transform boundaries
+
+The current `SocketSchema<T>` uses the same type for schema input and output. Same-type transforms are easier to express than transforms that change the type. Explicit generic arguments do not remove that limitation.
+
+WebSocket message output is also serialized through JSON before entering the cache. Keep transformed values JSON-compatible; objects such as `Date` do not retain their runtime identity through this path.

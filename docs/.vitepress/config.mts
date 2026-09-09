@@ -10,7 +10,7 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   head: [
-    ["meta", { name: "theme-color", content: "#1a1612" }],
+    ["meta", { name: "theme-color", content: "#f7f7ef" }],
     ["link", { rel: "icon", type: "image/svg+xml", href: "/socket-mark.svg" }],
     ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
     [
@@ -21,7 +21,7 @@ export default defineConfig({
       "link",
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500;600&display=swap",
       },
     ],
     [
