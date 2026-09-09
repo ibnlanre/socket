@@ -1,4 +1,4 @@
-export function shallowMerge<Target extends {}, Source>(
+export function shallowMerge<Target extends object, Source>(
   target: Target,
   source: Source
 ) {

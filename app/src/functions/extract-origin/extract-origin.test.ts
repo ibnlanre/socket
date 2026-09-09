@@ -34,7 +34,7 @@ describe("extractOrigin", () => {
 
   it("should return the input if URL constructor is not available", () => {
     const originalURL = global.URL;
-    // @ts-ignore
+    // @ts-expect-error assigning undefined to the URL constructor type
     global.URL = undefined;
     const url = "https://example.com/path/to/resource";
     const result = extractOrigin(url);

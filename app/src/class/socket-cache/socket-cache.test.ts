@@ -143,7 +143,7 @@ describe("SocketCache", () => {
     });
 
     it("should pass current state as second argument to setStateAction", async () => {
-      const setStateAction = vi.fn((next: unknown, current?: unknown) => next);
+      const setStateAction = vi.fn((next: unknown, _current?: unknown) => next);
       const cache = new SocketCache({ ...defaults, setStateAction });
 
       await cache.set("/path", JSON.stringify({ value: 1 }));

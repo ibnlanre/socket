@@ -21,7 +21,7 @@ export class SocketCache<State = unknown> {
   #disableCache: boolean;
   #encrypt?: SocketCipher;
   #maxCacheAge: number;
-  #observers: Set<Function> = new Set();
+  #observers: Set<(value: State) => void> = new Set();
   #origin: string;
   #setStateAction?: SocketSetStateAction<State>;
   #state: State | undefined;
@@ -46,8 +46,10 @@ export class SocketCache<State = unknown> {
   }
 
   #notifyObservers = (): void => {
+    // #state is always assigned before #notifyObservers runs (see set/initialize).
+    const state = this.#state as State;
     for (const observer of this.#observers) {
-      observer(this.#state);
+      observer(state);
     }
   };
 

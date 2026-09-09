@@ -320,7 +320,7 @@ export class EventSourceClient<
     switch (this.#retryBackoffStrategy) {
       case "fixed":
         return Math.min(this.#retryDelay, this.#maxRetryDelay);
-      case "exponential":
+      case "exponential": {
         const delay = Math.min(
           this.#retryDelay * Math.pow(2, this.#attempt),
           this.#maxRetryDelay
@@ -331,6 +331,7 @@ export class EventSourceClient<
         const jitterFactor = this.#minJitterValue + jitterBufferTarget;
 
         return delay * jitterFactor;
+      }
     }
   };
 
