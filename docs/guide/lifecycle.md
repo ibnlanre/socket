@@ -19,12 +19,13 @@ type SocketStatus = "idle" | "stale" | "loading" | "success" | "error";
 ## `fetchStatus` — the low-level connection phase
 
 ```ts
-type SocketFetchStatus = "idle" | "connecting" | "connected" | "disconnected";
+type SocketFetchStatus = "idle" | "preparing" | "connecting" | "connected" | "disconnected";
 ```
 
 | Status | Meaning |
 | --- | --- |
 | `idle` | Not attempting to connect. |
+| `preparing` | Resolving subscription parameters or preparing a connection. |
 | `connecting` | Dialing / waiting to open. |
 | `connected` | The WebSocket is open. |
 | `disconnected` | The connection dropped (e.g. scheduling a retry). |
@@ -71,7 +72,8 @@ return (
 ## A typical timeline
 
 ```
-open()  → fetchStatus "connecting"   (hydrating cache + dialing)
+open()  → fetchStatus "preparing"    (hydrating cache + credentials)
+        → fetchStatus "connecting"   (dialing)
 open    → fetchStatus "connected"
 message → status "success"           (cache-first: stale → success)
 drop    → fetchStatus "disconnected" (retry scheduled; status may be "stale")

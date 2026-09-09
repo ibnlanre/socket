@@ -139,18 +139,8 @@ export class SocketOutbox {
     this.#timer = setTimeout(this.flush, 25);
   };
 
-  send = (payload: unknown): boolean => {
-    const entry = this.#reserve(() => {});
-    try {
-      return this.#prepare(entry, payload);
-    } catch (error) {
-      this.#remove(entry, error as Error, "dropped");
-      throw error;
-    }
-  };
-
-  sendAsync = (
-    validate: () => Promise<unknown>,
+  send = (
+    validate: () => unknown | Promise<unknown>,
     signal?: AbortSignal
   ): Promise<boolean> => {
     return new Promise((resolve, reject) => {

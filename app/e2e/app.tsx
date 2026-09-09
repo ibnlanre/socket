@@ -136,6 +136,7 @@ export function App() {
     null
   );
   const [managedFetchStatus, setManagedFetchStatus] = useState("idle");
+  const [sharedSocket, setSharedSocket] = useState(false);
   const [sendResult, setSendResult] = useState("none");
   const [sendError, setSendError] = useState("none");
   const [cacheReady, setCacheReady] = useState(!cacheMessage);
@@ -195,33 +196,59 @@ export function App() {
   }, [cacheMessage, socketUrl]);
 
   useEffect(() => {
-    const socket = client.get(connection.params);
-    const timerId = window.setInterval(() => {
-      setManagedFetchStatus(socket.fetchStatus);
-    }, 20);
-    setManagedFetchStatus(socket.fetchStatus);
-    return () => window.clearInterval(timerId);
+    const controller = new AbortController();
+    let timerId: number | undefined;
+    void client
+      .get(connection.params, { signal: controller.signal })
+      .then(async (socket) => {
+        const other = await client.get(connection.params, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setSharedSocket(socket === other);
+        timerId = window.setInterval(
+          () => setManagedFetchStatus(socket.fetchStatus),
+          20
+        );
+        setManagedFetchStatus(socket.fetchStatus);
+      })
+      .catch(() => {});
+    return () => {
+      controller.abort();
+      window.clearInterval(timerId);
+    };
   }, [client, connection.params]);
 
   useLayoutEffect(() => {
     if (!sendOnMount) return;
-
-    try {
-      setSendResult(
-        String(client.get(connection.params).send({ type: "ping", message }))
-      );
-      setSendError("none");
-    } catch (error) {
-      setSendResult("false");
-      setSendError(error instanceof Error ? error.message : String(error));
-    }
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const socket = await client.get(connection.params, {
+          signal: controller.signal,
+        });
+        const accepted = await socket.send(
+          { type: "ping", message },
+          { signal: controller.signal }
+        );
+        if (controller.signal.aborted) return;
+        setSendResult(String(accepted));
+        setSendError("none");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setSendResult("false");
+        setSendError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+    return () => controller.abort();
   }, [client, connection.params, message, sendOnMount]);
 
-  const send = (payload: ExampleSend | { type: "pong"; message: string }) => {
+  const send = async (
+    payload: ExampleSend | { type: "pong"; message: string }
+  ) => {
     if (!primarySocket) return;
-
     try {
-      setSendResult(String(primarySocket.send(payload as ExampleSend)));
+      setSendResult(String(await primarySocket.send(payload as ExampleSend)));
       setSendError("none");
     } catch (error) {
       setSendResult("false");
@@ -236,9 +263,7 @@ export function App() {
       <p data-testid="send-result">{sendResult}</p>
       <p data-testid="send-error">{sendError}</p>
       <p data-testid="shared-socket">
-        {primarySocket && secondarySocket
-          ? String(primarySocket.send === secondarySocket.send)
-          : "n/a"}
+        {primarySocket && secondarySocket ? String(sharedSocket) : "n/a"}
       </p>
       {cacheReady && firstMounted ? (
         <Subscriber

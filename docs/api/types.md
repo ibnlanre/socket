@@ -21,7 +21,7 @@ SocketMessageFailureAction, SocketMessageFailurePolicy, SocketFetchStatus,
 InferSocketSchema, SocketListener, UseSocketOptions, SocketParamsSerializer,
 SocketQueueOptions, SocketReconnectOptions, SocketSchema, SocketSelector,
 SocketState, SocketStatus, SocketTimeout, SocketURI, TimeUnit, Unit, UnitValue,
-UseSocketResult, PreparedParams, SocketDiagnostic
+UseSocketResult, SocketDiagnostic
 ```
 
 ## Status unions
@@ -35,7 +35,7 @@ type SocketStatus = "idle" | "stale" | "loading" | "success" | "error";
 ### `SocketFetchStatus`
 
 ```ts
-type SocketFetchStatus = "idle" | "connecting" | "connected" | "disconnected";
+type SocketFetchStatus = "idle" | "preparing" | "connecting" | "connected" | "disconnected";
 ```
 
 ### `EventSourceStatus`
@@ -53,15 +53,16 @@ type SocketConnectionEvent = "open" | "message" | "close" | "error";
 ## `UseSocketResult`
 
 ```ts
-interface UseSocketResult<Get = unknown, Post = never, State = Get>
-  extends SocketState<Get>, SocketCommands<Post>
+interface UseSocketResult<Get = unknown, Post = never, State = Get | undefined>
+  extends SocketState<Get>
 {
   /** The latest selected data from the socket. */
   readonly data: State;
+  send(payload: Post, options?: { signal?: AbortSignal }): Promise<boolean>;
 }
 ```
 
-`useSocket` returns read-only `SocketState` fields + `SocketCommands` + the selected `data`. Because it is composed by interface extension (not `Pick`/`Omit`), it can never drift from `Socket`.
+`useSocket` returns read-only state, selected `data`, and a subscription-scoped `send` method. Lifecycle controls belong to the imperative socket.
 
 ## `SocketState` / `SocketCommands`
 
@@ -74,6 +75,7 @@ interface SocketState<Get> {
   readonly failureCount: number;
   readonly failureReason: string | null;
   readonly fetchStatus: SocketFetchStatus;
+  readonly isPreparing: boolean;
   readonly isConnected: boolean;
   readonly isConnecting: boolean;
   readonly isDisconnected: boolean;
@@ -94,8 +96,7 @@ interface SocketCommands<Post> {
   close: () => void;
   on: SocketListener;
   open: () => void;
-  send: (payload: Post) => boolean;
-  sendAsync: (payload: Post, options?: { signal?: AbortSignal }) => Promise<boolean>;
+  send: (payload: Post, options?: { signal?: AbortSignal }) => Promise<boolean>;
   waitUntil: (state: SocketConnectionEvent, timeout?: UnitValue) => Promise<void>;
 }
 ```
@@ -129,15 +130,6 @@ type SocketCipher = <Data>(data: Data) => unknown;
 type SocketURI = { url: string; baseURL?: string; params?: ConnectionParams };
 type SocketData = MessageEvent<string | Blob | ArrayBuffer>;
 type SocketTimeout = ReturnType<typeof setTimeout> | number | undefined;
-```
-
-## Prepared params
-
-```ts
-interface PreparedParams<Params> {
-  readonly params: Readonly<Params>;
-  readonly key: string; // fully resolved pool key / connection URL
-}
 ```
 
 ## Queue & diagnostics

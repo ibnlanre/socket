@@ -38,24 +38,15 @@ Permanent teardown for an instance that will not be reused. Disconnects (via `cl
 dispose(): void;
 ```
 
-### `send(payload)`
+### `send(payload, options?)`
 
-Validates synchronously (when `sendSchema` is set), then accepts a JSON payload into the ordered send queue. Returns `true` when dispatched or queued, `false` when deduplicated within `deduplicationWindow`. Queued payloads flush in order on `open`. See [Sending messages](/guide/sending).
-
-```ts
-send(payload: Post): boolean;
-```
-
-### `sendAsync(payload, options?)`
-
-For asynchronous `sendSchema` validation. Validates, then accepts the payload into the same ordered queue. Resolves `true` on accept (a deduplicated send resolves `false`); rejects on validation failure, or cancellation/expiry/overflow while validation is still pending. Later queue expiry/drop is reported through diagnostics.
+Awaits validation and accepts a JSON payload into the ordered queue. Resolves `true` when dispatched or queued, `false` when deduplicated. Rejects on validation failure or cancellation/expiry/overflow while pending. Later queue expiry or dropping is reported through diagnostics. Local acceptance does not acknowledge server receipt.
 
 ```ts
-sendAsync(
-  payload: Post,
-  options?: { signal?: AbortSignal },
-): Promise<boolean>;
+send(payload: Post, options?: { signal?: AbortSignal }): Promise<boolean>;
 ```
+
+See [Sending messages](/guide/sending) for ordering and cancellation guarantees.
 
 ### `on`
 
@@ -119,7 +110,7 @@ The last subscriber unsubscribing arms `close()` after `idleConnectionTimeout` (
 
 ### State getters
 
-`isIdle`, `isConnecting`, `isConnected`, `isDisconnected` — derived from `fetchStatus`.
+`isIdle`, `isPreparing`, `isConnecting`, `isConnected`, `isDisconnected` — derived from `fetchStatus`.
 
 `isLoading`, `isSuccess`, `isError`, `isPending`, `isRefetching`, `isRefetchError`, `isStaleData` — derived from `status`/`failureCount`/`value`.
 
@@ -138,7 +129,7 @@ const socket = new Socket({
 socket.open();
 await socket.waitUntil("open");
 
-socket.send({ event: "ping" });
+await socket.send({ event: "ping" });
 await socket.waitUntil("message");
 
 const unsubscribe = socket.on("message", (event) => console.log(event));

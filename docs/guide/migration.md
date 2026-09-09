@@ -1,22 +1,21 @@
-# Migrating connection behavior
+# Prelaunch API changes
 
-This update strengthens identity, async processing, and lifecycle guarantees. Existing synchronous `get` and `send` calls keep their return types, but several behaviors are deliberately different.
+The API now treats subscription resolution and sends as asynchronous operations, with one method for each. These are breaking changes before launch.
 
-| Before | Now | Action |
-| --- | --- | --- |
-| Query values were double encoded | Values are encoded once; object keys are sorted | Remove any extra decoding in your backend; old persisted URL keys may no longer match |
-| Parameter transforms only affected pool identity | The same normalized URL reaches the transport | Remove workarounds that manually duplicate schema transforms |
-| Repeated queued sends silently coalesced | Every call remains distinct when deduplication is disabled | Enable `deduplicationWindow` when coalescing is desired |
-| Pending duplicates returned `true` with deduplication enabled | Suppressed duplicates return `false` | Treat `false` as suppressed, not transport failure |
-| `socket.close()` cleared subscriptions | It preserves subscriptions for reopening | Use `dispose()` for permanent release |
-| Client removal cleared the shared cache namespace | Eviction disposes its instance without broad cache deletion | Use `clearCacheOnClose` or explicit cache removal |
-| Waiting sends and retained pool entries were unbounded | Default limits are 1000; waiting sends expire after one minute | Configure limits and evict unused identities |
-| Async messages could finish out of order | Validation commits in arrival order | Keep validators bounded in latency; slow work delays later messages |
+| Previous API | Current API |
+| --- | --- |
+| Synchronous socket lookup and separate preparation methods | `await client.get(params, { signal }?)` |
+| Separate parameter preparation hook | `client.useSocket({ params })` owns preparation |
+| Separate synchronous and asynchronous send methods | `await socket.send(payload, { signal }?)` |
+| Client close method and eviction alias | `await client.evict(params)` |
+| Close all pooled sockets | `client.clear()` |
+| Permanent client teardown | `client.dispose()` |
+| Selected-value hook | `client.useSocket({ select }).data` |
 
-A full hook result updates for every exposed state change. Use `useValue` with a selector and optional equality function when you only need selected data.
+React results expose state, selected `data`, and `send`. Get the imperative socket with `await client.get(params)` for `open`, `close`, raw listeners, and event waits. A component's subscription does not expose controls that disconnect other consumers.
 
-For async parameter schemas, prepare outside render or use `usePreparedParams`, then pass the prepared result to the consuming component. `enabled: false` on `useSocket` does not skip lookup or validation. For async outgoing schemas, use `sendAsync`.
+Handle rejected sends with `try`/`catch`. Successful resolution means local acceptance; it does not establish server delivery. See [queue guarantees](/guide/sending#queue-guarantees).
 
-Authentication preparation does not change pool/cache identity. Include stable account or tenant identity in the subscription key, and remove private cache data explicitly when required by your application's session lifecycle.
+`enabled: false` now skips parameter resolution and subscriptions. `isPreparing` covers parameter resolution and connection preparation; `isPending` describes the absence of data. Parameter changes cancel the old subscription's pending work.
 
-This library remains a JSON state client. It does not implement application acknowledgements, exactly-once delivery, or backend-specific heartbeat/resume protocols. JSON persistence does not preserve class instances produced by transforms.
+`socket.close()` remains reversible and preserves listeners. `socket.dispose()`, `client.evict()`, `client.clear()`, and `client.dispose()` permanently release affected socket instances. Detach their consumers first.

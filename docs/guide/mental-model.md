@@ -18,8 +18,8 @@ const chatClient = new SocketClient<unknown, never, { room: string }>({
 Sockets are **pooled by their fully built URL** — the resolved `baseURL + url` plus the serialized `params`. Calling `client.get(params)` (or rendering `client.useSocket({ params })`) with identical params returns the **same underlying `Socket` instance**, so two components can share one live connection.
 
 ```ts
-const a = chatClient.get({ room: "general" });
-const b = chatClient.get({ room: "general" });
+const a = await chatClient.get({ room: "general" });
+const b = await chatClient.get({ room: "general" });
 
 a === b; // true — one connection
 ```
@@ -27,7 +27,7 @@ a === b; // true — one connection
 Different params produce different managed sockets:
 
 ```ts
-const lounge = chatClient.get({ room: "lounge" });
+const lounge = await chatClient.get({ room: "lounge" });
 lounge === a; // false — a separate connection
 ```
 
@@ -40,7 +40,7 @@ a.send === b.send; // true when they share the same socket
 ## Hook for components, instance for imperative code
 
 - `client.useSocket(...)` is the **React entrypoint**. It subscribes to a managed socket and returns a read-only state snapshot plus connection commands.
-- `client.get(...)` gives you the **managed socket instance** for imperative actions such as `open`, `send`, and `waitUntil`.
+- `await client.get(...)` gives you the **managed socket instance** for imperative actions such as `open`, `send`, and `waitUntil`.
 
 ## A layered API
 
@@ -54,9 +54,9 @@ SocketClient                 pool + React hook
 `Socket` implements two public contracts:
 
 - `SocketState<Get>` — the read-only snapshot (`value`, `status`, `fetchStatus`, flags, timestamps, …).
-- `SocketCommands<Post>` — the actions (`open`, `close`, `send`, `sendAsync`, `on`, `waitUntil`).
+- `SocketCommands<Post>` — the actions (`open`, `close`, `send`, `on`, `waitUntil`).
 
-`useSocket` returns a `UseSocketResult` that is `SocketState` + `SocketCommands` + a selected `data` field — composed by interface extension so it can never drift from `Socket`.
+`useSocket` returns read-only `SocketState`, selected `data`, and a subscription-scoped `send`. Get the imperative socket for lifecycle controls and raw transport listeners.
 
 ## Cache-first by design
 
@@ -88,7 +88,7 @@ Ownership is explicit. Four operations mean four different things:
 | --- | --- | --- |
 | `socket.close()` (also the hook’s `close`) | connection | Disconnects the transport. **Subscriptions and event listeners are preserved**, so a later `open()` reconnects the same consumers. |
 | `socket.dispose()` | instance | Permanent teardown: disconnects, then clears listeners and subscribers. The instance can no longer be used. |
-| `client.close(params)` / `client.evict(params)` | pool | Disposes that pooled socket and removes it from the pool. |
+| `await client.evict(params)` | pool | Disposes that pooled socket and removes it from the pool. |
 | hook unmount | subscription | Removes that one hook’s subscription. When the last subscriber leaves, the idle timeout closes an unused connection. |
 
 - Calling `close()` on a shared socket disconnects it for every consumer. It is not a way to unsubscribe just one component.

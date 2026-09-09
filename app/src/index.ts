@@ -30,7 +30,6 @@ export type { SocketTimeout } from "./types/socket/timeout";
 export type { SocketURI } from "./types/socket/uri";
 export type { TimeUnit, Unit, UnitValue } from "./types/time-unit";
 export type { UseSocketResult } from "./types/use-socket-result";
-export type { PreparedParams } from "./types/socket/prepared-params";
 export type { SocketQueueOptions } from "./types/socket/queue-options";
 export type { SocketDiagnostic } from "./types/socket/diagnostic";
 export type {

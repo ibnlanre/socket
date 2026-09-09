@@ -77,12 +77,12 @@ When `room` changes, `useSocket` swaps to the pooled socket for that room — an
 When you need direct control outside React, use `get` for the managed `Socket`:
 
 ```ts
-const socket = chatClient.get({ room: "general" });
+const socket = await chatClient.get({ room: "general" });
 
 socket.open();
 await socket.waitUntil("open");
 
-socket.send({ content: "hello" });
+await socket.send({ content: "hello" });
 await socket.waitUntil("message");
 
 const unsubscribe = socket.on("message", (event) => {

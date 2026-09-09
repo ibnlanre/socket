@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Socket } from ".";
-
 class Transport extends EventTarget {
   static OPEN = 1;
   static CLOSED = 3;
@@ -59,7 +58,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-
 describe("connection lifecycle", () => {
   it("commits asynchronous messages in arrival order", async () => {
     let release!: () => void;
@@ -86,7 +84,6 @@ describe("connection lifecycle", () => {
     await vi.waitFor(() => expect(socket.value).toBe(2));
     expect(values).toEqual([1, 2]);
   });
-
   it("ignores validation and transport callbacks from a closed connection", async () => {
     let release!: () => void;
     const socket = create({
@@ -118,7 +115,6 @@ describe("connection lifecycle", () => {
     expect(socket.ws).toBe(fresh);
     expect(socket.value).toBe("new");
   });
-
   it("preserves snapshots and subscriptions across close/reopen, but disposal is final", async () => {
     const socket = create();
     const listener = vi.fn();
@@ -136,7 +132,6 @@ describe("connection lifecycle", () => {
     socket.dispose();
     expect(() => socket.open()).toThrow("disposed");
   });
-
   it("prepares each transport independently and cancels stale authentication", async () => {
     let release!: (value: { url: string }) => void;
     const prepareConnection = vi
@@ -161,20 +156,18 @@ describe("connection lifecycle", () => {
     expect(fresh.url).toContain("fresh");
     expect(socket.path).toBe("/ws");
   });
-
   it("waits for browser buffers and emits diagnostics without exposing payloads", async () => {
     const diagnostic = vi.fn();
     const socket = create({ onDiagnostic: diagnostic, maxBufferedAmount: 10 });
     const transport = await connect(socket);
     transport.bufferedAmount = 11;
-    socket.send({ token: "private" });
+    await socket.send({ token: "private" });
     expect(transport.send).not.toHaveBeenCalled();
     transport.bufferedAmount = 0;
     await vi.waitFor(() => expect(transport.send).toHaveBeenCalledTimes(1));
     expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
   });
 });
-
 it("rejects pending waits on cancellation and disconnection", async () => {
   const socket = create();
   const controller = new AbortController();
@@ -189,7 +182,6 @@ it("rejects pending waits on cancellation and disconnection", async () => {
   socket.close();
   await pending;
 });
-
 it("bounds incoming validation while preserving the overflow error", async () => {
   const socket = create({
     maxPendingMessages: 1,
@@ -207,7 +199,6 @@ it("bounds incoming validation while preserving the overflow error", async () =>
   expect(socket.ws).toBeNull();
   expect(socket.error?.message).toContain("queue is full");
 });
-
 it.each(["focus", "online"])(
   "reconnects on %s after an established transport closes cleanly",
   async (event) => {

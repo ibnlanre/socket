@@ -1,6 +1,6 @@
 # `SocketClient`
 
-The React hook host + **pool** of shared [`Socket`](/api/socket) instances for one WebSocket endpoint.
+A pool of shared [`Socket`](/api/socket) instances for one endpoint, with a React subscription hook.
 
 ```ts
 class SocketClient<
@@ -13,118 +13,78 @@ class SocketClient<
 }
 ```
 
-## Type parameters
+Schemas infer message output (`Get`), accepted send input (`Post`), normalized parameters (`Params`), and parameter input (`ParamsInput`). Without schemas, supply those types explicitly.
 
-| Param | Meaning |
-| --- | --- |
-| `Get` | The parsed message type (`value`). Default `unknown`. |
-| `Post` | The accepted send payload type. Default `never`. |
-| `Params` | The normalized params type. Default `never`, must extend `ConnectionParams` (`Record<string, ParamValue>`). |
-| `ParamsInput` | The input params type accepted before validation. Defaults to `Params`. |
+## `get(params?, options?)`
 
-Compatible schemas infer the corresponding types; explicit generic arguments are also supported.
-
-## Methods
-
-### `get(params?)`
-
-Returns the pooled [`Socket`](/api/socket) for the given params — creating one if needed.
+Validates and transforms parameters, then returns the socket for the resulting URL. Both synchronous and asynchronous schemas use this method. It creates a pooled instance when needed; call `open()` to connect.
 
 ```ts
-get(params?: ParamsInput | PreparedParams<Params>): Socket<Get, Post, Params>;
-```
+get(
+  params?: ParamsInput,
+  options?: { signal?: AbortSignal },
+): Promise<Socket<Get, Post, Params>>;
 
-Identical params ⇒ the same `Socket` instance (see [Socket pooling](/guide/socket-pooling)).
-
-```ts
-const socket = client.get({ room: "general" });
+const socket = await client.get({ room: "general" });
 socket.open();
 ```
 
-### `useSocket(options?)`
+Equivalent normalized URLs share an instance. Concurrent resolutions of identical JSON input share validation work. Each caller can cancel its own wait. The pool retains at most `maxPoolSize` instances (default `1000`); further identities reject with a `RangeError` until an unused socket is evicted.
 
-The primary React hook. It subscribes to the pooled socket through `useSyncExternalStore`, opens it when `enabled` (default `true`), and returns a reactive result.
+## `useSocket(options?)`
+
+Subscribes to a pooled socket and opens it. Parameter validation starts in an effect. While it resolves, `fetchStatus` is `"preparing"` and `isPreparing` is `true`; validation failures appear in `error` with `isError: true`.
 
 ```ts
-useSocket<State = Get>(
-  options?: UseSocketOptions<Get, State, ParamsInput | PreparedParams<Params>>,
+useSocket<State = Get | undefined>(
+  options?: UseSocketOptions<Get, State, ParamsInput>,
 ): UseSocketResult<Get, Post, State>;
 ```
 
-`UseSocketOptions`:
-
-```ts
-type UseSocketOptions<Get = unknown, State = Get, Params = never> = {
-  params?: Params;                 // URL params for the connection
-  enabled?: boolean;               // open when true (default true)
-  select?: (data: Get | undefined) => State; // defaults to identity
-};
-```
-
 ```tsx
-const socket = client.useSocket({
-  params: { room: "general" },
-  enabled: isLoggedIn,
-  select: (message) => message ?? null,
-});
-```
+function Room({ name }: { name: string }) {
+  const socket = client.useSocket({
+    params: { room: name },
+    enabled: Boolean(name),
+    select: (message) => message ?? null,
+  });
 
-Notes:
-
-- `data` is `select(value)` and is memoized on `[value, select]`.
-- If the pooled socket changes between renders (e.g. `params` change), the snapshot is reset **during render** so old state never mixes with the new socket's commands.
-- The returned commands are bound to the pooled `Socket` — components sharing a socket get identical `send`/`sendAsync`/`on`/`open`/`close`/`waitUntil` references.
-
-### `close(params?)`
-
-Closes (disposes) the pooled socket for `params`, removing it from the pool. Cache deletion is controlled by `clearCacheOnClose`; eviction no longer clears the shared cache namespace. Detach consumers before disposing their instance. `evict(params)` is an alias.
-
-```ts
-close(params?: ParamsInput | PreparedParams<Params>): boolean; // false when no such socket exists
-```
-
-### `closeAll()`
-
-Closes every pooled socket and returns the number closed.
-
-```ts
-closeAll(): number;
-```
-
-### Parameter preparation & selection
-
-Parameters are validated **once** and normalized into a `PreparedParams` value that drives both the pool key and the connection URL. The synchronous methods (`get`, `useSocket`, `close`) accept raw params or an already-prepared value. Async parameter work uses the preparation API:
-
-```ts
-prepare(params, options?: { signal?: AbortSignal }): Promise<PreparedParams<Params>>;
-getAsync(params?, options?: { signal?: AbortSignal }): Promise<Socket<Get, Post, Params>>;
-closeAsync(params?, options?: { signal?: AbortSignal }): Promise<boolean>;
-```
-
-For React, `usePreparedParams(params, enabled)` returns `{ params?, error, isPending }` (cancelling its wait when the params or `enabled` change), and `useValue(options)` subscribes to just the selected value so unrelated connection changes don’t re-render:
-
-Render a child component with the prepared value only after preparation succeeds. See the complete [React preparation example](/guide/validation#preparing-parameters-in-react).
-
-The pool is bounded by `maxPoolSize` (default `1000`); creating a socket beyond the limit throws a `RangeError` — evict unused sockets to make room.
-
-## Example
-
-```tsx
-import { SocketClient } from "@ibnlanre/socket";
-
-const chatClient = new SocketClient<string, never, { room: string }>({
-  baseURL: "wss://chat.example.com",
-  url: "/ws",
-});
-
-function ChatRoom({ room }: { room: string }) {
-  const socket = chatClient.useSocket({ params: { room } });
-  return <p>{socket.status}: {socket.data ?? "no message yet"}</p>;
+  if (socket.isPreparing) return <p>Preparing room…</p>;
+  if (socket.isError) return <p>{socket.error?.message}</p>;
+  return <pre>{JSON.stringify(socket.data)}</pre>;
 }
 ```
 
-## Return type
+`enabled: false` skips parameter resolution and subscription entirely. The hook returns idle state and selected placeholder data. Changing parameters cancels the previous resolution and pending sends from that subscription; stale results cannot replace the current state. Unmounting releases the subscription, allowing the socket's idle timeout to close it when no subscribers remain.
 
-`useSocket` returns a [`UseSocketResult`](/api/types#usesocketresult) — read-only [`SocketState`](/api/socket#state-getters) + [`SocketCommands`](/api/socket#commands) + `data`. See [Reference → Types & constants](/api/types).
+The result contains read-only state, selected `data`, and `send(payload, { signal }?)`. A send made during preparation waits for that subscription's socket. `send` remains stable while parameters and `enabled` are unchanged. Each hook owns its wrapper; consumers sharing a connection need not share command references.
 
-`useValue` accepts `select` and `isEqual` (default `Object.is`). It returns selected data only. The full `useSocket` result continues to update for changes to exposed metadata even when selected data is equal.
+Connection controls and raw listeners belong to the imperative socket returned by `get`. The hook observes all exposed state, so metadata changes can render the component even when selected data is equal.
+
+## `evict(params?, options?)`
+
+Disposes a matching socket and removes it from the pool. Resolves `false` if none exists. Uses the same parameter validation and URL identity as `get`.
+
+```ts
+evict(params?: ParamsInput, options?: { signal?: AbortSignal }): Promise<boolean>;
+
+await client.evict({ room: "general" });
+```
+
+Detach consumers before eviction. Cache deletion follows `clearCacheOnClose` and does not clear other identities' cache entries.
+
+## `clear()`
+
+Disposes all pooled sockets and invalidates pending resolutions. Returns the number removed. The client remains reusable.
+
+```ts
+clear(): number;
+```
+
+## `dispose()`
+
+Permanently releases the client and its sockets. Further resolution rejects. Call this when the owner of the client is finished with it.
+
+```ts
+dispose(): void;
+```

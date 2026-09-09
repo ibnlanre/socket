@@ -1,9 +1,9 @@
+import { Socket } from "@/class/socket";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
-import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { SocketClient } from ".";
-import type { PreparedParams } from "@/types/socket/prepared-params";
 
 const configuration = {
   baseURL: "wss://example.com",
@@ -11,31 +11,31 @@ const configuration = {
   disableCache: true,
 };
 
-describe("connection identity and parameter preparation", () => {
-  it("uses normalized output for both pooling and the connection URL", () => {
+describe("connection identity", () => {
+  it("uses normalized output for both pooling and the connection URL", async () => {
     const client = new SocketClient({
       ...configuration,
       paramsSchema: z.object({ room: z.string().toLowerCase() }),
     });
-    const first = client.get({ room: "GENERAL" });
+    const first = await client.get({ room: "GENERAL" });
     expect(first.path).toBe("/ws?room=general");
-    expect(client.get({ room: "general" })).toBe(first);
-    client.closeAll();
+    expect(await client.get({ room: "general" })).toBe(first);
+    client.dispose();
   });
 
-  it("ignores object order and encodes query values exactly once", () => {
-    const client = new SocketClient<unknown, never, { a: string; b: string }>({
-      ...configuration,
-    });
-    const socket = client.get({ a: "hello world", b: "&+/é" });
-    expect(client.get({ b: "&+/é", a: "hello world" })).toBe(socket);
+  it("ignores object order and encodes query values exactly once", async () => {
+    const client = new SocketClient<unknown, never, { a: string; b: string }>(
+      configuration
+    );
+    const socket = await client.get({ a: "hello world", b: "&+/é" });
+    expect(await client.get({ b: "&+/é", a: "hello world" })).toBe(socket);
     expect(
       new URL(socket.path, configuration.baseURL).searchParams.get("b")
     ).toBe("&+/é");
-    client.closeAll();
+    client.dispose();
   });
 
-  it("deduplicates preparation while cancelling callers independently", async () => {
+  it("deduplicates resolution while cancelling callers independently", async () => {
     let resolve!: () => void;
     const validate = vi.fn(async (value: unknown) => {
       await new Promise<void>((done) => {
@@ -48,22 +48,19 @@ describe("connection identity and parameter preparation", () => {
     };
     const client = new SocketClient({ ...configuration, paramsSchema });
     const controller = new AbortController();
-    const cancelled = client.prepare("GENERAL", { signal: controller.signal });
+    const cancelled = client.get("GENERAL", { signal: controller.signal });
     const rejection = expect(cancelled).rejects.toMatchObject({
       name: "AbortError",
     });
-    const pending = client.prepare("GENERAL");
+    const pending = client.get("GENERAL");
     await Promise.resolve();
     controller.abort();
     await rejection;
     resolve();
-    const prepared = await pending;
+    const socket = await pending;
     expect(validate).toHaveBeenCalledTimes(1);
-    expect(client.get(prepared).path).toBe("/ws?room=general");
-    expect(client.get(prepared)).toBe(client.get(prepared));
-    const other = new SocketClient(configuration);
-    expect(() => other.get(prepared as never)).toThrow("another client");
-    client.closeAll();
+    expect(socket.path).toBe("/ws?room=general");
+    client.dispose();
   });
 
   it("infers schema input and output independently", async () => {
@@ -73,69 +70,159 @@ describe("connection identity and parameter preparation", () => {
       sendSchema: z.string().transform((content) => ({ content })),
       messageSchema: z.string().transform(Number),
     });
-    const prepared = await client.prepare("general");
-    expectTypeOf(prepared).toEqualTypeOf<PreparedParams<{ room: string }>>();
-    expectTypeOf(client.get(prepared).value).toEqualTypeOf<
-      number | undefined
-    >();
-    expectTypeOf(client.get(prepared).send)
-      .parameter(0)
-      .toEqualTypeOf<string>();
-    client.closeAll();
+    const socket = await client.get("general");
+    expectTypeOf(socket.value).toEqualTypeOf<number | undefined>();
+    expectTypeOf(socket.send).parameter(0).toEqualTypeOf<string>();
+    expectTypeOf(socket.send).returns.toEqualTypeOf<Promise<boolean>>();
+    client.dispose();
   });
 
-  it("exposes pending and error states without starting async work during render", async () => {
+  it("surfaces asynchronous parameter errors through the subscription", async () => {
     const client = new SocketClient({
       ...configuration,
       paramsSchema: z
         .string()
-        .refine(async (room) => room !== "bad")
+        .refine(async () => false)
         .transform((room) => ({ room })),
     });
-    const { result, rerender, unmount } = renderHook(
-      ({ room }) => client.usePreparedParams(room),
-      { initialProps: { room: "first" } }
-    );
-    expect(result.current.isPending).toBe(true);
-    await waitFor(() =>
-      expect(result.current.params?.params.room).toBe("first")
-    );
-    rerender({ room: "bad" });
-    expect(result.current.params).toBeUndefined();
-    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
-    unmount();
-    client.closeAll();
-  });
-
-  it("selects data without rendering for unrelated snapshot changes", () => {
-    const client = new SocketClient<number>({
-      ...configuration,
-      placeholderData: 1,
-    });
-    let renders = 0;
-    const hook = renderHook(() => {
-      renders++;
-      return client.useValue({ enabled: false });
-    });
-    const before = renders;
-    act(() => client.get().close());
-    expect(hook.result.current).toBe(1);
-    expect(renders).toBe(before);
+    const hook = renderHook(() => client.useSocket({ params: "bad" }));
+    expect(hook.result.current.isPreparing).toBe(true);
+    await waitFor(() => expect(hook.result.current.isError).toBe(true));
+    expect(hook.result.current.error).toBeInstanceOf(Error);
+    expect(hook.result.current.isPreparing).toBe(false);
     hook.unmount();
-    client.closeAll();
+    client.dispose();
   });
-});
 
-it("bounds retained identities without evicting a shared socket implicitly", () => {
-  const client = new SocketClient<unknown, never, { room: string }>({
-    ...configuration,
-    maxPoolSize: 1,
+  it("does not validate disabled subscriptions and still selects placeholder data", () => {
+    const validate = vi.fn(() => ({ issues: [{ message: "unused" }] }));
+    const client = new SocketClient({
+      ...configuration,
+      placeholderData: 2,
+      paramsSchema: { "~standard": { version: 1, vendor: "test", validate } },
+    });
+    const hook = renderHook(() =>
+      client.useSocket({ enabled: false, select: (value) => (value ?? 0) * 2 })
+    );
+    expect(hook.result.current.data).toBe(4);
+    expect(hook.result.current.isIdle).toBe(true);
+    expect(validate).not.toHaveBeenCalled();
+    hook.unmount();
+    client.dispose();
   });
-  const first = client.get({ room: "first" });
-  expect(() => client.get({ room: "second" })).toThrow("pool is full");
-  expect(client.get({ room: "first" })).toBe(first);
-  client.evict({ room: "first" });
-  expect(() => first.open()).toThrow("disposed");
-  expect(client.get({ room: "second" }).path).toContain("second");
-  client.closeAll();
+
+  it("invalidates pending resolution when cleared and remains reusable", async () => {
+    let resolve!: (value: { value: { room: string } }) => void;
+    const client = new SocketClient({
+      ...configuration,
+      paramsSchema: {
+        "~standard": {
+          version: 1,
+          vendor: "test",
+          validate: () =>
+            new Promise<{ value: { room: string } }>((done) => {
+              resolve = done;
+            }),
+        },
+      },
+    });
+    const pending = client.get();
+    const rejection = expect(pending).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    await Promise.resolve();
+    client.clear();
+    resolve({ value: { room: "old" } });
+    await rejection;
+    const next = client.get();
+    await Promise.resolve();
+    resolve({ value: { room: "new" } });
+    expect((await next).path).toContain("new");
+    client.dispose();
+    await expect(client.get()).rejects.toThrow("disposed");
+  });
+
+  it("cancels pending sends and ignores resolution from previous parameters", async () => {
+    const client = new SocketClient<unknown, string, { room: string }>(
+      configuration
+    );
+    const first = new Socket<unknown, string>(configuration);
+    const second = new Socket<unknown, string>(configuration);
+    const firstOpen = vi.spyOn(first, "open").mockImplementation(() => {});
+    const secondOpen = vi.spyOn(second, "open").mockImplementation(() => {});
+    const firstSend = vi.spyOn(first, "send");
+    const secondSend = vi.spyOn(second, "send").mockResolvedValue(true);
+    let resolveFirst!: (socket: typeof first) => void;
+    let resolveSecond!: (socket: typeof second) => void;
+    vi.spyOn(client, "get")
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolveFirst = done;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolveSecond = done;
+          })
+      );
+    const hook = renderHook(
+      ({ room }) => client.useSocket({ params: { room } }),
+      {
+        initialProps: { room: "first" },
+      }
+    );
+    const pending = hook.result.current.send("old");
+    const rejected = expect(pending).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    hook.rerender({ room: "second" });
+    await rejected;
+    const next = hook.result.current.send("new");
+    await act(async () => {
+      resolveSecond(second);
+      await next;
+    });
+    await waitFor(() => expect(secondOpen).toHaveBeenCalledOnce());
+    await act(async () => {
+      resolveFirst(first);
+    });
+    expect(firstOpen).not.toHaveBeenCalled();
+    expect(firstSend).not.toHaveBeenCalled();
+    expect(secondSend).toHaveBeenCalledWith("new", expect.any(Object));
+    hook.unmount();
+    first.dispose();
+    second.dispose();
+    client.dispose();
+  });
+
+  it("cancels a pending subscription send on unmount", async () => {
+    const client = new SocketClient<unknown, string>(configuration);
+    vi.spyOn(client, "get").mockImplementation(() => new Promise(() => {}));
+    const hook = renderHook(() => client.useSocket());
+    const pending = hook.result.current.send("message");
+    const rejection = expect(pending).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    hook.unmount();
+    await rejection;
+    client.dispose();
+  });
+
+  it("bounds retained identities without evicting a shared socket implicitly", async () => {
+    const client = new SocketClient<unknown, never, { room: string }>({
+      ...configuration,
+      maxPoolSize: 1,
+    });
+    const first = await client.get({ room: "first" });
+    await expect(client.get({ room: "second" })).rejects.toThrow(
+      "pool is full"
+    );
+    expect(await client.get({ room: "first" })).toBe(first);
+    await client.evict({ room: "first" });
+    expect(() => first.open()).toThrow("disposed");
+    expect((await client.get({ room: "second" })).path).toContain("second");
+    client.dispose();
+  });
 });

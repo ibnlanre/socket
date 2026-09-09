@@ -25,6 +25,8 @@ export interface SocketState<Get> {
   readonly failureReason: string | null;
   /** Low-level connection phase: idle, connecting, connected, or disconnected. */
   readonly fetchStatus: SocketFetchStatus;
+  /** Whether subscription parameters or connection credentials are resolving. */
+  readonly isPreparing: boolean;
   /** Whether the transport is currently connected. */
   readonly isConnected: boolean;
   /** Whether the transport is currently establishing a connection. */

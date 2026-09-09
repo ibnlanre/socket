@@ -1,21 +1,16 @@
+import { Socket } from "@/class/socket";
+import { getUri } from "@/functions/get-uri";
+import { serializeJSON } from "@/functions/serialize-json";
+import { socketState } from "@/functions/socket-state";
+import { toError } from "@/functions/to-error";
+import { schemaValue } from "@/functions/validate-schema";
+import { withSignal } from "@/functions/with-signal";
 import type { ConnectionParams } from "@/types/connection-params";
 import type { SocketClientConstructor } from "@/types/socket/client-constructor";
 import type { UseSocketOptions } from "@/types/socket/options";
 import type { UseSocketResult } from "@/types/use-socket-result";
-
-import { serializeJSON } from "@/functions/serialize-json";
-import { toError } from "@/functions/to-error";
-import { schemaValue, validateSchema } from "@/functions/validate-schema";
-import { withSignal } from "@/functions/with-signal";
-import type { PreparedParams } from "@/types/socket/prepared-params";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSyncExternalStore } from "use-sync-external-store/shim";
-import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
-
-const owners = new WeakMap<object, object>();
-
-import { Socket } from "@/class/socket";
-import { getUri } from "@/functions/get-uri";
 
 export class SocketClient<
   Get = unknown,
@@ -24,8 +19,9 @@ export class SocketClient<
   ParamsInput = Params,
 > {
   #pool = new Map<string, Socket<Get, Post, Params>>();
-  #preparing = new Map<string, Promise<PreparedParams<Params>>>();
+  #resolving = new Map<string, Promise<string>>();
   #generation = 0;
+  #disposed = false;
   #maxPoolSize: number;
   #configuration: SocketClientConstructor<Get, Post, Params, ParamsInput>;
 
@@ -34,52 +30,63 @@ export class SocketClient<
   ) {
     this.#configuration = configuration;
     this.#maxPoolSize = configuration.maxPoolSize ?? 1000;
-    if (!Number.isInteger(this.#maxPoolSize) || this.#maxPoolSize < 1)
+    if (!Number.isInteger(this.#maxPoolSize) || this.#maxPoolSize < 1) {
       throw new RangeError("maxPoolSize must be a positive integer.");
+    }
   }
 
-  #destroy = (socket: Socket<Get, Post, Params>) => {
-    socket.dispose();
+  #assertActive = () => {
+    if (this.#disposed)
+      throw new Error("SocketClient: this client has been disposed.");
   };
 
-  #parse = (
-    input: ParamsInput | PreparedParams<Params> = {} as ParamsInput
-  ): PreparedParams<Params> => {
-    if (input && typeof input === "object" && owners.has(input)) {
-      if (owners.get(input) !== this)
-        throw new TypeError(
-          "SocketClient: prepared params belong to another client."
-        );
-      return input as PreparedParams<Params>;
-    }
+  #resolve = (params: ParamsInput): Promise<string> => {
+    this.#assertActive();
+    const identity = serializeJSON(params);
+    const existing = this.#resolving.get(identity);
+    if (existing) return existing;
+
+    const generation = this.#generation;
     const schema = this.#configuration.paramsSchema;
-    const params = schema
-      ? validateSchema(
-          schema,
-          input as ParamsInput,
-          "SocketClient: params schema validation failed"
-        )
-      : (input as unknown as Params);
-    return this.#prepared(params);
+    const pending = Promise.resolve().then(async () => {
+      const normalized = schema
+        ? schemaValue(
+            await schema["~standard"].validate(params),
+            "SocketClient: params schema validation failed"
+          )
+        : (params as unknown as Params);
+      if (generation !== this.#generation)
+        throw new DOMException("Client cleared", "AbortError");
+      return getUri({ ...this.#configuration, params: normalized });
+    });
+    this.#resolving.set(identity, pending);
+    const cleanup = () => {
+      if (this.#resolving.get(identity) === pending)
+        this.#resolving.delete(identity);
+    };
+    void pending.then(cleanup, cleanup);
+    return pending;
   };
 
-  #prepared = (params: Params): PreparedParams<Params> => {
-    // The connection URL is resolved now; later input mutation cannot change identity.
-    const value = Object.freeze({ ...params }) as Readonly<Params>;
-    const key = getUri({ ...this.#configuration, params: value as Params });
-    const prepared = Object.freeze({ params: value, key });
-    owners.set(prepared, this);
-    return prepared;
-  };
-
-  #get = ({ key }: PreparedParams<Params>) => {
+  /** Resolve subscription identity; opening remains an explicit ownership choice. */
+  get = async (
+    params: ParamsInput = {} as ParamsInput,
+    { signal }: { signal?: AbortSignal } = {}
+  ): Promise<Socket<Get, Post, Params>> => {
+    signal?.throwIfAborted();
+    const generation = this.#generation;
+    const key = await withSignal(this.#resolve(params), signal);
+    signal?.throwIfAborted();
+    this.#assertActive();
+    if (generation !== this.#generation)
+      throw new DOMException("Client cleared", "AbortError");
     const existing = this.#pool.get(key);
     if (existing) return existing;
-    if (this.#pool.size >= this.#maxPoolSize)
+    if (this.#pool.size >= this.#maxPoolSize) {
       throw new RangeError(
         "SocketClient: pool is full. Evict an unused socket before creating another."
       );
-    // The fully resolved URL is the sole source of truth for pool and transport.
+    }
     const socket = new Socket<Get, Post, Params>({
       ...this.#configuration,
       baseURL: "",
@@ -89,160 +96,164 @@ export class SocketClient<
     return socket;
   };
 
-  prepare = (
+  /** Permanently release one identity. Detach its consumers before eviction. */
+  evict = async (
     params: ParamsInput = {} as ParamsInput,
     { signal }: { signal?: AbortSignal } = {}
-  ): Promise<PreparedParams<Params>> => {
-    if (signal?.aborted) return Promise.reject(signal.reason);
-    const key = serializeJSON(params);
-    let pending = this.#preparing.get(key);
-    if (!pending) {
-      const generation = this.#generation;
-      const schema = this.#configuration.paramsSchema;
-      pending = Promise.resolve().then(async () => {
-        const value = schema
-          ? schemaValue(
-              await schema["~standard"].validate(params),
-              "SocketClient: params schema validation failed"
-            )
-          : (params as unknown as Params);
-        if (generation !== this.#generation)
-          throw new DOMException("Client closed", "AbortError");
-        return this.#prepared(value);
-      });
-      this.#preparing.set(key, pending);
-      const cleanup = () => {
-        if (this.#preparing.get(key) === pending) this.#preparing.delete(key);
-      };
-      void pending.then(cleanup, cleanup);
-    }
-    return withSignal(pending, signal);
+  ): Promise<boolean> => {
+    signal?.throwIfAborted();
+    const generation = this.#generation;
+    const key = await withSignal(this.#resolve(params), signal);
+    signal?.throwIfAborted();
+    if (generation !== this.#generation)
+      throw new DOMException("Client cleared", "AbortError");
+    const socket = this.#pool.get(key);
+    if (!socket) return false;
+    socket.dispose();
+    this.#pool.delete(key);
+    return true;
   };
 
-  getAsync = async (
-    params?: ParamsInput,
-    options?: { signal?: AbortSignal }
-  ) => {
-    const prepared = await this.prepare(params, options);
-    options?.signal?.throwIfAborted();
-    return this.#get(prepared);
+  /** Empty the pool and invalidate pending resolution; the client remains reusable. */
+  clear = (): number => {
+    this.#generation += 1;
+    this.#resolving.clear();
+    const count = this.#pool.size;
+    this.#pool.forEach((socket) => socket.dispose());
+    this.#pool.clear();
+    return count;
   };
 
-  /** Parameter preparation stays outside render and exposes its own lifecycle. */
-  usePreparedParams = (params: ParamsInput, enabled = true) => {
-    const key = serializeJSON(params);
-    const [result, setResult] = useState<{
+  dispose = (): void => {
+    this.clear();
+    this.#disposed = true;
+  };
+
+  useSocket = <State = Get | undefined>({
+    params = {} as ParamsInput,
+    enabled = true,
+    select = (value) => value as State,
+  }: UseSocketOptions<Get, State, ParamsInput> = {}): UseSocketResult<
+    Get,
+    Post,
+    State
+  > => {
+    const key = enabled ? serializeJSON(params) : "";
+    type Resolution = {
       key: string;
-      params?: PreparedParams<Params>;
+      client: SocketClient<Get, Post, Params, ParamsInput>;
+      controller: AbortController;
+      promise: Promise<Socket<Get, Post, Params>>;
+    };
+    const active = useRef<Resolution | null>(null);
+    const [result, setResult] = useState<{
+      resolution: Resolution;
+      socket?: Socket<Get, Post, Params>;
       error: Error | null;
-    }>({ key: "", error: null });
+    } | null>(null);
+
     useEffect(() => {
       if (!enabled) return;
       const controller = new AbortController();
-      this.prepare(params, { signal: controller.signal }).then(
-        (prepared) => {
+      const resolution = {
+        key,
+        client: this,
+        controller,
+        promise: this.get(params, { signal: controller.signal }),
+      };
+      active.current = resolution;
+      resolution.promise.then(
+        (socket) => {
           if (!controller.signal.aborted)
-            setResult({ key, params: prepared, error: null });
+            setResult({ resolution, socket, error: null });
         },
         (error) => {
           if (!controller.signal.aborted)
-            setResult({ key, error: toError(error) });
+            setResult({ resolution, error: toError(error) });
         }
       );
       return () => controller.abort();
-    }, [key, enabled]);
-    const current = enabled && result.key === key;
-    return {
-      params: current ? result.params : undefined,
-      error: current ? result.error : null,
-      isPending: enabled && (!current || (!result.params && !result.error)),
-    };
-  };
+    }, [this, key, enabled]);
 
-  close = (params?: ParamsInput | PreparedParams<Params>): boolean => {
-    const { key } = this.#parse(params);
-    const socket = this.#pool.get(key);
-
-    if (socket) {
-      this.#destroy(socket);
-      this.#pool.delete(key);
-      return true;
-    }
-
-    return false;
-  };
-
-  closeAsync = async (
-    params?: ParamsInput,
-    options?: { signal?: AbortSignal }
-  ) => {
-    const prepared = await this.prepare(params, options);
-    options?.signal?.throwIfAborted();
-    return this.close(prepared);
-  };
-
-  closeAll = (): number => {
-    this.#generation += 1;
-    this.#preparing.clear();
-    const closed = this.#pool.size;
-    this.#pool.forEach(this.#destroy);
-    this.#pool.clear();
-    return closed;
-  };
-
-  /**
-   * Retrieves an existing Socket instance or creates a new one
-   * under this pool instance.
-   */
-  get = (params?: ParamsInput | PreparedParams<Params>) =>
-    this.#get(this.#parse(params));
-
-  /** Explicit alias for removing and disposing a pooled instance. */
-  evict = (params?: ParamsInput | PreparedParams<Params>) => this.close(params);
-
-  useSocket = <State = Get>({
-    enabled = true,
-    params,
-    select = (data) => data as unknown as State,
-  }: UseSocketOptions<
-    Get,
-    State,
-    ParamsInput | PreparedParams<Params>
-  > = {}): UseSocketResult<Get, Post, State> => {
-    const prepared = this.#parse(params);
-    const socket = useMemo(() => this.#get(prepared), [prepared.key]);
+    const current =
+      enabled &&
+      result?.resolution.client === this &&
+      result.resolution.key === key &&
+      !result.resolution.controller.signal.aborted;
+    const socket = current ? result.socket : undefined;
+    const error = current ? result.error : null;
+    const fallback = useMemo(
+      () =>
+        socketState(
+          enabled,
+          this.#configuration.placeholderData,
+          error,
+          this.#configuration.binaryType
+        ),
+      [this, enabled, error]
+    );
     const subscribe = useCallback(
-      (notify: () => void) => socket.subscribe(notify, false),
+      (notify: () => void) => socket?.subscribe(notify, false) ?? (() => {}),
       [socket]
     );
     const snapshot = useSyncExternalStore(
       subscribe,
-      socket.getSnapshot,
-      socket.getSnapshot
+      socket?.getSnapshot ?? (() => fallback),
+      () => fallback
     );
     useEffect(() => {
-      if (enabled) socket.open();
-    }, [socket, enabled]);
+      socket?.open();
+    }, [socket]);
 
+    const send = useCallback(
+      async (payload: Post, { signal }: { signal?: AbortSignal } = {}) => {
+        const resolution = active.current;
+        if (
+          !enabled ||
+          !resolution ||
+          resolution.client !== this ||
+          resolution.key !== key
+        ) {
+          throw new Error("SocketClient: this subscription is disabled.");
+        }
+        const controller = new AbortController();
+        const subscriptionSignal = resolution.controller.signal;
+        const abort = () =>
+          controller.abort(
+            signal?.aborted ? signal.reason : subscriptionSignal.reason
+          );
+        signal?.addEventListener("abort", abort, { once: true });
+        subscriptionSignal.addEventListener("abort", abort, { once: true });
+        if (signal?.aborted || subscriptionSignal.aborted) abort();
+        try {
+          const target = await withSignal(
+            resolution.promise,
+            controller.signal
+          );
+          controller.signal.throwIfAborted();
+          return await target.send(payload, { signal: controller.signal });
+        } finally {
+          signal?.removeEventListener("abort", abort);
+          subscriptionSignal.removeEventListener("abort", abort);
+        }
+      },
+      [this, key, enabled]
+    );
     const data = useMemo(
       () => select(snapshot.value),
       [snapshot.value, select]
     );
-
-    // Rebuild the snapshot on every socket notification. The object literal is
-    // checked against UseSocketResult, so adding a field to SocketState or
-    // SocketCommands forces this list to grow — they cannot drift apart.
-    return useMemo<UseSocketResult<Get, Post, State>>(
+    // Snapshots have prototype getters; copy the public state contract explicitly.
+    return useMemo(
       () => ({
         binaryType: snapshot.binaryType,
-        close: socket.close,
         dataUpdatedAt: snapshot.dataUpdatedAt,
-        data,
         error: snapshot.error,
         errorUpdatedAt: snapshot.errorUpdatedAt,
         failureCount: snapshot.failureCount,
         failureReason: snapshot.failureReason,
         fetchStatus: snapshot.fetchStatus,
+        isPreparing: snapshot.isPreparing,
         isConnected: snapshot.isConnected,
         isConnecting: snapshot.isConnecting,
         isDisconnected: snapshot.isDisconnected,
@@ -255,43 +266,12 @@ export class SocketClient<
         isRefetching: snapshot.isRefetching,
         isStaleData: snapshot.isStaleData,
         isSuccess: snapshot.isSuccess,
-        on: socket.on,
-        open: socket.open,
-        send: socket.send,
-        sendAsync: socket.sendAsync,
         status: snapshot.status,
         value: snapshot.value,
-        waitUntil: socket.waitUntil,
+        data,
+        send,
       }),
-      [data, snapshot, socket]
+      [snapshot, data, send]
     );
-  };
-
-  /** Subscribe only to selected data; unrelated connection changes do not render. */
-  useValue = <State = Get>({
-    params,
-    enabled = true,
-    select = (value) => value as State,
-    isEqual = Object.is,
-  }: UseSocketOptions<Get, State, ParamsInput | PreparedParams<Params>> & {
-    isEqual?: (previous: State, next: State) => boolean;
-  } = {}): State => {
-    const prepared = this.#parse(params);
-    const socket = useMemo(() => this.#get(prepared), [prepared.key]);
-    const subscribe = useCallback(
-      (notify: () => void) => socket.subscribe(notify, false),
-      [socket]
-    );
-    const value = useSyncExternalStoreWithSelector(
-      subscribe,
-      socket.getSnapshot,
-      socket.getSnapshot,
-      (snapshot) => select(snapshot.value),
-      isEqual
-    );
-    useEffect(() => {
-      if (enabled) socket.open();
-    }, [socket, enabled]);
-    return value;
   };
 }

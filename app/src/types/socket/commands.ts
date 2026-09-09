@@ -16,13 +16,8 @@ export interface SocketCommands<Post> {
   on: SocketListener;
   /** Open (or re-open) the connection. No-op when already open. */
   open: () => void;
-  /** Send a JSON payload. Returns false when deduplicated within the window. */
-  send: (payload: Post) => boolean;
-  /** Validate asynchronously, then accept into the ordered send queue. */
-  sendAsync: (
-    payload: Post,
-    options?: { signal?: AbortSignal }
-  ) => Promise<boolean>;
+  /** Validate and accept a JSON payload. False means deduplicated, not failed. */
+  send: (payload: Post, options?: { signal?: AbortSignal }) => Promise<boolean>;
   /** Resolve once the socket reaches the given connection state. */
   waitUntil: (
     state: SocketConnectionEvent,

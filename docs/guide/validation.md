@@ -1,105 +1,21 @@
 # Validation
 
-The library uses **Standard Schema V1** for all runtime validation. Any schema implementing the `~standard` interface works — Zod, Valibot, ArkType, and others. Schemas are optional, but when present they validate at runtime **and** infer TypeScript types.
+Socket uses Standard Schema V1 for runtime validation and type inference. Schemas may validate synchronously or asynchronously through the same API.
 
-There are three schema slots, each with a distinct job:
+| Schema | Input | Output is used for |
+| --- | --- | --- |
+| `paramsSchema` | Subscription parameters | Pool identity and connection URL |
+| `sendSchema` | Payload passed to `send` | Outbound JSON frame |
+| `messageSchema` | Decoded, parsed frame | Received data |
 
-| Schema | Validates | Where used | Async? |
-| --- | --- | --- | --- |
-| `paramsSchema` | URL params | Pool identity + connection URL | ✅ via `prepare()`; sync for render-time lookup |
-| `sendSchema` | Outbound payloads | `send()` / `sendAsync()` | ✅ async via `sendAsync()` |
-| `messageSchema` | Inbound messages | After `JSON.parse` | ✅ async OK |
+## Parameters define identity
 
-The synchronous entry points keep their contracts — `send()` returns a boolean and render-time lookup (`get`, `useSocket`) returns a socket immediately. Where validation is asynchronous it lives on the matching async API: `sendAsync()` for sends and `prepare()` / `getAsync()` / `usePreparedParams` for parameters.
-
-## Params
-
-`paramsSchema` validates — and can transform — parameters when the client resolves a socket. Parameters are validated and normalized **once**, and that exact result drives both sides of identity: the pool key **and** the connection URL. A schema transform therefore decides which socket and URL are used, so normalize deliberately.
-
-Render-time lookup stays synchronous. It accepts either plain params (validated synchronously) or an already-**prepared** value (see below). For asynchronous parameter validation — use `prepare()` and pass the result to `get`/`useSocket`, or use the `usePreparedParams` hook:
+`get` awaits validation before looking up the pool. The normalized result drives both the pool key and the connection URL. A transform can therefore make different inputs share one connection.
 
 ```tsx
+import { SocketClient } from "@ibnlanre/socket";
 import { z } from "zod";
 
-const paramsSchema = z.object({
-  room: z.string(),
-  token: z.string().optional(),
-});
-
-const client = new SocketClient({
-  baseURL: "wss://chat.example.com",
-  url: "/ws",
-  paramsSchema,
-});
-
-client.useSocket({ params: { room: "general" } });
-```
-
-## Outgoing payloads
-
-`sendSchema` validates (and can transform) what you pass to `send` — synchronously. On failure the library throws an error carrying `closeCode: SocketCloseCode.POLICY_VIOLATION` (`1008`) and `stage: "validation"`.
-
-When your `sendSchema` is asynchronous, use `sendAsync(payload, { signal })` instead: it validates, then accepts the payload into the ordered send queue.
-
-```tsx
-const sendSchema = z.object({
-  type: z.literal("message"),
-  content: z.string().min(1),
-});
-
-socket.send({ type: "message", content: "hi" }); // ok
-socket.send({ type: "message", content: "" });   // throws validation error
-```
-
-## Incoming messages
-
-`messageSchema` runs after the frame is decoded and `JSON.parse`d. It may be async, for example through an asynchronous refinement. How a failure is handled depends on the [message failure policy](/api/options#messagefailurepolicy):
-
-- a validated message becomes the socket's `value` with `status: "success"`;
-- an invalid message follows the configured per-stage action (`"recover"` drops it, `"close"` terminates the socket).
-
-```tsx
-const messageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("price"), symbol: z.string(), price: z.number() }),
-  z.object({ type: z.literal("error"), message: z.string() }),
-]);
-```
-
-## Type inference
-
-TypeScript can infer client generic parameters from compatible schemas. You can also supply them explicitly, particularly when no schema is provided:
-
-```ts
-// Infer message types from a Zod schema
-type PriceMessage = z.infer<typeof messageSchema>;
-
-new SocketClient<PriceMessage>({ url: "/prices", messageSchema });
-```
-
-The full signature is `SocketClient<Get, Post, Params, ParamsInput>` where:
-
-- `Get` — the parsed message type (`value`).
-- `Post` — the accepted send payload type (default `never`).
-- `Params` — the normalized params type (default `never`, must extend `ConnectionParams`).
-- `ParamsInput` — the accepted input params type before validation (defaults to `Params`).
-
-## Async validation, ordering, and identity
-
-- **Incoming messages (`messageSchema`)** may be async on WebSocket and on both SSE transports. On a `Socket`, frames are processed **in arrival order** (each message waits on the previous one), and work from a closed or superseded connection is discarded — a slower earlier message can’t overwrite newer data after the connection has changed.
-- **Outgoing payloads (`sendSchema`)** stay synchronous on `send()` (returns a boolean). Asynchronous validation uses `sendAsync()`, which validates and then accepts into the ordered send queue.
-- **Parameters (`paramsSchema`)** validate synchronously for render-time lookup. For async parameter work, call `prepare(params)` (or `getAsync`, or the `usePreparedParams` hook) and pass the returned prepared value to `get`/`useSocket`. `enabled: false` prevents a hook from opening a connection; it does not skip pool lookup or parameter handling.
-
-## Transform boundaries
-
-Schemas are typed `SocketSchema<Input, Output>`, where `Output` defaults to `Input` — a schema may transform between the two. Explicit generic arguments select the input and output types.
-
-Keep WebSocket message output JSON-compatible: the validated value is re-serialized through JSON before entering the cache, so objects such as `Date` do not retain their runtime identity through that path.
-
-## Preparing parameters in React
-
-Keep the consuming hook in a child component. While preparation is pending, no prepared value exists; passing `undefined` to `useSocket` would attempt ordinary synchronous lookup.
-
-```tsx
 const client = new SocketClient({
   baseURL: "wss://example.com",
   url: "/rooms",
@@ -109,22 +25,57 @@ const client = new SocketClient({
 });
 
 function Room({ name }: { name: string }) {
-  const { params, error, isPending } = client.usePreparedParams(name);
-  if (error) return <p>{error.message}</p>;
-  if (isPending || !params) return <p>Preparing room…</p>;
-  return <RoomStream params={params} />;
+  const socket = client.useSocket({ params: name });
+  if (socket.isPreparing) return <p>Preparing room…</p>;
+  if (socket.isError) return <p>{socket.error?.message}</p>;
+  return <pre>{JSON.stringify(socket.data)}</pre>;
 }
 
-function RoomStream({ params }: {
-  params: Awaited<ReturnType<typeof client.prepare>>;
-}) {
-  const socket = client.useSocket({ params });
-  return <pre>{JSON.stringify(socket.data)}</pre>;
+// Imperative use follows the same resolution path.
+const socket = await client.get("GENERAL");
+socket.open();
+```
+
+The hook owns preparation, cancellation, and subscription. It starts no validation while disabled. When parameters change or the component unmounts, its previous wait is cancelled and stale results are ignored.
+
+Concurrent resolutions of the same JSON-serializable input share validation. Aborting one caller does not cancel another caller's wait. Standard Schema validators do not receive an abort signal, so underlying work may continue; a cancelled caller cannot create a socket. `client.clear()` invalidates all pending resolutions.
+
+Use [connection preparation](/api/options#connection-preparation-diagnostics) for credentials refreshed on every reconnect. Stable subscription parameters identify the stream; refreshed credentials authorize its transport.
+
+## Outgoing payloads
+
+`await socket.send(payload)` awaits validation and accepts the transformed JSON value into the ordered queue. It resolves `true` on local acceptance or `false` on deduplication. It does not acknowledge server receipt.
+
+```ts
+const client = new SocketClient({
+  url: "wss://example.com/messages",
+  sendSchema: z.string().min(1).transform(async (content) => ({ content })),
+});
+
+const socket = await client.get();
+socket.open();
+try {
+  await socket.send("Hello");
+} catch (error) {
+  console.error("Message was not accepted", error);
 }
 ```
 
-For imperative code, `const prepared = await client.prepare(input)` followed by `client.get(prepared)` avoids a second validation. `getAsync(input)` combines both steps. `closeAsync(input)` prepares and removes the matching instance.
+Validation errors include `closeCode: 1008` and `stage: "validation"`. Queue overflow, expiry, cancellation, and invalid JSON can also reject a pending send. A send reserves its queue position before validation, so later messages cannot pass a slower earlier validation. See [Sending messages](/guide/sending).
 
-Concurrent preparations of the same JSON-serializable input share validation work. Aborting one caller cancels its wait without cancelling another caller’s work. Standard Schema does not provide a cancellation argument to validators: underlying work may continue, but a cancelled caller does not create a socket. `closeAll()` invalidates outstanding preparations.
+## Incoming messages
 
-For fresh credentials on each reconnection, use [connection preparation](/api/options#connection-preparation-diagnostics) rather than adding a changing token to stable subscription identity.
+`messageSchema` runs after decoding and JSON parsing. WebSocket and both SSE transports process messages in arrival order. Closing or replacing a connection invalidates its pending processing, preventing stale work from updating the new connection.
+
+Validated WebSocket messages become `value` with `status: "success"`. Invalid messages follow the configured [message failure policy](/api/options#messagefailurepolicy): recover by dropping the message, or close the connection.
+
+## Type inference and transforms
+
+`SocketSchema<Input, Output>` allows different input and output types. For `SocketClient<Get, Post, Params, ParamsInput>`:
+
+- `Get` is the validated message output.
+- `Post` is the accepted send input, defaulting to `never`.
+- `Params` is the normalized query object.
+- `ParamsInput` is the input accepted before parameter validation.
+
+Compatible schemas infer these types; explicit generics remain available. Keep WebSocket message output JSON-compatible: the cache path serializes validated values through JSON, so values such as `Date` do not preserve runtime identity.

@@ -14,9 +14,7 @@ import { shallowClone } from "@/functions/shallow-clone";
 import { time } from "@/functions/time";
 import { toError } from "@/functions/to-error";
 import {
-  AsyncSchemaError,
   schemaValue,
-  validateSchema,
 } from "@/functions/validate-schema";
 
 import type {
@@ -327,7 +325,7 @@ export class Socket<
     const controller = new AbortController();
     this.#controller = controller;
     const current = () => generation === this.#generation && this.#isOpen;
-    this.#setState({ fetchStatus: "connecting" });
+    this.#setState({ fetchStatus: "preparing" });
     try {
       this.#diagnostic({ type: "connection", phase: "preparing" });
       const prepared = await this.#prepareConnection?.({
@@ -856,35 +854,12 @@ export class Socket<
     return this.#snapshot;
   };
 
-  send = (payload: Post): boolean => {
-    this.#assertActive();
-    let value: unknown = payload;
-    try {
-      if (this.#sendSchema)
-        value = validateSchema(
-          this.#sendSchema,
-          payload,
-          "Socket: send schema validation failed"
-        );
-    } catch (error) {
-      if (error instanceof AsyncSchemaError) throw error;
-      const failure = this.#createMessageFailure(error, "validation");
-      this.#diagnostic({
-        type: "validation",
-        direction: "outgoing",
-        error: failure,
-      });
-      throw failure;
-    }
-    return this.#outbox.send(value);
-  };
-
-  sendAsync = (
+  send = async (
     payload: Post,
     { signal }: { signal?: AbortSignal } = {}
   ): Promise<boolean> => {
     this.#assertActive();
-    return this.#outbox.sendAsync(async () => {
+    return this.#outbox.send(async () => {
       try {
         if (!this.#sendSchema) return payload;
         const result = await this.#sendSchema["~standard"].validate(payload);
@@ -1012,6 +987,10 @@ export class Socket<
 
   get isSuccess(): boolean {
     return this.status === "success";
+  }
+
+  get isPreparing(): boolean {
+    return this.fetchStatus === "preparing";
   }
 
   get isConnected(): boolean {

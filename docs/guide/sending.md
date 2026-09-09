@@ -1,16 +1,16 @@
 # Sending messages
 
-`socket.send(payload)` is the imperative way to push a JSON payload over the connection. It returns a boolean indicating whether the payload was accepted for dispatch or queuing.
+`socket.send(payload)` is the imperative way to push a JSON payload over the connection. It returns a Promise resolving to a boolean indicating whether the payload was accepted for dispatch or queuing.
 
 ## Signatures
 
 ```ts
-// SocketClient hook commands are bound to the pooled socket:
+// React sends belong to the current subscription:
 const { send } = client.useSocket({ params });
 
 // Imperative:
-const socket = client.get(params);
-const ok = socket.send({ type: "message", content: "hi" });
+const socket = await client.get(params);
+const ok = await socket.send({ type: "message", content: "hi" });
 ```
 
 `send` is typed by the `Post` generic (and validated by `sendSchema` when configured — see [Validation](/guide/validation)).
@@ -28,7 +28,7 @@ When the socket isn't open yet, `send` **queues** the payload and flushes queued
 
 ```ts
 socket.open();
-socket.send({ type: "message", content: "queued until open" }); // returns true
+await socket.send({ type: "message", content: "queued until open" }); // resolves true
 await socket.waitUntil("open"); // queue flushes here, in order
 ```
 
@@ -43,21 +43,21 @@ const client = new SocketClient({
 });
 
 // Two components sending the same payload within 500ms…
-socket.send({ type: "subscribe", symbol: "BTC" }); // true — dispatched
-socket.send({ type: "subscribe", symbol: "BTC" }); // false — suppressed
+await socket.send({ type: "subscribe", symbol: "BTC" }); // true — dispatched
+await socket.send({ type: "subscribe", symbol: "BTC" }); // false — suppressed
 ```
 
 All callers still observe the shared response — deduplication only removes redundant **outbound** frames. This is handy when multiple components subscribe to the same thing on one pooled socket.
 
-## Async sends
+## Validation and cancellation
 
-When your `sendSchema` is asynchronous, use `sendAsync` instead of `send`:
+Every send awaits its schema, whether validation is synchronous or asynchronous:
 
 ```ts
-const accepted = await socket.sendAsync({ type: "subscribe", symbol: "BTC" }); // true | false
+const accepted = await socket.send(payload, { signal: controller.signal });
 ```
 
-`sendAsync` validates, then accepts the payload into the same ordered queue. It rejects on validation failure, or cancellation/expiry/overflow while validation is pending. Once accepted, expiry or dropping is reported through diagnostics; an already-resolved Promise cannot report later delivery failure.
+It rejects on validation failure, or cancellation/expiry/overflow while validation is pending. After local acceptance, later expiry or dropping is reported through diagnostics. An already-resolved Promise cannot report later delivery failure. React sends also cancel their pending wait when their subscription changes parameters, disables, or unmounts.
 
 ## `waitUntil`
 
@@ -75,7 +75,7 @@ await socket.waitUntil("close");
 
 `socket.close()` disconnects and clears caches if `clearCacheOnClose` is set. Subscriptions and event listeners are **preserved**, so a later `open()` reconnects the same consumers. It uses `SocketCloseReason` as the close reason string.
 
-To permanently release a socket (clearing its listeners and subscriptions), use `client.close(params)` / `client.evict(params)` or `socket.dispose()`.
+To permanently release a socket (clearing its listeners and subscriptions), use `await client.evict(params)` or `socket.dispose()`.
 
 Waiting sends are bounded by `maxQueueSize`, `queueMaxAge`, and `queueOverflow` — see [Reference → Options](/api/options).
 
@@ -83,6 +83,6 @@ Waiting sends are bounded by `maxQueueSize`, `queueMaxAge`, and `queueOverflow` 
 
 With deduplication disabled, repeated calls remain separate messages even while disconnected. When enabled, duplicate pending messages return `false`. JSON object-key order does not affect deduplication; array order does.
 
-`sendAsync` reserves its place before validation. Later synchronous or asynchronous sends cannot overtake that place. Validation failure, cancellation, or expiry releases it. Closing clears waiting sends and cancels pending validation waits.
+`send` reserves its place before validation. Later synchronous or asynchronous sends cannot overtake that place. Validation failure, cancellation, or expiry releases it. Closing clears waiting sends and cancels pending validation waits.
 
 The default queue holds at most 1000 sends for one minute. Full queues reject by default; `queueOverflow: "drop-oldest"` opts into dropping. `true` means locally accepted, not received or acknowledged by the server. Observe `onDiagnostic` for later queue expiry/drop/transmission events.

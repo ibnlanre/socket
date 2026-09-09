@@ -82,20 +82,20 @@ export function PriceTicker() {
 Need the imperative socket instead?
 
 ```tsx
-const socket = priceClient.get({ symbol: "BTC" });
+const socket = await priceClient.get({ symbol: "BTC" });
 
 socket.open();
 await socket.waitUntil("open");
-socket.send({ type: "subscribe", symbol: "BTC" });
+await socket.send({ type: "subscribe", symbol: "BTC" });
 ```
 
 ## Key concepts
 
 - **One `SocketClient` = one endpoint.** Schemas, cache, and reconnection live on the client.
 - **Same params ⇒ same socket.** Connections are pooled by a fully resolved URL; parameters are validated/normalized once and that exact value drives both the pool key and the connection URL.
-- **Hook for React, instance for imperative code.** `useSocket` returns a read-only snapshot plus commands; `client.get()` returns the managed `Socket`.
-- **Ownership is explicit.** `socket.close()` disconnects but preserves subscriptions (a later `open()` reconnects); `socket.dispose()` / `client.close(params)` / `evict` release the socket permanently.
-- **Sends go through an ordered queue.** `send()` is synchronous; `sendAsync()` supports async schemas; waiting payloads are bounded by `maxQueueSize`/`queueMaxAge`/`queueOverflow`.
+- **Hook for React, instance for imperative code.** `useSocket` returns a read-only state, selected data, and `send`; `await client.get()` returns the managed `Socket`.
+- **Ownership is explicit.** `socket.close()` disconnects but preserves subscriptions (a later `open()` reconnects); `socket.dispose()` / `await client.evict(params)` release the socket permanently.
+- **Sends go through an ordered queue.** `await send()` supports sync and async schemas; waiting payloads are bounded by `maxQueueSize`/`queueMaxAge`/`queueOverflow`.
 
 See [Mental model](https://socket-xi-pink.vercel.app/guide/mental-model) for the full picture.
 
@@ -103,12 +103,12 @@ See [Mental model](https://socket-xi-pink.vercel.app/guide/mental-model) for the
 
 | Export | Kind | Purpose |
 | --- | --- | --- |
-| `SocketClient` | class | Pool + React hooks for one endpoint (`useSocket`, `useValue`, `usePreparedParams`, `prepare`/`getAsync`, `get`, `close`/`evict`, `closeAll`) |
-| `Socket` | class | One managed connection — state snapshot + commands (`open`, `close`, `send`/`sendAsync`, `on`, `waitUntil`, `dispose`) |
+| `SocketClient` | class | Pool + React hooks for one endpoint (`useSocket`, `get`, `evict`, `clear`, `dispose`) |
+| `Socket` | class | One managed connection — state snapshot + commands (`open`, `close`, `send`, `on`, `waitUntil`, `dispose`) |
 | `SocketCache` | class | In-memory mirror + Cache API persistence per origin |
 | `EventSourceClient` | class | One-way Server-Sent Events client (native GET + fetch streaming) |
 | `SocketCloseCode` / `SocketCloseReason` | const | WebSocket close-code enums and reasons |
-| Types | type | `SocketState`, `SocketCommands`, `UseSocketResult`, `PreparedParams`, `SocketDiagnostic`, `SocketQueueOptions`, … |
+| Types | type | `SocketState`, `SocketCommands`, `UseSocketResult`, `SocketDiagnostic`, `SocketQueueOptions`, … |
 
 ## Development
 
@@ -137,7 +137,7 @@ pnpm --filter @ibnlanre/socket-docs build   # build docs
 
 ### Async validation and ownership
 
-`client.prepare(input, { signal })` normalizes parameters once; pass its result to `get` or the React hooks. `getAsync` combines both steps, and `usePreparedParams` exposes preparation state in React. `sendAsync` supports async send schemas while preserving invocation order. Schema input and output types may differ.
+`await client.get(input, { signal })` resolves parameters and returns the pooled socket. `useSocket` owns the same resolution in React and exposes `isPreparing` and `error`. `await socket.send(payload, { signal })` validates sync or async schemas while preserving send order. Schema input and output types may differ.
 
 `socket.close()` disconnects while preserving subscriptions. `socket.dispose()` is permanent; `client.evict(params)` disposes and removes a pooled instance. Queues and pools are bounded. `onDiagnostic` exposes retry, queue, validation, and cache activity; `prepareConnection` supports fresh credentials before every transport attempt.
 

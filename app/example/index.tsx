@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { z } from "zod";
 
 import { SocketClient } from "../src";
@@ -34,13 +35,20 @@ interface ChatRoomProps {
 export function ChatRoom({ room }: ChatRoomProps) {
   const socket = chatClient.useSocket({ params: { room } });
 
-  const send = (content: string) => {
-    socket.send({ content });
+  const [error, setError] = useState<string | null>(null);
+  const send = async (content: string) => {
+    try {
+      await socket.send({ content });
+      setError(null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   return (
     <div>
       <h2>Room: {room}</h2>
+      {error && <p role="alert">{error}</p>}
       <p data-testid="status">{socket.fetchStatus}</p>
       {socket.data && (
         <div data-testid="message">

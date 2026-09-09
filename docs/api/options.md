@@ -11,8 +11,8 @@ The `SocketClient` / `Socket` constructor configuration (`SocketConstructor`) is
 | `binaryType` | `"blob" \| "arraybuffer"` | `"blob"` | Preferred binary frame representation |
 | `protocols` | `SocketProtocolIdentifier \| SocketProtocolIdentifier[]` | `[]` | Subprotocols for the WebSocket handshake (accepts IANA names or arbitrary strings) |
 | `messageSchema` | `SocketSchema<unknown, Get>` | — | Validates/transforms inbound messages after `JSON.parse` (async OK) |
-| `paramsSchema` | `SocketSchema<ParamsInput, Params>` | — | Validates/transforms URL params; async via `prepare()` |
-| `sendSchema` | `SocketSchema<Post, unknown>` | — | Validates/transforms outbound payloads; async via `sendAsync()` |
+| `paramsSchema` | `SocketSchema<ParamsInput, Params>` | — | Validates/transforms URL params; sync or async via `get()` and `useSocket` |
+| `sendSchema` | `SocketSchema<Post, unknown>` | — | Validates/transforms outbound payloads; sync or async via `send()` |
 
 ## Cache options
 
@@ -55,7 +55,7 @@ Each stage runs after the previous succeeds: **decode** (frame → text), **pars
 
 ## Outgoing queue
 
-Sends route through an ordered, bounded outbox shared by `send()` and `sendAsync()`. Waiting payloads flush in order on `open`.
+Sends route through an ordered, bounded outbox used by `send()`. Waiting payloads flush in order on `open`.
 
 | Option | Default | Description |
 | --- | --- | --- |

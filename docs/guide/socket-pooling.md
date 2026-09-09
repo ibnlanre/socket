@@ -13,8 +13,8 @@ When you call `get(params)` or `useSocket({ params })`, the client:
 Identical URLs ⇒ identical keys ⇒ the **same `Socket` instance**.
 
 ```ts
-const a = client.get({ room: "general" });
-const b = client.get({ room: "general" });
+const a = await client.get({ room: "general" });
+const b = await client.get({ room: "general" });
 
 a === b; // true
 ```
@@ -36,15 +36,15 @@ first.send === second.send; // true — both bound to the same pooled socket
 
 | Method | Behavior |
 | --- | --- |
-| `client.close(params)` | Disposes the socket for `params` and removes it from the pool. Cache removal follows `clearCacheOnClose`. Returns `false` if no such socket exists. |
-| `client.closeAll()` | Closes every pooled socket and returns the number closed. |
+| `await client.evict(params)` | Disposes the socket for `params` and removes it from the pool. Cache removal follows `clearCacheOnClose`. Returns `false` if no such socket exists. |
+| `client.clear()` | Closes every pooled socket and returns the number closed. |
 
 ```ts
 // Close just one room's connection…
-client.close({ room: "general" });
+await client.evict({ room: "general" });
 
 // …or tear everything down.
-const closed = client.closeAll();
+const closed = client.clear();
 ```
 
 ## Subscribe vs. on
