@@ -1,6 +1,6 @@
 packages:
   - "!**/test/**"
-  - "docs/*"
+  - "docs"
   - "app"
 allowBuilds:
   esbuild: true

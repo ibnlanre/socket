@@ -24,6 +24,16 @@ In practice, the flow is simple: define one client per endpoint, let the library
 - **Built-in reconnect behavior**: Retry with delays, backoff, jitter, and custom close-condition logic.
 - **Server-Sent Events**: Ships with an `EventSourceClient` that supports native `EventSource` (GET) and fetch-based streaming (any HTTP method) with async iterator support.
 
+## Documentation
+
+Full documentation is available at the docs site (deployed to Vercel). It covers guides, concepts, and API references for `SocketClient`, `Socket`, `SocketCache`, and `EventSourceClient`.
+
+The docs live in `docs/` as a VitePress site. To run it locally:
+
+```bash
+pnpm --filter @ibnlanre/socket-docs dev
+```
+
 ## Getting Started
 
 To get started with `@ibnlanre/socket`:
