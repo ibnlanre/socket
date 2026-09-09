@@ -3,6 +3,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
+import { StrictMode } from "react";
 import { SocketClient } from ".";
 
 const configuration = {
@@ -208,6 +209,47 @@ describe("connection identity", () => {
     hook.unmount();
     await rejection;
     client.dispose();
+  });
+
+  it("owns the live resolution after Strict Mode replays effects", async () => {
+    const client = new SocketClient<unknown, string>(configuration);
+    const socket = new Socket<unknown, string>(configuration);
+    vi.spyOn(socket, "open").mockImplementation(() => {});
+    const send = vi.spyOn(socket, "send").mockResolvedValue(true);
+    const get = vi.spyOn(client, "get").mockResolvedValue(socket);
+    const hook = renderHook(() => client.useSocket(), { wrapper: StrictMode });
+    await waitFor(() => expect(hook.result.current.isPreparing).toBe(false));
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    await expect(hook.result.current.send("message")).resolves.toBe(true);
+    expect(send).toHaveBeenCalledOnce();
+    hook.unmount();
+    socket.dispose();
+    client.dispose();
+  });
+
+  it("changes clients without reusing the previous subscription", async () => {
+    const first = new SocketClient<unknown, string>(configuration);
+    const second = new SocketClient<unknown, string>(configuration);
+    vi.spyOn(first, "get").mockImplementation(() => new Promise(() => {}));
+    const socket = new Socket<unknown, string>(configuration);
+    vi.spyOn(socket, "open").mockImplementation(() => {});
+    const send = vi.spyOn(socket, "send").mockResolvedValue(true);
+    vi.spyOn(second, "get").mockResolvedValue(socket);
+    const hook = renderHook(({ client }) => client.useSocket(), {
+      initialProps: { client: first },
+    });
+    const oldSend = hook.result.current.send;
+    hook.rerender({ client: second });
+    await expect(oldSend("old")).rejects.toThrow("disabled");
+    await act(async () => {
+      await hook.result.current.send("new");
+    });
+    expect(send).toHaveBeenCalledWith("new", expect.any(Object));
+    hook.unmount();
+    socket.dispose();
+    first.dispose();
+    second.dispose();
   });
 
   it("bounds retained identities without evicting a shared socket implicitly", async () => {

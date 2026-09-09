@@ -10,7 +10,7 @@ class Socket<Get = unknown, Post = never, Params extends ConnectionParams = neve
 }
 ```
 
-You normally reach a `Socket` through [`SocketClient.get()`](/api/socket-client#get-params), which pools instances by URL. Constructing one directly is for standalone use.
+You normally reach a `Socket` through [`SocketClient.get()`](/api/socket-client#get-params-options), which pools instances by URL. Constructing one directly is for standalone use.
 
 ## Commands
 

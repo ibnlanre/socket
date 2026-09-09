@@ -39,7 +39,7 @@ a.send === b.send; // true when they share the same socket
 
 ## Hook for components, instance for imperative code
 
-- `client.useSocket(...)` is the **React entrypoint**. It subscribes to a managed socket and returns a read-only state snapshot plus connection commands.
+- `client.useSocket(...)` is the **React entrypoint**. It subscribes to a managed socket and returns a read-only state, selected data, and `send`.
 - `await client.get(...)` gives you the **managed socket instance** for imperative actions such as `open`, `send`, and `waitUntil`.
 
 ## A layered API
@@ -76,7 +76,7 @@ Changing parameters selects another connection. It does not send an update frame
 
 Keep parameter values stable. A search field that changes on every keystroke can create many pooled sockets; debounce the committed subscription parameters when appropriate.
 
-Pooling currently follows the serialized URL, including query-key order. Without a schema that consistently rebuilds the object, construct parameter objects in a consistent order to ensure reuse.
+Object keys are sorted when building URL identity; array order is preserved. Normalized parameters determine which connection is shared.
 
 ## Shared connection, shared commands
 
@@ -86,10 +86,10 @@ Ownership is explicit. Four operations mean four different things:
 
 | Operation | Scope | Effect |
 | --- | --- | --- |
-| `socket.close()` (also the hook’s `close`) | connection | Disconnects the transport. **Subscriptions and event listeners are preserved**, so a later `open()` reconnects the same consumers. |
+| `socket.close()` | connection | Disconnects the transport. **Subscriptions and event listeners are preserved**, so a later `open()` reconnects the same consumers. |
 | `socket.dispose()` | instance | Permanent teardown: disconnects, then clears listeners and subscribers. The instance can no longer be used. |
 | `await client.evict(params)` | pool | Disposes that pooled socket and removes it from the pool. |
 | hook unmount | subscription | Removes that one hook’s subscription. When the last subscriber leaves, the idle timeout closes an unused connection. |
 
 - Calling `close()` on a shared socket disconnects it for every consumer. It is not a way to unsubscribe just one component.
-- `enabled: false` prevents that hook from opening the socket. It does not close a connection another consumer already opened, and the hook still subscribes to its state.
+- `enabled: false` skips that hook’s parameter resolution and subscription. It does not close a connection another consumer already opened.

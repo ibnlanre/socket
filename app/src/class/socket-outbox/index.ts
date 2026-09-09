@@ -1,12 +1,11 @@
 import { serializeJSON } from "@/functions/serialize-json";
 import { time } from "@/functions/time";
-import type { SocketDiagnostic } from "@/types/socket/diagnostic";
+import { withSignal } from "@/functions/with-signal";
 import type { SocketQueueOptions } from "@/types/socket/queue-options";
 
 type Entry = {
   payload?: unknown;
   key?: string;
-  ready: boolean;
   expiresAt: number;
   cancel: (error: Error) => void;
 };
@@ -20,7 +19,7 @@ type NotifyEvent = {
 
 /** Ordered, bounded waiting sends; independent of transport lifecycle. */
 export class SocketOutbox {
-  #entries: Entry[] = [];
+  #entries = new Set<Entry>();
   #history = new Map<string, number>();
   #timer: ReturnType<typeof setTimeout> | undefined;
   #maxSize: number;
@@ -29,9 +28,7 @@ export class SocketOutbox {
   #window: number;
   #overflow: "reject" | "drop-oldest";
   #dispatch: (payload: unknown) => boolean;
-  #notify: (
-    event: Omit<Extract<SocketDiagnostic, { type: "queue" }>, "timestamp">
-  ) => void;
+  #notify: (event: NotifyEvent) => void;
 
   constructor(
     options: SocketQueueOptions & { deduplicationWindow?: number },
@@ -62,20 +59,18 @@ export class SocketOutbox {
   }
 
   #emit = (action: Action) => {
-    this.#notify({ type: "queue", size: this.#entries.length, action });
+    this.#notify({ type: "queue", size: this.#entries.size, action });
   };
 
   #remove = (entry: Entry, error: Error, action: "expired" | "dropped") => {
-    const index = this.#entries.indexOf(entry);
-    if (index < 0) return;
-    this.#entries.splice(index, 1);
+    if (!this.#entries.delete(entry)) return;
     entry.cancel(error);
     this.#emit(action);
   };
 
   #prune = () => {
     const now = Date.now();
-    for (const entry of [...this.#entries]) {
+    for (const entry of this.#entries) {
       if (entry.expiresAt <= now)
         this.#remove(
           entry,
@@ -90,36 +85,37 @@ export class SocketOutbox {
 
   #reserve = (cancel: Entry["cancel"]): Entry => {
     this.#prune();
-    if (this.#entries.length >= this.#maxSize) {
+    if (this.#entries.size >= this.#maxSize) {
       if (this.#overflow === "reject")
         throw new RangeError("Socket: send queue is full.");
       this.#remove(
-        this.#entries[0],
+        this.#entries.values().next().value!,
         new Error("Socket: queued send dropped."),
         "dropped"
       );
     }
     const entry = {
-      ready: false,
       expiresAt: Date.now() + this.#maxAge,
       cancel,
     };
-    this.#entries.push(entry);
+    this.#entries.add(entry);
     this.#schedule();
     return entry;
   };
 
   #prepare = (entry: Entry, payload: unknown): boolean => {
-    if (!this.#entries.includes(entry)) return false;
+    if (!this.#entries.has(entry)) return false;
     const key = serializeJSON(payload);
     this.#prune();
-    if (!this.#entries.includes(entry)) return false;
+    if (!this.#entries.has(entry)) return false;
     const duplicate =
       this.#window > 0 &&
       (this.#history.has(key) ||
-        this.#entries.some((other) => other !== entry && other.key === key));
+        [...this.#entries].some(
+          (other) => other !== entry && other.key === key
+        ));
     if (duplicate) {
-      this.#entries.splice(this.#entries.indexOf(entry), 1);
+      this.#entries.delete(entry);
       this.#emit("deduplicated");
       this.flush();
       return false;
@@ -127,7 +123,6 @@ export class SocketOutbox {
     // Snapshot the JSON value: mutation after send cannot change a queued frame.
     entry.payload = JSON.parse(key);
     entry.key = key;
-    entry.ready = true;
     this.#emit("queued");
     this.flush();
     return true;
@@ -135,54 +130,47 @@ export class SocketOutbox {
 
   #schedule = () => {
     clearTimeout(this.#timer);
-    if (!this.#entries.length && !this.#history.size) return;
+    if (!this.#entries.size && !this.#history.size) return;
     this.#timer = setTimeout(this.flush, 25);
   };
 
-  send = (
+  send = async (
     validate: () => unknown | Promise<unknown>,
     signal?: AbortSignal
   ): Promise<boolean> => {
-    return new Promise((resolve, reject) => {
-      if (signal?.aborted) return reject(signal.reason);
-      let cleanup = () => {};
-      const entry = this.#reserve((error) => {
-        cleanup();
-        reject(error);
-      });
-      const abort = () => {
-        this.#remove(
-          entry,
-          signal?.reason ?? new DOMException("Aborted", "AbortError"),
-          "dropped"
-        );
-        this.flush();
-      };
-      cleanup = () => signal?.removeEventListener("abort", abort);
-      signal?.addEventListener("abort", abort, { once: true });
-      Promise.resolve()
-        .then(validate)
-        .then((payload) => {
-          if (!this.#entries.includes(entry)) return;
-          resolve(this.#prepare(entry, payload));
-        })
-        .catch((error) => {
-          this.#remove(entry, error, "dropped");
-          reject(error);
-          this.flush();
-        })
-        .finally(() => signal?.removeEventListener("abort", abort));
-    });
+    signal?.throwIfAborted();
+    const controller = new AbortController();
+    const entry = this.#reserve((error) => controller.abort(error));
+    const abort = () => {
+      this.#remove(entry, signal!.reason, "dropped");
+      this.flush();
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+
+    try {
+      const payload = await withSignal(
+        Promise.resolve().then(validate),
+        controller.signal
+      );
+      controller.signal.throwIfAborted();
+      const accepted = this.#prepare(entry, payload);
+      controller.signal.throwIfAborted();
+      return accepted;
+    } catch (error) {
+      this.#remove(entry, error as Error, "dropped");
+      this.flush();
+      throw error;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+    }
   };
 
   flush = () => {
     this.#prune();
 
-    // Re-read the queue head on every pass: entries are shifted as they are
-    // dispatched, so a stale reference would otherwise loop forever.
-    while (this.#entries.length > 0) {
-      const entry = this.#entries[0];
-      if (!entry.ready) break;
+    // Set iteration preserves reservation order, including duplicate payloads.
+    for (const entry of this.#entries) {
+      if (entry.key === undefined) break;
       try {
         if (!this.#dispatch(entry.payload)) break;
       } catch (error) {
@@ -190,10 +178,10 @@ export class SocketOutbox {
         continue;
       }
 
-      this.#entries.shift();
+      this.#entries.delete(entry);
       if (this.#window > 0) {
-        this.#history.delete(entry.key!);
-        this.#history.set(entry.key!, Date.now());
+        this.#history.delete(entry.key);
+        this.#history.set(entry.key, Date.now());
 
         while (this.#history.size > this.#maxHistory) {
           this.#history.delete(this.#history.keys().next().value!);
@@ -205,7 +193,7 @@ export class SocketOutbox {
   };
 
   clear = () => {
-    for (const entry of [...this.#entries])
+    for (const entry of this.#entries)
       this.#remove(
         entry,
         new DOMException("Socket closed", "AbortError"),

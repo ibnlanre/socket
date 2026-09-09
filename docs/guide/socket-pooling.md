@@ -23,14 +23,7 @@ a === b; // true
 
 Because the same params reuse the same socket, you can render the same `useSocket` call from many components and they will all observe one connection — no special opt-in required.
 
-You can assert sharing at runtime by comparing the command references returned by the hook:
-
-```ts
-const first = useSocket({ params });
-const second = useSocket({ params });
-
-first.send === second.send; // true — both bound to the same pooled socket
-```
+Each hook owns its subscription and send wrapper. To inspect pool identity, compare the socket instances returned by `await client.get(params)`.
 
 ## Closing pooled sockets
 

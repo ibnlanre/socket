@@ -28,6 +28,7 @@ export function PriceTicker() {
 ```tsx
 import { SocketClient } from "@ibnlanre/socket";
 import { z } from "zod";
+import { useState } from "react";
 
 const messageSchema = z.object({
   type: z.enum(["message", "notification"]),
@@ -52,11 +53,20 @@ const chatClient = new SocketClient({
 export function ChatRoom({ room }: { room: string }) {
   const socket = chatClient.useSocket({ params: { room } });
 
-  const send = () => socket.send({ content: "Hello!" });
+  const [error, setError] = useState<string | null>(null);
+  const send = async () => {
+    try {
+      await socket.send({ content: "Hello!" });
+      setError(null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   return (
     <div>
       <p>{socket.fetchStatus}</p>
+      {error && <p role="alert">{error}</p>}
       {socket.data && (
         <p>
           <strong>{socket.data.sender}</strong>: {socket.data.content}

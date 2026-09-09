@@ -13,9 +13,7 @@ import { getUri } from "@/functions/get-uri";
 import { shallowClone } from "@/functions/shallow-clone";
 import { time } from "@/functions/time";
 import { toError } from "@/functions/to-error";
-import {
-  schemaValue,
-} from "@/functions/validate-schema";
+import { schemaValue } from "@/functions/validate-schema";
 
 import type {
   SocketDiagnostic,
@@ -562,26 +560,14 @@ export class Socket<
 
     if (!this.#messageSchema) return JSON.stringify(parsed);
 
-    let result;
+    let value: unknown;
     try {
-      result = await this.#messageSchema["~standard"].validate(parsed);
+      const result = await this.#messageSchema["~standard"].validate(parsed);
+      value = schemaValue(result, "Socket: message schema validation failed");
     } catch (error) {
       throw this.#createMessageFailure(error, "validation");
     }
-    if (result.issues) {
-      throw this.#createMessageFailure(
-        new Error(
-          `Socket: message schema validation failed: ${this.#formatSchemaIssues(result.issues)}`,
-          { cause: result.issues }
-        ),
-        "validation"
-      );
-    }
-    return JSON.stringify(result.value);
-  };
-
-  #formatSchemaIssues = (issues: ReadonlyArray<{ message: string }>) => {
-    return issues.map(({ message }) => message).join("; ");
+    return JSON.stringify(value);
   };
 
   #createMessageFailure = (

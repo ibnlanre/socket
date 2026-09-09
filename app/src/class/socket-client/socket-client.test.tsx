@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { ws } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, } from "vitest";
@@ -116,6 +116,7 @@ describe("SocketClient", () => {
         client = new SocketClient<TestData, never, TestParams>(mockConfig);
     });
     afterEach(() => {
+        cleanup();
         vi.useRealTimers();
         client.clear();
     });

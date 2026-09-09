@@ -9,7 +9,7 @@ import type { ConnectionParams } from "@/types/connection-params";
 import type { SocketClientConstructor } from "@/types/socket/client-constructor";
 import type { UseSocketOptions } from "@/types/socket/options";
 import type { UseSocketResult } from "@/types/use-socket-result";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSyncExternalStore } from "use-sync-external-store/shim";
 
 export class SocketClient<
@@ -20,7 +20,6 @@ export class SocketClient<
 > {
   #pool = new Map<string, Socket<Get, Post, Params>>();
   #resolving = new Map<string, Promise<string>>();
-  #generation = 0;
   #disposed = false;
   #maxPoolSize: number;
   #configuration: SocketClientConstructor<Get, Post, Params, ParamsInput>;
@@ -35,9 +34,11 @@ export class SocketClient<
     }
   }
 
-  #assertActive = () => {
+  #assertActive = (pool = this.#pool) => {
     if (this.#disposed)
       throw new Error("SocketClient: this client has been disposed.");
+    if (pool !== this.#pool)
+      throw new DOMException("Client cleared", "AbortError");
   };
 
   #resolve = (params: ParamsInput): Promise<string> => {
@@ -46,7 +47,6 @@ export class SocketClient<
     const existing = this.#resolving.get(identity);
     if (existing) return existing;
 
-    const generation = this.#generation;
     const schema = this.#configuration.paramsSchema;
     const pending = Promise.resolve().then(async () => {
       const normalized = schema
@@ -55,8 +55,6 @@ export class SocketClient<
             "SocketClient: params schema validation failed"
           )
         : (params as unknown as Params);
-      if (generation !== this.#generation)
-        throw new DOMException("Client cleared", "AbortError");
       return getUri({ ...this.#configuration, params: normalized });
     });
     this.#resolving.set(identity, pending);
@@ -74,12 +72,10 @@ export class SocketClient<
     { signal }: { signal?: AbortSignal } = {}
   ): Promise<Socket<Get, Post, Params>> => {
     signal?.throwIfAborted();
-    const generation = this.#generation;
+    const pool = this.#pool;
     const key = await withSignal(this.#resolve(params), signal);
     signal?.throwIfAborted();
-    this.#assertActive();
-    if (generation !== this.#generation)
-      throw new DOMException("Client cleared", "AbortError");
+    this.#assertActive(pool);
     const existing = this.#pool.get(key);
     if (existing) return existing;
     if (this.#pool.size >= this.#maxPoolSize) {
@@ -102,11 +98,10 @@ export class SocketClient<
     { signal }: { signal?: AbortSignal } = {}
   ): Promise<boolean> => {
     signal?.throwIfAborted();
-    const generation = this.#generation;
+    const pool = this.#pool;
     const key = await withSignal(this.#resolve(params), signal);
     signal?.throwIfAborted();
-    if (generation !== this.#generation)
-      throw new DOMException("Client cleared", "AbortError");
+    this.#assertActive(pool);
     const socket = this.#pool.get(key);
     if (!socket) return false;
     socket.dispose();
@@ -116,11 +111,12 @@ export class SocketClient<
 
   /** Empty the pool and invalidate pending resolution; the client remains reusable. */
   clear = (): number => {
-    this.#generation += 1;
+    const pool = this.#pool;
+    this.#pool = new Map();
     this.#resolving.clear();
-    const count = this.#pool.size;
-    this.#pool.forEach((socket) => socket.dispose());
-    this.#pool.clear();
+    const count = pool.size;
+    pool.forEach((socket) => socket.dispose());
+    pool.clear();
     return count;
   };
 
@@ -140,12 +136,14 @@ export class SocketClient<
   > => {
     const key = enabled ? serializeJSON(params) : "";
     type Resolution = {
-      key: string;
-      client: SocketClient<Get, Post, Params, ParamsInput>;
       controller: AbortController;
       promise: Promise<Socket<Get, Post, Params>>;
     };
-    const active = useRef<Resolution | null>(null);
+    // Each committed subscription owns one resolution, including Strict Mode replays.
+    const subscription = useMemo(
+      () => ({ current: null as Resolution | null }),
+      [this, key, enabled]
+    );
     const [result, setResult] = useState<{
       resolution: Resolution;
       socket?: Socket<Get, Post, Params>;
@@ -156,12 +154,10 @@ export class SocketClient<
       if (!enabled) return;
       const controller = new AbortController();
       const resolution = {
-        key,
-        client: this,
         controller,
         promise: this.get(params, { signal: controller.signal }),
       };
-      active.current = resolution;
+      subscription.current = resolution;
       resolution.promise.then(
         (socket) => {
           if (!controller.signal.aborted)
@@ -172,16 +168,15 @@ export class SocketClient<
             setResult({ resolution, error: toError(error) });
         }
       );
-      return () => controller.abort();
-    }, [this, key, enabled]);
+      return () => {
+        subscription.current = null;
+        controller.abort();
+      };
+    }, [subscription]);
 
-    const current =
-      enabled &&
-      result?.resolution.client === this &&
-      result.resolution.key === key &&
-      !result.resolution.controller.signal.aborted;
-    const socket = current ? result.socket : undefined;
-    const error = current ? result.error : null;
+    const current = result?.resolution === subscription.current ? result : null;
+    const socket = current?.socket;
+    const error = current?.error ?? null;
     const fallback = useMemo(
       () =>
         socketState(
@@ -207,13 +202,8 @@ export class SocketClient<
 
     const send = useCallback(
       async (payload: Post, { signal }: { signal?: AbortSignal } = {}) => {
-        const resolution = active.current;
-        if (
-          !enabled ||
-          !resolution ||
-          resolution.client !== this ||
-          resolution.key !== key
-        ) {
+        const resolution = subscription.current;
+        if (!resolution) {
           throw new Error("SocketClient: this subscription is disabled.");
         }
         const controller = new AbortController();
@@ -237,7 +227,7 @@ export class SocketClient<
           subscriptionSignal.removeEventListener("abort", abort);
         }
       },
-      [this, key, enabled]
+      [subscription]
     );
     const data = useMemo(
       () => select(snapshot.value),
