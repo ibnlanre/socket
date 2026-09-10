@@ -1,6 +1,6 @@
 # Validation
 
-Socket uses Standard Schema V1 for runtime validation and type inference. Schemas may validate synchronously or asynchronously through the same API.
+Socket uses Standard Schema V1 for runtime validation and type inference. Schemas may validate synchronously or asynchronously through the same API. Start with object schemas that describe the parameters and payloads your callers pass directly.
 
 | Schema | Input | Output is used for |
 | --- | --- | --- |
@@ -10,7 +10,7 @@ Socket uses Standard Schema V1 for runtime validation and type inference. Schema
 
 ## Parameters define identity
 
-`get` awaits validation before looking up the pool. The normalized result drives both the pool key and the connection URL. A transform can therefore make different inputs share one connection.
+`get` awaits validation before looking up the pool. The normalized result drives both the pool key and the connection URL. Field normalization can make inputs such as `{ room: "GENERAL" }` and `{ room: "general" }` share one connection.
 
 ```tsx
 import { SocketClient } from "@ibnlanre/socket";
@@ -19,20 +19,20 @@ import { z } from "zod";
 const client = new SocketClient({
   baseURL: "wss://example.com",
   url: "/rooms",
-  paramsSchema: z.string().transform(async (room) => ({
-    room: room.trim().toLowerCase(),
-  })),
+  paramsSchema: z.object({
+    room: z.string().trim().toLowerCase(),
+  }),
 });
 
 function Room({ name }: { name: string }) {
-  const socket = client.useSocket({ params: name });
+  const socket = client.useSocket({ params: { room: name } });
   if (socket.isPreparing) return <p>Preparing room…</p>;
   if (socket.isError) return <p>{socket.error?.message}</p>;
   return <pre>{JSON.stringify(socket.data)}</pre>;
 }
 
 // Imperative use follows the same resolution path.
-const socket = await client.get("GENERAL");
+const socket = await client.get({ room: "GENERAL" });
 socket.open();
 ```
 
@@ -44,24 +44,42 @@ Use [connection preparation](/api/options#connection-preparation-diagnostics) fo
 
 ## Outgoing payloads
 
-`await socket.send(payload)` awaits validation and accepts the transformed JSON value into the ordered queue. It resolves `true` on local acceptance or `false` on deduplication. It does not acknowledge server receipt.
+`await socket.send(payload)` awaits validation and accepts the validated JSON payload into the ordered queue. It resolves `true` on local acceptance or `false` on deduplication. It does not acknowledge server receipt.
 
 ```ts
 const client = new SocketClient({
   url: "wss://example.com/messages",
-  sendSchema: z.string().min(1).transform(async (content) => ({ content })),
+  sendSchema: z.object({
+    content: z.string().trim().min(1),
+  }),
 });
 
 const socket = await client.get();
 socket.open();
 try {
-  await socket.send("Hello");
+  await socket.send({ content: "Hello" });
 } catch (error) {
   console.error("Message was not accepted", error);
 }
 ```
 
 Validation errors include `closeCode: 1008` and `stage: "validation"`. Queue overflow, expiry, cancellation, and invalid JSON can also reject a pending send. A send reserves its queue position before validation, so later messages cannot pass a slower earlier validation. See [Sending messages](/guide/sending).
+
+## Async validation with object schemas
+
+Async validation does not require a transform or a different input shape. For example, supply an asynchronous room lookup to an object schema:
+
+```ts
+function createParamsSchema(roomExists: (room: string) => Promise<boolean>) {
+  return z.object({
+    room: z.string().trim().toLowerCase(),
+  }).refine(async ({ room }) => roomExists(room), {
+    message: "Room does not exist",
+  });
+}
+```
+
+Use the resulting schema as `paramsSchema`; callers still pass `{ room: "general" }`. Object-based `sendSchema` refinements work the same way. Both `get` and `send` await validation, and the React hook exposes preparation and errors through its state.
 
 ## Incoming messages
 
@@ -79,3 +97,13 @@ Validated WebSocket messages become `value` with `status: "success"`. Invalid me
 - `ParamsInput` is the input accepted before parameter validation.
 
 Compatible schemas infer these types; explicit generics remain available. Keep WebSocket message output JSON-compatible: the cache path serializes validated values through JSON, so values such as `Date` do not preserve runtime identity.
+
+### Advanced: changing the caller's input shape
+
+A transform is useful when you deliberately want callers to pass a different shape from the wire format. This is optional; the object schemas above are the usual starting point.
+
+```ts
+const paramsSchema = z.string().transform((room) => ({ room }));
+// With this schema, get("general") produces the parameters { room: "general" }.
+// With z.object({ room: z.string() }), callers pass that object directly.
+```
