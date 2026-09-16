@@ -10,8 +10,18 @@ describe("SocketCache", () => {
   };
 
   // Mock global storage tools for Cache API testing
-  let mockCacheStorage: any;
-  let mockCache: any;
+  type MockCache = {
+    match: ReturnType<typeof vi.fn>;
+    put: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+    keys: ReturnType<typeof vi.fn>;
+  };
+  type MockCacheStorage = {
+    open: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+  };
+  let mockCacheStorage: MockCacheStorage;
+  let mockCache: MockCache;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -134,7 +144,7 @@ describe("SocketCache", () => {
 
   describe("setStateAction", () => {
     it("should transform data through setStateAction", async () => {
-      const setStateAction = vi.fn((next: unknown, _current?: unknown) => next);
+      const setStateAction = vi.fn((next: unknown) => next);
       const cache = new SocketCache({ ...defaults, setStateAction });
 
       await cache.set("/path", JSON.stringify({ value: 10 }));
@@ -143,7 +153,7 @@ describe("SocketCache", () => {
     });
 
     it("should pass current state as second argument to setStateAction", async () => {
-      const setStateAction = vi.fn((next: unknown, _current?: unknown) => next);
+      const setStateAction = vi.fn((next: unknown) => next);
       const cache = new SocketCache({ ...defaults, setStateAction });
 
       await cache.set("/path", JSON.stringify({ value: 1 }));
@@ -157,7 +167,9 @@ describe("SocketCache", () => {
     });
 
     it("should store the result of setStateAction", async () => {
-      const setStateAction = (next: any) => ({ value: next.value * 2 });
+      const setStateAction = (next: { value: number }) => ({
+        value: next.value * 2,
+      });
       const cache = new SocketCache({ ...defaults, setStateAction });
 
       await cache.set("/path", JSON.stringify({ value: 5 }));

@@ -85,8 +85,6 @@ subscribe(
 
 The last subscriber unsubscribing arms `close()` after `idleConnectionTimeout` (default 5 minutes).
 
-`getSnapshot()` returns the current immutable state snapshot (a frozen clone) backing `subscribe` and the React hooks via `useSyncExternalStore`; the reference is stable between state changes.
-
 ## State
 
 ### Instance fields

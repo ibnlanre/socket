@@ -1,4 +1,4 @@
-import { Socket } from "@/class/socket";
+import { Socket, readSocketSnapshot } from "@/class/socket";
 import { getUri } from "@/functions/get-uri";
 import { serializeJSON } from "@/functions/serialize-json";
 import { socketState } from "@/functions/socket-state";
@@ -191,9 +191,13 @@ export class SocketClient<
       (notify: () => void) => socket?.subscribe(notify, false) ?? (() => {}),
       [socket]
     );
+    const getSnapshot = useCallback(
+      () => (socket ? readSocketSnapshot(socket) : fallback),
+      [socket, fallback]
+    );
     const snapshot = useSyncExternalStore(
       subscribe,
-      socket?.getSnapshot ?? (() => fallback),
+      getSnapshot,
       () => fallback
     );
     useEffect(() => {

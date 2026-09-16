@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Socket } from ".";
+import { Socket, readSocketSnapshot } from ".";
 class Transport extends EventTarget {
   static OPEN = 1;
   static CLOSED = 3;
@@ -31,9 +31,9 @@ class Transport extends EventTarget {
     this.readyState = 3;
   }
 }
-const sockets: Socket<any, any, any>[] = [];
+const sockets: Socket<unknown, unknown>[] = [];
 function create(options: object = {}) {
-  const socket = new Socket<any, any>({
+  const socket = new Socket<unknown, unknown>({
     url: "wss://example.com/ws",
     disableCache: true,
     log: [],
@@ -42,7 +42,7 @@ function create(options: object = {}) {
   sockets.push(socket);
   return socket;
 }
-async function connect(socket: Socket<any, any, any>) {
+async function connect(socket: Socket<unknown, unknown>) {
   socket.open();
   await vi.waitFor(() => expect(socket.ws).not.toBeNull());
   const transport = socket.ws as unknown as Transport;
@@ -119,8 +119,8 @@ describe("connection lifecycle", () => {
     const socket = create();
     const listener = vi.fn();
     socket.subscribe(listener);
-    const first = socket.getSnapshot();
-    expect(socket.getSnapshot()).toBe(first);
+    const first = readSocketSnapshot(socket);
+    expect(readSocketSnapshot(socket)).toBe(first);
     await connect(socket);
     socket.close();
     const next = await connect(socket);

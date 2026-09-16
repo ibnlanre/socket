@@ -129,7 +129,9 @@ export class EventSourceClient<
     // front, so re-attach one forwarder per subscribed named event. This runs
     // on every (re)connect because a fresh EventSource is created each time.
     this.#nativeForwarders.clear();
-    this.#listeners.forEach((_, type) => this.#attachNativeForwarder(type));
+    for (const type of this.#listeners.keys()) {
+      this.#attachNativeForwarder(type);
+    }
   };
 
   /**

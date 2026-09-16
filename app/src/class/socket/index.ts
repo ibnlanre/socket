@@ -15,11 +15,6 @@ import { time } from "@/functions/time";
 import { toError } from "@/functions/to-error";
 import { schemaValue } from "@/functions/validate-schema";
 
-import type {
-  SocketDiagnostic,
-  SocketDiagnosticDetails,
-} from "@/types/socket/diagnostic";
-import type { SocketPrepareConnection } from "@/types/socket/prepare-connection";
 import type { ConnectionParams } from "@/types/connection-params";
 import type { SocketCipher } from "@/types/socket/cipher";
 import type { SocketSubscriber } from "@/types/socket/client-subscriber";
@@ -31,8 +26,13 @@ import type {
   SocketMessageFailureAction,
   SocketMessageFailurePolicy,
 } from "@/types/socket/data-handling-options";
+import type {
+  SocketDiagnostic,
+  SocketDiagnosticDetails,
+} from "@/types/socket/diagnostic";
 import type { SocketFetchStatus } from "@/types/socket/fetch-status";
 import type { SocketListener } from "@/types/socket/listener";
+import type { SocketPrepareConnection } from "@/types/socket/prepare-connection";
 import type { SocketState } from "@/types/socket/state";
 import type { SocketStatus } from "@/types/socket/status";
 import type { SocketTimeout } from "@/types/socket/timeout";
@@ -43,6 +43,29 @@ type SocketMessageFailure = Error & {
   closeCode: SocketCloseCode;
   stage: SocketMessageFailureStage;
 };
+
+const snapshots = new WeakMap<object, object>();
+
+function storeSocketSnapshot<T extends object>(socket: T): T {
+  const state = shallowClone(socket);
+  Object.freeze(state);
+  snapshots.set(socket, state);
+  return state;
+}
+
+/**
+ * Read the current immutable state snapshot for a `Socket`.
+ *
+ * @internal Not part of the public API — used by the React integration.
+ */
+export function readSocketSnapshot<G, P, Pr extends ConnectionParams>(
+  socket: Socket<G, P, Pr>
+): Socket<G, P, Pr> {
+  return (
+    (snapshots.get(socket) as Socket<G, P, Pr> | undefined) ??
+    storeSocketSnapshot(socket)
+  );
+}
 
 export class Socket<
   Get = unknown,
@@ -105,7 +128,6 @@ export class Socket<
   #controller: AbortController | null = null;
   #disposed: boolean = false;
   #waiters = new Set<() => void>();
-  #snapshot: Socket<Get, Post, Params> | undefined;
   #prepareConnection?: SocketPrepareConnection;
   #onDiagnostic?: (event: SocketDiagnostic) => void;
   #maxBufferedAmount: number;
@@ -510,9 +532,7 @@ export class Socket<
   };
 
   #notifySubscribers = () => {
-    const state = shallowClone(this);
-    Object.freeze(state);
-    this.#snapshot = state;
+    const state = storeSocketSnapshot(this);
     this.#subscribers.forEach((listener) => listener(state));
   };
 
@@ -830,14 +850,7 @@ export class Socket<
     this.#disposed = true;
     this.#eventListeners.clear();
     this.#subscribers.clear();
-  };
-
-  getSnapshot = (): Socket<Get, Post, Params> => {
-    if (!this.#snapshot) {
-      this.#snapshot = shallowClone(this);
-      Object.freeze(this.#snapshot);
-    }
-    return this.#snapshot;
+    snapshots.delete(this);
   };
 
   send = async (
@@ -870,7 +883,7 @@ export class Socket<
     clearTimeout(this.#idleConnectionTimerId);
 
     if (!this.#subscribers.has(listener)) {
-      if (immediate) listener(this.getSnapshot());
+      if (immediate) listener(readSocketSnapshot(this));
       this.#subscribers.add(listener);
     }
 

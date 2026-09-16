@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+
+import type { UnitValue } from "@/types/time-unit";
+
 import { time } from "./index";
 
 describe("time", () => {
@@ -9,9 +12,9 @@ describe("time", () => {
   });
 
   it("should return the number if it is a string", () => {
-    expect(time("1000" as any)).toBe(1000);
-    expect(time("1000i" as any)).toBe(1000);
-    expect(time("-1000" as any)).toBe(-1000);
+    expect(time("1000" as unknown as UnitValue)).toBe(1000);
+    expect(time("1000i" as unknown as UnitValue)).toBe(1000);
+    expect(time("-1000" as unknown as UnitValue)).toBe(-1000);
   });
 
   it("should convert years to milliseconds", () => {
@@ -87,8 +90,8 @@ describe("time", () => {
   });
 
   it("should return Infinity for invalid input", () => {
-    expect(time("invalid" as any)).toBe(Infinity);
-    expect(time("123abc" as any)).toBe(123);
+    expect(time("invalid" as unknown as UnitValue)).toBe(Infinity);
+    expect(time("123abc" as unknown as UnitValue)).toBe(123);
   });
 
   it("should convert value to specific unit", () => {

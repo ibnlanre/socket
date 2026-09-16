@@ -1,6 +1,8 @@
 /** Canonical JSON identity: object order is irrelevant; array order is not. */
 export function serializeJSON(value: unknown): string {
-  const result = JSON.stringify(value, (_, item) => {
+  // The replacer's key argument is required positionally but not needed here.
+  const result = JSON.stringify(value, (key, item) => {
+    void key;
     if (!item || typeof item !== "object" || Array.isArray(item)) return item;
     return Object.fromEntries(
       Object.keys(item)

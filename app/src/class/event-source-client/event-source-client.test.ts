@@ -363,15 +363,13 @@ describe("EventSourceClient", () => {
   });
 
   describe("SSE streaming (native EventSource, GET)", () => {
-    const NativeEventSource = globalThis.EventSource;
-
     afterEach(() => {
-      (globalThis as any).EventSource = NativeEventSource;
+      vi.unstubAllGlobals();
       FakeEventSource.instances = [];
     });
 
     it("should forward named events registered before open()", async () => {
-      (globalThis as any).EventSource = FakeEventSource;
+      vi.stubGlobal("EventSource", FakeEventSource);
 
       const client = new EventSourceClient<string>({ url: TEST_URL });
       const update = vi.fn();
@@ -401,7 +399,7 @@ describe("EventSourceClient", () => {
     });
 
     it("should forward named events registered after open()", async () => {
-      (globalThis as any).EventSource = FakeEventSource;
+      vi.stubGlobal("EventSource", FakeEventSource);
 
       const client = new EventSourceClient<string>({ url: TEST_URL });
       client.open();
@@ -421,7 +419,7 @@ describe("EventSourceClient", () => {
     });
 
     it("should keep named subscriptions across a reconnect that creates a new EventSource", async () => {
-      (globalThis as any).EventSource = FakeEventSource;
+      vi.stubGlobal("EventSource", FakeEventSource);
 
       const client = new EventSourceClient<string>({
         url: TEST_URL,
@@ -450,7 +448,7 @@ describe("EventSourceClient", () => {
     });
 
     it("should drop named subscriptions when the client is closed", async () => {
-      (globalThis as any).EventSource = FakeEventSource;
+      vi.stubGlobal("EventSource", FakeEventSource);
 
       const client = new EventSourceClient<string>({ url: TEST_URL });
       const update = vi.fn();

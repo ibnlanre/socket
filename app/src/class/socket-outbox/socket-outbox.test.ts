@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SocketOutbox } from ".";
 
 const boxes: SocketOutbox[] = [];
-function create(options = {}, dispatch = vi.fn((_: unknown) => true)) {
+
+type Dispatch = (payload: unknown) => boolean;
+const createDispatch = (result: boolean) => vi.fn<Dispatch>(() => result);
+
+function create(options = {}, dispatch = createDispatch(true)) {
   const notify = vi.fn();
   const box = new SocketOutbox(options, dispatch, notify);
   boxes.push(box);
@@ -15,10 +19,7 @@ afterEach(() => {
 
 describe("SocketOutbox", () => {
   it("preserves duplicate payloads and primitive identity without deduplication", async () => {
-    const { box, dispatch } = create(
-      {},
-      vi.fn(() => false)
-    );
+    const { box, dispatch } = create({}, createDispatch(false));
     await box.send(() => "first");
     await box.send(() => "first");
     await box.send(() => 2);
@@ -58,7 +59,7 @@ describe("SocketOutbox", () => {
     vi.useFakeTimers();
     const { box, dispatch, notify } = create(
       { maxQueueSize: 1, queueMaxAge: 50 },
-      vi.fn(() => false)
+      createDispatch(false)
     );
     await box.send(() => 1);
     await expect(box.send(() => 2)).rejects.toThrow("full");
@@ -110,7 +111,7 @@ describe("SocketOutbox", () => {
   it("drops the oldest pending send when explicitly configured", async () => {
     const { box, dispatch } = create(
       { maxQueueSize: 1, queueOverflow: "drop-oldest" },
-      vi.fn(() => false)
+      createDispatch(false)
     );
     await box.send(() => 1);
     await box.send(() => 2);
@@ -165,7 +166,7 @@ describe("SocketOutbox", () => {
 
   it("rejects immediate dispatch failure and permits the next send", async () => {
     const dispatch = vi
-      .fn()
+      .fn<Dispatch>()
       .mockImplementationOnce(() => {
         throw new Error("transport");
       })
