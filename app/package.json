@@ -1,10 +1,11 @@
 {
   "name": "@ibnlanre/socket",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A simple state management library for react using websockets and server-sent events",
   "type": "module",
   "scripts": {
     "bundle": "tsup",
+    "prepublishOnly": "pnpm run bundle",
     "e2e": "vite --config vite.e2e.config.ts",
     "example": "vite --config vite.example.config.ts",
     "tag": "git tag -a v$npm_package_version -m v$npm_package_version",
@@ -17,26 +18,35 @@
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "sideEffects": false,
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.cjs",
-      "import": "./dist/index.js"
-    }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
   },
+  "homepage": "https://use-socket.vercel.app",
   "author": {
     "email": "olaitanlanre28@gmail.com",
     "name": "Ridwan Olanrewaju"
   },
   "repository": {
-    "url": "git+https://github.com/ibnlanre/socket.git",
     "type": "git",
-    "publishConfig": {
-      "access": "public"
-    }
+    "url": "git+https://github.com/ibnlanre/socket.git",
+    "directory": "app"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "bugs": {
     "url": "https://github.com/ibnlanre/socket/issues"

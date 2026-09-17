@@ -140,3 +140,6 @@ dist
 
 # pnpm store (local cache; never commit)
 .pnpm-store/
+
+# npm lockfiles (this workspace uses pnpm)
+package-lock.json

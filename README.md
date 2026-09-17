@@ -17,12 +17,12 @@ Define one client per endpoint, let identical params reuse a single pooled conne
 
 The full documentation lives at the docs site:
 
-**→ https://socket-xi-pink.vercel.app**
+**→ https://use-socket.vercel.app**
 
 | Guides | Reference |
 | --- | --- |
-| [Introduction](https://socket-xi-pink.vercel.app/guide/introduction) · [Getting started](https://socket-xi-pink.vercel.app/guide/getting-started) · [Mental model](https://socket-xi-pink.vercel.app/guide/mental-model) | [`SocketClient`](https://socket-xi-pink.vercel.app/api/socket-client) · [`Socket`](https://socket-xi-pink.vercel.app/api/socket) · [`SocketCache`](https://socket-xi-pink.vercel.app/api/socket-cache) |
-| [Validation](https://socket-xi-pink.vercel.app/guide/validation) · [Caching](https://socket-xi-pink.vercel.app/guide/caching) · [Reconnection](https://socket-xi-pink.vercel.app/guide/reconnection) · [Server-Sent Events](https://socket-xi-pink.vercel.app/guide/event-source) | [`EventSourceClient`](https://socket-xi-pink.vercel.app/api/event-source-client) · [Options](https://socket-xi-pink.vercel.app/api/options) · [Types & constants](https://socket-xi-pink.vercel.app/api/types) |
+| [Introduction](https://use-socket.vercel.app/guide/introduction) · [Getting started](https://use-socket.vercel.app/guide/getting-started) · [Mental model](https://use-socket.vercel.app/guide/mental-model) | [`SocketClient`](https://use-socket.vercel.app/api/socket-client) · [`Socket`](https://use-socket.vercel.app/api/socket) · [`SocketCache`](https://use-socket.vercel.app/api/socket-cache) |
+| [Validation](https://use-socket.vercel.app/guide/validation) · [Caching](https://use-socket.vercel.app/guide/caching) · [Reconnection](https://use-socket.vercel.app/guide/reconnection) · [Server-Sent Events](https://use-socket.vercel.app/guide/event-source) | [`EventSourceClient`](https://use-socket.vercel.app/api/event-source-client) · [Options](https://use-socket.vercel.app/api/options) · [Types & constants](https://use-socket.vercel.app/api/types) |
 
 The docs are a VitePress site in `docs/`; run them locally with:
 
@@ -96,8 +96,9 @@ await socket.send({ type: "subscribe", symbol: "BTC" });
 - **Hook for React, instance for imperative code.** `useSocket` returns a read-only state, selected data, and `send`; `await client.get()` returns the managed `Socket`.
 - **Ownership is explicit.** `socket.close()` disconnects but preserves subscriptions (a later `open()` reconnects); `socket.dispose()` / `await client.evict(params)` release the socket permanently.
 - **Sends go through an ordered queue.** `await send()` supports sync and async schemas; waiting payloads are bounded by `maxQueueSize`/`queueMaxAge`/`queueOverflow`.
+- **Async validation, cancellable.** `await client.get(input, { signal })` resolves parameters before returning the pooled socket; `useSocket` owns that same resolution in React and exposes `isPreparing` and `error`. Schema input and output types may differ.
 
-See [Mental model](https://socket-xi-pink.vercel.app/guide/mental-model) for the full picture.
+See [Mental model](https://use-socket.vercel.app/guide/mental-model) for the full picture.
 
 ## Public API at a glance
 
@@ -134,10 +135,6 @@ pnpm --filter @ibnlanre/socket-docs build   # build docs
 
 [license]: LICENSE
 [bsd-3]: https://opensource.org/license/bsd-3-clause
-
-### Async validation and ownership
-
-`await client.get(input, { signal })` resolves parameters and returns the pooled socket. `useSocket` owns the same resolution in React and exposes `isPreparing` and `error`. `await socket.send(payload, { signal })` validates sync or async schemas while preserving send order. Schema input and output types may differ.
 
 `socket.close()` disconnects while preserving subscriptions. `socket.dispose()` is permanent; `client.evict(params)` disposes and removes a pooled instance. Queues and pools are bounded. `onDiagnostic` exposes retry, queue, validation, and cache activity; `prepareConnection` supports fresh credentials before every transport attempt.
 
