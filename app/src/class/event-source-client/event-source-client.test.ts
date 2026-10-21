@@ -737,7 +737,9 @@ describe("SSE transport selection", () => {
       transport: "native",
     });
 
-    expect(() => client.open()).toThrow("requires an EventSource global");
+    expect(() => client.open()).toThrow(
+      "requires an EventSource implementation"
+    );
   });
 
   it("fetch mode requires a fetch implementation", () => {
@@ -747,7 +749,7 @@ describe("SSE transport selection", () => {
       transport: "fetch",
     });
 
-    expect(() => client.open()).toThrow("requires a fetch global");
+    expect(() => client.open()).toThrow("requires a fetch implementation");
   });
 
   it("auto reports an actionable error when no transport is available", () => {
@@ -755,5 +757,56 @@ describe("SSE transport selection", () => {
     const client = new EventSourceClient({ url: TEST_URL });
 
     expect(() => client.open()).toThrow("no usable SSE transport");
+  });
+
+  it("uses runtime.eventSource when no EventSource global is available", () => {
+    vi.stubGlobal("EventSource", undefined);
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      transport: "native",
+      runtime: {
+        eventSource: FakeEventSource as unknown as typeof EventSource,
+      },
+    });
+
+    client.open();
+
+    expect(client.transport).toBe("native");
+    expect(FakeEventSource.instances).toHaveLength(1);
+    client.close();
+  });
+
+  it("uses runtime.fetch when no fetch global is available", () => {
+    vi.stubGlobal("fetch", undefined);
+    const fetchMock = vi.fn<typeof fetch>(
+      () => new Promise<Response>(() => {})
+    );
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      transport: "fetch",
+      runtime: { fetch: fetchMock },
+    });
+
+    client.open();
+
+    expect(client.transport).toBe("fetch");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    client.close();
+  });
+
+  it("does not forward the runtime option into the request init", () => {
+    const fetchMock = stubFetch();
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      transport: "fetch",
+      runtime: { fetch: fetchMock },
+    });
+
+    client.open();
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init).toBeDefined();
+    expect(init).not.toHaveProperty("runtime");
+    client.close();
   });
 });

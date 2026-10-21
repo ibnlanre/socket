@@ -1,5 +1,6 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { ReconnectionPolicy } from "../reconnection-policy";
+import type { RuntimeAdapters } from "../runtime";
 import type { Init } from "./init";
 import type { EventSourceTransportMode } from "./transport";
 
@@ -29,6 +30,15 @@ export interface EventSourceClientOptions<Data = unknown>
    * @default "auto"
    */
   transport?: EventSourceTransportMode;
+
+  /**
+   * Environment implementations to use instead of ambient globals.
+   *
+   * Injected adapters win over globals and are resolved when the connection
+   * opens, so importing or constructing the client never depends on the
+   * runtime providing `EventSource` or `fetch`.
+   */
+  runtime?: RuntimeAdapters;
 
   /**
    * The base URL to use for the Server-Sent Events connection

@@ -4,6 +4,7 @@ import { time } from "@/functions/time";
 import { toError } from "@/functions/to-error";
 
 import type { ConnectionParams } from "@/types/connection-params";
+import type { RuntimeAdapters } from "@/types/runtime";
 import type { EventSourceClientOptions } from "@/types/event-source/constructor";
 import type { EventSourceListener } from "@/types/event-source/listener";
 import type {
@@ -69,6 +70,7 @@ export class EventSourceClient<
   #iterators = new Set<() => void>();
   #attempt = 0;
   #messageSchema?: StandardSchemaV1<unknown, Data>;
+  #runtime?: RuntimeAdapters;
 
   // Pure event field buffers (Reset dynamically at event dispatch boundaries)
   dataBuffer: string = "";
@@ -97,6 +99,7 @@ export class EventSourceClient<
       cache = "no-store",
       messageSchema,
       maxPendingMessages = 1000,
+      runtime,
       ...init
     }: EventSourceClientOptions<Data>,
     params = {} as Params
@@ -119,6 +122,7 @@ export class EventSourceClient<
     this.#retryCount = retryCount;
     this.#retryBackoffStrategy = retryBackoffStrategy;
     this.#messageSchema = messageSchema;
+    this.#runtime = runtime;
   }
 
   /**
@@ -126,7 +130,13 @@ export class EventSourceClient<
    * @private
    */
   #createEventSource = () => {
-    this.#eventSource = new EventSource(this.#href, {
+    const EventSourceImplementation = this.#eventSourceConstructor();
+    if (!EventSourceImplementation)
+      throw new Error(
+        'EventSourceClient: transport "native" requires an EventSource implementation. Pass `runtime.eventSource`.'
+      );
+
+    this.#eventSource = new EventSourceImplementation(this.#href, {
       withCredentials: this.#init.credentials === "include",
     });
 
@@ -167,7 +177,12 @@ export class EventSourceClient<
     const generation = this.#generation;
     const requestInit = this.#initialize();
     try {
-      const response = await fetch(this.#href, requestInit);
+      const fetchImplementation = this.#fetchImplementation();
+      if (!fetchImplementation)
+        throw new Error(
+          'EventSourceClient: transport "fetch" requires a fetch implementation. Pass `runtime.fetch`.'
+        );
+      const response = await fetchImplementation(this.#href, requestInit);
       if (this.#isClosed || generation !== this.#generation) {
         await response.body?.cancel();
         return;
@@ -618,6 +633,23 @@ export class EventSourceClient<
   }
 
   /**
+   * The EventSource implementation to use: injected adapter first, then the
+   * ambient global.
+   * @private
+   */
+  #eventSourceConstructor = (): typeof EventSource | undefined =>
+    this.#runtime?.eventSource ??
+    (typeof EventSource === "undefined" ? undefined : EventSource);
+
+  /**
+   * The fetch implementation to use: injected adapter first, then the ambient
+   * global.
+   * @private
+   */
+  #fetchImplementation = (): typeof fetch | undefined =>
+    this.#runtime?.fetch ?? (typeof fetch === "function" ? fetch : undefined);
+
+  /**
    * The first configuration a native `EventSource` cannot honor, if any.
    * @private
    */
@@ -645,13 +677,13 @@ export class EventSourceClient<
    */
   #resolveTransport = (): EventSourceTransport => {
     const blocker = this.#nativeBlocker();
-    const nativeAvailable = typeof EventSource !== "undefined";
-    const fetchAvailable = typeof fetch === "function";
+    const nativeAvailable = this.#eventSourceConstructor() !== undefined;
+    const fetchAvailable = this.#fetchImplementation() !== undefined;
 
     if (this.#transportMode === "native") {
       if (!nativeAvailable)
         throw new Error(
-          'EventSourceClient: transport "native" requires an EventSource global, which this runtime does not provide. Supply one or use transport "auto" or "fetch".'
+          'EventSourceClient: transport "native" requires an EventSource implementation, which this runtime does not provide. Pass `runtime.eventSource`, or use transport "auto" or "fetch".'
         );
       if (blocker)
         throw new Error(
@@ -663,7 +695,7 @@ export class EventSourceClient<
     if (this.#transportMode === "fetch") {
       if (!fetchAvailable)
         throw new Error(
-          'EventSourceClient: transport "fetch" requires a fetch global, which this runtime does not provide.'
+          'EventSourceClient: transport "fetch" requires a fetch implementation, which this runtime does not provide. Pass `runtime.fetch`.'
         );
       return "fetch";
     }
@@ -673,8 +705,8 @@ export class EventSourceClient<
 
     throw new Error(
       blocker
-        ? `EventSourceClient: no usable SSE transport. Native EventSource cannot honor ${blocker}, and no fetch implementation is available.`
-        : "EventSourceClient: no usable SSE transport. This runtime provides neither EventSource nor fetch."
+        ? `EventSourceClient: no usable SSE transport. Native EventSource cannot honor ${blocker}, and no fetch implementation is available. Pass \`runtime.eventSource\` or \`runtime.fetch\`.`
+        : "EventSourceClient: no usable SSE transport. This runtime provides neither EventSource nor fetch. Pass `runtime.eventSource` or `runtime.fetch`."
     );
   };
 

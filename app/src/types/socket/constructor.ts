@@ -7,6 +7,7 @@ import type { SocketProtocolIdentifier } from "./protocol-identifier";
 import type { SocketQueueOptions } from "./queue-options";
 import type { SocketReconnectOptions } from "./reconnect-options";
 import type { SocketSchema } from "./schema";
+import type { RuntimeAdapters } from "../runtime";
 
 export interface SocketConstructor<
   Get = unknown,
@@ -22,6 +23,15 @@ export interface SocketConstructor<
     SocketQueueOptions {
   /** Runs before every transport attempt; does not change pool/cache identity. */
   prepareConnection?: SocketPrepareConnection;
+
+  /**
+   * Environment implementations to use instead of ambient globals.
+   *
+   * Injected adapters win over globals. Global lookups happen when a connection
+   * is attempted, so a runtime without `WebSocket` only fails on `open()` — and
+   * with an actionable error rather than a `ReferenceError`.
+   */
+  runtime?: RuntimeAdapters;
 
   /** Structured operational events without direct payload/URL fields. Schema errors may contain validation details. */
   onDiagnostic?: (event: SocketDiagnostic) => void;

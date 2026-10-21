@@ -41,3 +41,7 @@ export type {
   SocketPrepareConnection,
 } from "./types/socket/prepare-connection";
 export type { SocketClientConstructor } from "./types/socket/client-constructor";
+export type {
+  RuntimeAdapters,
+  WebSocketConstructor,
+} from "./types/runtime";

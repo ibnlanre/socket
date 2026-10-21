@@ -16,6 +16,10 @@ import { toError } from "@/functions/to-error";
 import { schemaValue } from "@/functions/validate-schema";
 
 import type { ConnectionParams } from "@/types/connection-params";
+import type {
+  RuntimeAdapters,
+  WebSocketConstructor,
+} from "@/types/runtime";
 import type { SocketCipher } from "@/types/socket/cipher";
 import type { SocketSubscriber } from "@/types/socket/client-subscriber";
 import type { SocketCommands } from "@/types/socket/commands";
@@ -142,6 +146,7 @@ export class Socket<
   #controller: AbortController | null = null;
   #disposed: boolean = false;
   #waiters = new Set<() => void>();
+  #runtime?: RuntimeAdapters;
   #prepareConnection?: SocketPrepareConnection;
   #onDiagnostic?: (event: SocketDiagnostic) => void;
   #maxBufferedAmount: number;
@@ -152,6 +157,7 @@ export class Socket<
   constructor(
     {
       prepareConnection,
+      runtime,
       onDiagnostic,
       maxQueueSize,
       queueMaxAge,
@@ -200,6 +206,7 @@ export class Socket<
     params = {} as Params
   ) {
     this.#prepareConnection = prepareConnection;
+    this.#runtime = runtime;
     this.#onDiagnostic = onDiagnostic;
     this.#maxBufferedAmount = maxBufferedAmount;
     this.#maxPendingMessages = maxPendingMessages;
@@ -353,6 +360,25 @@ export class Socket<
     }
   };
 
+  /**
+   * The WebSocket implementation to use: injected adapter first, then the
+   * ambient global. Resolved when a connection is attempted so a missing
+   * implementation never breaks import or construction.
+   * @private
+   */
+  #webSocketConstructor = (): WebSocketConstructor => {
+    const implementation =
+      this.#runtime?.webSocket ??
+      (typeof WebSocket === "undefined" ? undefined : WebSocket);
+
+    if (!implementation)
+      throw new Error(
+        "Socket: no WebSocket implementation is available in this runtime. Pass `runtime.webSocket` to the constructor."
+      );
+
+    return implementation;
+  };
+
   #connect = async () => {
     if (!this.#isOpen || this.ws || this.#controller) return;
     const generation = ++this.#generation;
@@ -369,7 +395,7 @@ export class Socket<
         attempt: this.failureCount,
       });
       if (!current()) return;
-      this.ws = new WebSocket(
+      this.ws = new (this.#webSocketConstructor())(
         prepared?.url ?? this.#href,
         prepared?.protocols ?? this.#protocols
       );

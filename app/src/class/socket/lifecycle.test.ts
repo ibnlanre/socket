@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Socket, readSocketSnapshot } from ".";
+import type { WebSocketConstructor } from "@/types/runtime";
 class Transport extends EventTarget {
   static OPEN = 1;
   static CLOSED = 3;
@@ -245,5 +246,32 @@ describe("runtime without a WebSocket global", () => {
     // nothing to dispatch to, so the frame must stay queued rather than surface
     // a runtime error from the dispatch attempt.
     await expect(socket.send({ hello: "world" })).resolves.toBe(true);
+  });
+});
+
+describe("injected runtime", () => {
+  it("uses runtime.webSocket when no WebSocket global is available", async () => {
+    Reflect.deleteProperty(globalThis, "WebSocket");
+
+    const socket = create({
+      runtime: { webSocket: Transport as unknown as WebSocketConstructor },
+    });
+
+    socket.open();
+
+    await vi.waitFor(() => expect(Transport.instances).toHaveLength(1));
+    expect(socket.ws).not.toBeNull();
+  });
+
+  it("reports an actionable error when no implementation is available", async () => {
+    Reflect.deleteProperty(globalThis, "WebSocket");
+
+    const socket = create();
+    socket.open();
+
+    await vi.waitFor(() =>
+      expect(socket.error?.message).toContain("runtime.webSocket")
+    );
+    expect(socket.ws).toBeNull();
   });
 });
