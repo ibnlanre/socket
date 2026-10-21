@@ -116,8 +116,12 @@ function ChatRoom({ room }: { room: string }) {
 
 ## Requirements
 
-- Node 18+ (global `EventSource` and `fetch`, or a `WebSocket` implementation in the runtime)
-- React `>=16.8` when using the hooks
+- A `WebSocket` implementation for the managed connection. Browsers provide one; Node 22+ has it as a global, and earlier versions can inject one through `runtime.webSocket` (`ws`, `undici`, …).
+- `EventSourceClient` needs native `EventSource` or `fetch`. It uses `fetch` automatically wherever `EventSource` is absent, which includes every Node release.
+- Cache Storage for persistent caching. Where it is unavailable, caching is off unless you opt into `cacheFallback: "memory"` (non-persistent).
+- React `>=16.8` when using the hooks.
+
+Runtime support is opt-in and explicit rather than assumed. See the [support matrix](https://use-socket.vercel.app/guide/runtime).
 
 ## License
 

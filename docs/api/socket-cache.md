@@ -13,7 +13,7 @@ class SocketCache<State = unknown> {
 
 ## Static
 
-- `SocketCache.isAvailable` — whether the Cache API is available in the environment. Guards all Cache API use; when unavailable the cache degrades to its in-memory mirror.
+- `SocketCache.isAvailable` — **deprecated.** Whether the ambient `caches` global exists. It cannot describe an injected adapter, so prefer the instance `persistence` property.
 
 ## Methods
 
@@ -51,7 +51,11 @@ subscribe(observer: (state: State) => void): void;
 
 ### `initialize(path)`
 
-Opens `caches.open(origin)` and hydrates the in-memory state from the stored entry for `path`.
+Selects the storage backend and hydrates the in-memory state from the stored entry for `path`:
+
+- Cache Storage (ambient, or injected as `runtime.caches`) → `persistence: "cache-storage"`.
+- Otherwise `cacheFallback: "none"` (the default) → no caching, `persistence: "none"`.
+- Otherwise `cacheFallback: "memory"` → in-memory backend, `persistence: "memory"`.
 
 ```ts
 initialize(path: string): Promise<void>;
@@ -68,6 +72,7 @@ decrypt(data: State): State;
 ## Properties
 
 - `value: State | undefined` — the in-memory latest value.
+- `persistence: "cache-storage" | "memory" | "none"` — the backend actually selected by `initialize()`. `"memory"` is explicit opt-in and does not survive a reload.
 
 ## Standalone example
 

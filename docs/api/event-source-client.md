@@ -24,8 +24,10 @@ class EventSourceClient<Data = unknown, Params extends ConnectionParams = never>
 | `url` | — (required) | Endpoint to connect to |
 | `baseURL` | `""` | Base URL prepended to `url` |
 | `messageSchema` | — | Standard Schema for event data (async supported) |
-| `initialLastEventId` | `null` | `Last-Event-ID` to send on first connect |
-| `method` | `"GET"` | HTTP verb; anything but GET uses fetch streaming |
+| `initialLastEventId` | `null` | `Last-Event-ID` to send on first connect (fetch only) |
+| `method` | `"GET"` | HTTP verb for the request; anything but GET can only use fetch streaming |
+| `transport` | `"auto"` | `"auto"` \| `"native"` \| `"fetch"`. `"auto"` uses native only when it can honor the whole request. See [Runtime support](/guide/runtime#sse-transports) |
+| `runtime` | — | Environment adapters (`eventSource`, `fetch`); see [Runtime support](/guide/runtime) |
 | `cache` | `"no-store"` | `RequestInit.cache` (fetch path) |
 | `retry` / `retryDelay` / `retryCount` / `retryBackoffStrategy` | `false` / `"5 seconds"` / `3` / `"fixed"` | see [Reconnection](/guide/reconnection) |
 
@@ -70,6 +72,7 @@ Yields `"message"` events only.
 | --- | --- | --- |
 | `error` | `null` | Last error (also dispatched to `"error"` listeners) |
 | `status` | `"idle"` | `"idle" \| "connecting" \| "open" \| "error"` |
+| `transport` | `null` | `"native" \| "fetch"` for the current connection; resets to `null` on `close()` |
 | `dataBuffer` | `""` | SSE field staging buffer (public) |
 | `lastEventId` | `""` | Last received event id |
 | `eventTypeBuffer` | `""` | Last `event:` field |

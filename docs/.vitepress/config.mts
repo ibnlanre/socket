@@ -64,6 +64,7 @@ export default defineConfig({
             { text: "Listeners", link: "/guide/listeners" },
             { text: "Sending messages", link: "/guide/sending" },
             { text: "Server-Sent Events", link: "/guide/event-source" },
+            { text: "Runtime support", link: "/guide/runtime" },
           ],
         },
       ],

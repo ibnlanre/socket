@@ -14,6 +14,19 @@ The `SocketClient` / `Socket` constructor configuration (`SocketConstructor`) is
 | `paramsSchema` | `SocketSchema<ParamsInput, Params>` | — | Validates/transforms URL params; sync or async via `get()` and `useSocket` |
 | `sendSchema` | `SocketSchema<Post, unknown>` | — | Validates/transforms outbound payloads; sync or async via `send()` |
 
+## Runtime
+
+Nested environment adapters. Injected values take precedence over ambient globals, which are resolved lazily when an operation needs them — never at import or construction time.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `runtime.webSocket` | `WebSocketConstructor` | ambient `WebSocket` | WebSocket implementation for the managed connection |
+| `runtime.eventSource` | `typeof EventSource` | ambient `EventSource` | Native SSE transport |
+| `runtime.fetch` | `typeof fetch` | ambient `fetch` | Fetch-based SSE transport |
+| `runtime.caches` | `CacheStorage` | ambient `caches` | Persistent cache backend |
+
+See [Runtime support](/guide/runtime) for the support matrix and examples.
+
 ## Cache options
 
 | Option | Default | Description |
@@ -22,6 +35,7 @@ The `SocketClient` / `Socket` constructor configuration (`SocketConstructor`) is
 | `maxCacheAge` | `"15 minutes"` | Entry lifetime before expiry |
 | `clearCacheOnClose` | `false` | Clear the cache when the socket closes |
 | `disableCache` | `false` | Skip Cache API reads and writes (keep in-memory mirror) |
+| `cacheFallback` | `"none"` | Backend when Cache Storage is unavailable: `"none"` stops caching, `"memory"` opts into a non-persistent cache. Inspect `SocketCache.persistence`. |
 
 ## Data handling
 

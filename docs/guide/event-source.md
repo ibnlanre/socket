@@ -1,17 +1,19 @@
 # Server-Sent Events
 
-When you need a simple **one-way** stream rather than a bidirectional socket, `@ibnlanre/socket` ships `EventSourceClient`. It supports two transports, chosen by the request `method`:
+When you need a simple **one-way** stream rather than a bidirectional socket, `@ibnlanre/socket` ships `EventSourceClient`. It supports two transports, selected by the `transport` option rather than by the HTTP method:
 
-- **GET → native `EventSource`** — the browser's built-in streaming transport.
-- **Any other method (`POST`, `PUT`, …) → fetch-based streaming** — with a manual SSE framing parser.
+- **`"native"`** — the browser's built-in `EventSource`.
+- **`"fetch"`** — fetch-based streaming with a manual SSE framing parser. Works with any method and any request headers.
+
+`transport: "auto"` (the default) uses native only when the request and the requested behavior are fully expressible by it — GET, no custom headers, no body, no initial `Last-Event-ID` — and otherwise streams through fetch. The selected transport is available as `client.transport`. See [Runtime support](/guide/runtime#sse-transports).
 
 ```ts
 import { EventSourceClient } from "@ibnlanre/socket";
 
-// Native EventSource (GET)
+// Explicitly native
 const client = new EventSourceClient({
   url: "/events",
-  method: "GET",
+  transport: "native",
 });
 
 client.open();

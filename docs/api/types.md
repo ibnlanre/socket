@@ -15,14 +15,37 @@ SocketCloseCode, SocketCloseReason
 
 ```ts
 EventSourceClientOptions, EventSourceListener, EventSourceStatus,
+EventSourceTransport, EventSourceTransportMode, CachePersistence,
 SocketCacheOptions, SocketClientConstructor, SocketCommands, SocketConnectionEvent,
 SocketConnectionPreparation, SocketConstructor, SocketPrepareConnection,
 SocketMessageFailureAction, SocketMessageFailurePolicy, SocketFetchStatus,
 InferSocketSchema, SocketListener, UseSocketOptions, SocketParamsSerializer,
 SocketQueueOptions, SocketReconnectOptions, SocketSchema, SocketSelector,
 SocketState, SocketStatus, SocketTimeout, SocketURI, TimeUnit, Unit, UnitValue,
-UseSocketResult, SocketDiagnostic
+UseSocketResult, SocketDiagnostic, RuntimeAdapters, WebSocketConstructor
 ```
+
+## Runtime
+
+```ts
+interface RuntimeAdapters {
+  webSocket?: WebSocketConstructor;
+  eventSource?: typeof EventSource;
+  fetch?: typeof fetch;
+  caches?: CacheStorage;
+}
+
+type WebSocketConstructor = new (
+  url: string,
+  protocols?: string | string[]
+) => WebSocket;
+
+type EventSourceTransportMode = "auto" | "native" | "fetch";
+type EventSourceTransport = "native" | "fetch";
+type CachePersistence = "cache-storage" | "memory" | "none";
+```
+
+Injected adapters take precedence over ambient globals, which are resolved lazily when an operation needs them. See [Runtime support](/guide/runtime).
 
 ## Status unions
 
