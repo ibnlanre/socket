@@ -1,28 +1,80 @@
 import { isJSON } from "@/functions/is-json";
+import type { RuntimeAdapters } from "@/types/runtime";
+import type { CachePersistence } from "@/types/socket/cache-persistence";
 import type { SocketCipher } from "@/types/socket/cipher";
 import type { SocketSetStateAction } from "@/types/socket/set-state-action";
+
+/** The subset of the Cache API that `SocketCache` relies on. */
+type CacheLike = {
+  delete(request: RequestInfo | URL): Promise<boolean>;
+  keys(): Promise<readonly RequestInfo[]>;
+  match(request: RequestInfo | URL): Promise<Response | undefined>;
+  put(request: RequestInfo | URL, response: Response): Promise<void>;
+};
+
+/**
+ * Non-persistent stand-in used when `cacheFallback: "memory"` is requested and
+ * the runtime has no Cache Storage. It does not survive a reload, which is why
+ * `persistence` reports `"memory"` and not `"cache-storage"`.
+ */
+class MemoryCache implements CacheLike {
+  #entries = new Map<string, Response>();
+
+  #key = (request: RequestInfo | URL): string => {
+    if (typeof request === "string") return request;
+    if ("url" in request) return request.url;
+    return String(request);
+  };
+
+  delete = async (request: RequestInfo | URL): Promise<boolean> =>
+    this.#entries.delete(this.#key(request));
+
+  keys = async (): Promise<readonly RequestInfo[]> => [...this.#entries.keys()];
+
+  // Response bodies are single-use, so hand out a clone on every read.
+  match = async (request: RequestInfo | URL): Promise<Response | undefined> =>
+    this.#entries.get(this.#key(request))?.clone();
+
+  put = async (
+    request: RequestInfo | URL,
+    response: Response
+  ): Promise<void> => {
+    this.#entries.set(this.#key(request), response.clone());
+  };
+}
 
 type SocketCacheConstructor<State = unknown> = {
   decrypt?: SocketCipher;
   decryptData: boolean;
   disableCache: boolean;
   encrypt?: SocketCipher;
+  fallback?: "none" | "memory";
   maxCacheAge: number;
   origin: string;
+  runtime?: RuntimeAdapters;
   setStateAction?: SocketSetStateAction<State>;
 };
 
 export class SocketCache<State = unknown> {
+  /**
+   * @deprecated Use the instance `persistence` property, which reports the
+   * backend actually selected and accounts for injected runtime adapters.
+   */
   static isAvailable: boolean = "caches" in globalThis;
 
-  #cache: Cache | undefined;
+  /** The backend in use; resolved by `initialize()`. */
+  persistence: CachePersistence = "none";
+
+  #cache: CacheLike | undefined;
   #decrypt?: SocketCipher;
   #decryptData: boolean;
   #disableCache: boolean;
   #encrypt?: SocketCipher;
+  #fallback: "none" | "memory";
   #maxCacheAge: number;
   #observers: Set<(value: State) => void> = new Set();
   #origin: string;
+  #runtime?: RuntimeAdapters;
   #setStateAction?: SocketSetStateAction<State>;
   #state: State | undefined;
   #writes: Promise<void> = Promise.resolve();
@@ -32,16 +84,20 @@ export class SocketCache<State = unknown> {
     decryptData,
     disableCache,
     encrypt,
+    fallback = "none",
     maxCacheAge,
     origin,
+    runtime,
     setStateAction,
   }: SocketCacheConstructor<State>) {
     this.#decrypt = decrypt;
     this.#decryptData = decryptData;
     this.#disableCache = disableCache;
     this.#encrypt = encrypt;
+    this.#fallback = fallback;
     this.#maxCacheAge = maxCacheAge;
     this.#origin = origin;
+    this.#runtime = runtime;
     this.#setStateAction = setStateAction;
   }
 
@@ -101,9 +157,26 @@ export class SocketCache<State = unknown> {
   };
 
   initialize = async (path: string, current = () => true): Promise<void> => {
-    if (!SocketCache.isAvailable || this.#disableCache) return;
+    if (this.#disableCache) {
+      this.persistence = "none";
+      return;
+    }
 
-    this.#cache = await caches.open(this.#origin);
+    const storage =
+      this.#runtime?.caches ??
+      (typeof caches === "undefined" ? undefined : caches);
+
+    if (storage) {
+      this.#cache = await storage.open(this.#origin);
+      this.persistence = "cache-storage";
+    } else if (this.#fallback === "memory") {
+      this.#cache ??= new MemoryCache();
+      this.persistence = "memory";
+    } else {
+      this.persistence = "none";
+      return;
+    }
+
     const cachedData = await this.get(path);
 
     if (current() && isJSON(cachedData)) {

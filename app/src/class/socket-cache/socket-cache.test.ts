@@ -265,4 +265,73 @@ describe("SocketCache", () => {
       expect(mockCacheStorage.open).not.toHaveBeenCalled();
     });
   });
+
+  describe("storage backend", () => {
+    it("reports no persistence when Cache Storage is unavailable", async () => {
+      vi.stubGlobal("caches", undefined);
+      const cache = new SocketCache(defaults);
+
+      await cache.initialize("/path");
+
+      expect(cache.persistence).toBe("none");
+    });
+
+    it("uses an in-memory backend when cacheFallback is memory", async () => {
+      vi.stubGlobal("caches", undefined);
+      const cache = new SocketCache({ ...defaults, fallback: "memory" });
+
+      await cache.initialize("/path");
+      await cache.set("/path", JSON.stringify({ count: 7 }));
+
+      expect(cache.persistence).toBe("memory");
+      await expect(cache.get("/path")).resolves.toEqual({ count: 7 });
+    });
+
+    it("does not persist a memory fallback across instances", async () => {
+      vi.stubGlobal("caches", undefined);
+      const first = new SocketCache({ ...defaults, fallback: "memory" });
+      await first.initialize("/path");
+      await first.set("/path", JSON.stringify({ count: 1 }));
+
+      const second = new SocketCache({ ...defaults, fallback: "memory" });
+      await second.initialize("/path");
+
+      // Memory caching is explicitly not the same guarantee as Cache Storage.
+      expect(second.value).toBeUndefined();
+      expect(second.persistence).toBe("memory");
+    });
+
+    it("reports cache-storage when Cache Storage is available", async () => {
+      const cache = new SocketCache(defaults);
+
+      await cache.initialize("/path");
+
+      expect(cache.persistence).toBe("cache-storage");
+    });
+
+    it("prefers an injected caches adapter over the global", async () => {
+      vi.stubGlobal("caches", undefined);
+      const cache = new SocketCache({
+        ...defaults,
+        runtime: { caches: mockCacheStorage as unknown as CacheStorage },
+      });
+
+      await cache.initialize("/path");
+
+      expect(cache.persistence).toBe("cache-storage");
+      expect(mockCacheStorage.open).toHaveBeenCalledWith(defaults.origin);
+    });
+
+    it("stays at none when caching is disabled, even with a fallback", async () => {
+      const cache = new SocketCache({
+        ...defaults,
+        disableCache: true,
+        fallback: "memory",
+      });
+
+      await cache.initialize("/path");
+
+      expect(cache.persistence).toBe("none");
+    });
+  });
 });

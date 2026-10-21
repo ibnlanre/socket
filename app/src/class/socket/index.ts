@@ -167,6 +167,7 @@ export class Socket<
       maxDeduplicationEntries,
       baseURL = "",
       binaryType = "blob",
+      cacheFallback = "none",
       cacheKey,
       clearCacheOnClose = false,
       decrypt,
@@ -262,8 +263,10 @@ export class Socket<
       decryptData,
       disableCache,
       encrypt,
+      fallback: cacheFallback,
       maxCacheAge: time(maxCacheAge),
       origin,
+      runtime: this.#runtime,
       setStateAction,
     });
 

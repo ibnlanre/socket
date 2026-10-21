@@ -23,6 +23,17 @@ export type SocketCacheOptions = {
   disableCache?: boolean;
 
   /**
+   * What to do when the runtime has no Cache Storage.
+   *
+   * `"none"` stops caching. `"memory"` opts into a non-persistent cache, so
+   * the data is available for the life of the instance but does not survive a
+   * reload — inspect `SocketCache.persistence` to see which backend is live.
+   *
+   * @default "none"
+   */
+  cacheFallback?: "none" | "memory";
+
+  /**
    * The maximum age of the cache data
    *
    *

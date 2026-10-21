@@ -13,6 +13,7 @@ export type {
 } from "./types/event-source/transport";
 export type { EventSourceStatus } from "./types/event-source/status";
 export type { SocketCacheOptions } from "./types/socket/cache-options";
+export type { CachePersistence } from "./types/socket/cache-persistence";
 export type { SocketCommands } from "./types/socket/commands";
 export type { SocketConnectionEvent } from "./types/socket/connection-event";
 export type { SocketConstructor } from "./types/socket/constructor";

@@ -15,6 +15,9 @@ export interface RuntimeAdapters {
 
   /** Fetch implementation. Falls back to the ambient `fetch` global. */
   fetch?: typeof fetch;
+
+  /** Cache Storage implementation. Falls back to the ambient `caches` global. */
+  caches?: CacheStorage;
 }
 
 /**
