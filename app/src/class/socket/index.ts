@@ -67,6 +67,20 @@ export function readSocketSnapshot<G, P, Pr extends ConnectionParams>(
   );
 }
 
+/**
+ * `WebSocket#readyState` values, fixed by the WebSocket specification.
+ *
+ * Read as literals rather than through the `WebSocket` constructor so that
+ * state checks stay safe in runtimes where no `WebSocket` global exists —
+ * notably when dispatching or tearing down a socket that was never opened.
+ */
+const SocketReadyState = {
+  CONNECTING: 0,
+  OPEN: 1,
+  CLOSING: 2,
+  CLOSED: 3,
+} as const;
+
 export class Socket<
   Get = unknown,
   Post = never,
@@ -633,7 +647,7 @@ export class Socket<
   };
 
   #dispatchPayload = (payload: unknown): boolean => {
-    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    if (this.ws?.readyState !== SocketReadyState.OPEN) return false;
     if (this.ws.bufferedAmount > this.#maxBufferedAmount) return false;
     if (this.#encryptPayload && this.#encrypt) payload = this.#encrypt(payload);
     this.ws.send(JSON.stringify(payload));
@@ -679,7 +693,7 @@ export class Socket<
       const reason = SocketCloseReason[code];
       this.#cleanupEventListeners();
 
-      if (this.ws?.readyState !== WebSocket.CLOSED) {
+      if (this.ws?.readyState !== SocketReadyState.CLOSED) {
         this.ws?.close(code, reason);
       }
 
@@ -761,7 +775,8 @@ export class Socket<
     this.#unsubscribeCache?.();
     this.#unsubscribeCache = undefined;
     this.#isOpen = false;
-    if (this.ws?.readyState !== WebSocket.CLOSED) this.ws?.close(code, reason);
+    if (this.ws?.readyState !== SocketReadyState.CLOSED)
+      this.ws?.close(code, reason);
     if (this.#clearCacheOnClose) this.cache.remove(this.path);
 
     this.#cleanup();

@@ -210,3 +210,40 @@ it.each(["focus", "online"])(
     await vi.waitFor(() => expect(Transport.instances).toHaveLength(2));
   }
 );
+
+describe("runtime without a WebSocket global", () => {
+  // Regression: `WebSocket.OPEN` and `WebSocket.CLOSED` were read from the
+  // global constructor, so optional chaining on `this.ws` never protected the
+  // right-hand operand. In a runtime with no `WebSocket` global, dispatch and
+  // teardown threw even when there was no connection to act on.
+  beforeEach(() => {
+    // Remove the global outright. `vi.stubGlobal("WebSocket", undefined)` would
+    // leave the property defined, reproducing a TypeError instead of the
+    // ReferenceError that Node 18/20 raise for a genuinely absent `WebSocket`.
+    Reflect.deleteProperty(globalThis, "WebSocket");
+  });
+
+  it("closes without throwing when there is no connection", () => {
+    const socket = create();
+    expect(typeof WebSocket).toBe("undefined");
+    expect(socket.ws).toBeNull();
+    expect(() => socket.close()).not.toThrow();
+  });
+
+  it("disposes without throwing when there is no connection", () => {
+    const socket = create();
+    expect(typeof WebSocket).toBe("undefined");
+    expect(() => socket.dispose()).not.toThrow();
+  });
+
+  it("leaves a queued send pending instead of failing during dispatch", async () => {
+    const socket = create();
+    expect(typeof WebSocket).toBe("undefined");
+    expect(socket.ws).toBeNull();
+
+    // `true` means accepted into the ordered queue. With no transport there is
+    // nothing to dispatch to, so the frame must stay queued rather than surface
+    // a runtime error from the dispatch attempt.
+    await expect(socket.send({ hello: "world" })).resolves.toBe(true);
+  });
+});
