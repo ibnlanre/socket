@@ -4,6 +4,7 @@ import {
   afterAll,
   afterEach,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   it,
@@ -598,5 +599,161 @@ describe("SSE iteration lifecycle", () => {
     await waiting;
     expect(source.closed).toBe(false);
     client.dispose();
+  });
+});
+
+describe("SSE transport selection", () => {
+  function stubFetch() {
+    const fetchMock = vi.fn<typeof fetch>(
+      () => new Promise<Response>(() => {})
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  beforeEach(() => {
+    FakeEventSource.instances = [];
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("has no transport before opening", () => {
+    const client = new EventSourceClient({ url: TEST_URL });
+    expect(client.transport).toBeNull();
+  });
+
+  it("auto selects native for a plain GET when EventSource is available", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const client = new EventSourceClient({ url: TEST_URL });
+
+    client.open();
+
+    expect(client.transport).toBe("native");
+    expect(FakeEventSource.instances).toHaveLength(1);
+
+    client.close();
+    expect(client.transport).toBeNull();
+  });
+
+  it("auto selects fetch for a non-GET method", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fetchMock = stubFetch();
+    const client = new EventSourceClient({ url: TEST_URL, method: "POST" });
+
+    client.open();
+
+    expect(client.transport).toBe("fetch");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(FakeEventSource.instances).toHaveLength(0);
+
+    client.close();
+  });
+
+  it("auto selects fetch when the request carries headers", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      headers: { Authorization: "Bearer token" },
+    });
+
+    client.open();
+
+    expect(client.transport).toBe("fetch");
+    client.close();
+  });
+
+  it("auto selects fetch when an initial Last-Event-ID is requested", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      initialLastEventId: "42",
+    });
+
+    client.open();
+
+    expect(client.transport).toBe("fetch");
+    client.close();
+  });
+
+  it("auto selects fetch when EventSource is unavailable", () => {
+    const fetchMock = stubFetch();
+    const client = new EventSourceClient({ url: TEST_URL });
+
+    client.open();
+
+    expect(client.transport).toBe("fetch");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    client.close();
+  });
+
+  it("fetch mode streams a GET through fetch", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fetchMock = stubFetch();
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      transport: "fetch",
+    });
+
+    client.open();
+
+    expect(client.transport).toBe("fetch");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(FakeEventSource.instances).toHaveLength(0);
+    client.close();
+  });
+
+  it("native mode rejects a method it cannot issue", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      method: "POST",
+      transport: "native",
+    });
+
+    expect(() => client.open()).toThrow(
+      'transport "native" cannot honor method "POST"'
+    );
+    expect(client.status).toBe("idle");
+  });
+
+  it("native mode rejects custom headers", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      headers: { "X-Trace": "1" },
+      transport: "native",
+    });
+
+    expect(() => client.open()).toThrow("custom headers");
+  });
+
+  it("native mode requires an EventSource implementation", () => {
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      transport: "native",
+    });
+
+    expect(() => client.open()).toThrow("requires an EventSource global");
+  });
+
+  it("fetch mode requires a fetch implementation", () => {
+    vi.stubGlobal("fetch", undefined);
+    const client = new EventSourceClient({
+      url: TEST_URL,
+      transport: "fetch",
+    });
+
+    expect(() => client.open()).toThrow("requires a fetch global");
+  });
+
+  it("auto reports an actionable error when no transport is available", () => {
+    vi.stubGlobal("fetch", undefined);
+    const client = new EventSourceClient({ url: TEST_URL });
+
+    expect(() => client.open()).toThrow("no usable SSE transport");
   });
 });

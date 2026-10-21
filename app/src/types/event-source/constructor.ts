@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { ReconnectionPolicy } from "../reconnection-policy";
 import type { Init } from "./init";
+import type { EventSourceTransportMode } from "./transport";
 
 export interface EventSourceClientOptions<Data = unknown>
   extends Init, ReconnectionPolicy {
@@ -13,6 +14,21 @@ export interface EventSourceClientOptions<Data = unknown>
 
   /** Maximum queued native events awaiting validation. @default 1000 */
   maxPendingMessages?: number;
+
+  /**
+   * How to select the Server-Sent Events transport.
+   *
+   * Native `EventSource` can only issue GET requests and cannot set request
+   * headers, a body, an initial `Last-Event-ID`, or most `RequestInit` options.
+   * Under `"auto"` those configurations use fetch streaming instead, so the
+   * library never silently discards configuration a transport cannot honor.
+   *
+   * Named `transport` because `RequestInit.mode` already exists and remains
+   * available for fetch requests.
+   *
+   * @default "auto"
+   */
+  transport?: EventSourceTransportMode;
 
   /**
    * The base URL to use for the Server-Sent Events connection

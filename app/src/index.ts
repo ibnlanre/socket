@@ -7,6 +7,10 @@ export { SocketCloseReason } from "./constants/socket-close-reason";
 
 export type { EventSourceClientOptions } from "./types/event-source/constructor";
 export type { EventSourceListener } from "./types/event-source/listener";
+export type {
+  EventSourceTransport,
+  EventSourceTransportMode,
+} from "./types/event-source/transport";
 export type { EventSourceStatus } from "./types/event-source/status";
 export type { SocketCacheOptions } from "./types/socket/cache-options";
 export type { SocketCommands } from "./types/socket/commands";

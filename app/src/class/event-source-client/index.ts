@@ -6,8 +6,27 @@ import { toError } from "@/functions/to-error";
 import type { ConnectionParams } from "@/types/connection-params";
 import type { EventSourceClientOptions } from "@/types/event-source/constructor";
 import type { EventSourceListener } from "@/types/event-source/listener";
+import type {
+  EventSourceTransport,
+  EventSourceTransportMode,
+} from "@/types/event-source/transport";
 import type { EventSourceStatus } from "@/types/event-source/status";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+
+/**
+ * `RequestInit` fields a native `EventSource` cannot express. Supplying any of
+ * them disqualifies the native transport under `"auto"` and is an error under
+ * `"native"`, so configuration is never silently discarded.
+ */
+const NATIVE_UNSUPPORTED_INIT: readonly (keyof RequestInit)[] = [
+  "mode",
+  "redirect",
+  "referrer",
+  "referrerPolicy",
+  "integrity",
+  "keepalive",
+  "window",
+];
 
 /**
  * https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
@@ -18,6 +37,8 @@ export class EventSourceClient<
 > {
   error: Error | null = null;
   status: EventSourceStatus = "idle";
+  /** Transport used for the current connection; `null` while idle. */
+  transport: EventSourceTransport | null = null;
   #abortController: AbortController = new AbortController();
   #cache: string;
   #eventSource: EventSource | null = null;
@@ -34,6 +55,8 @@ export class EventSourceClient<
   #maxRetryDelay: number;
   #method: string;
   #minJitterValue: number;
+  #transportMode: EventSourceTransportMode;
+  #selectedTransport: EventSourceTransport | null = null;
   #retryCount: number;
   #retryBackoffStrategy: "fixed" | "exponential";
   #reconnectionTimerId: ReturnType<typeof setTimeout> | undefined;
@@ -66,6 +89,7 @@ export class EventSourceClient<
       maxRetryDelay = "1 minute",
       method = "GET",
       minJitterValue = 0.8,
+      transport: transportMode = "auto",
       retry = false,
       retryDelay = "5 seconds",
       retryCount = 3,
@@ -86,6 +110,7 @@ export class EventSourceClient<
     this.lastEventId = initialLastEventId || "";
     this.#init = init;
     this.#method = method;
+    this.#transportMode = transportMode;
     this.#retry = retry;
     this.#retryDelay = time(retryDelay);
     this.#maxJitterValue = maxJitterValue;
@@ -593,6 +618,67 @@ export class EventSourceClient<
   }
 
   /**
+   * The first configuration a native `EventSource` cannot honor, if any.
+   * @private
+   */
+  #nativeBlocker = (): string | null => {
+    if (this.#method !== "GET")
+      return `method "${this.#method}" (the EventSource API only issues GET requests)`;
+    if (this.#lastEventId)
+      return "an initial Last-Event-ID (the EventSource API only sets it on reconnects)";
+    if (this.#init.body != null) return "a request body";
+    if (this.#init.headers !== undefined) return "custom headers";
+    if (this.#init.credentials === "omit") return 'credentials: "omit"';
+    for (const key of NATIVE_UNSUPPORTED_INIT)
+      if (this.#init[key] !== undefined) return `the "${key}" request option`;
+    return null;
+  };
+
+  /**
+   * Select a transport, or fail with an actionable error.
+   *
+   * `"auto"` only picks native when the request and the requested behavior are
+   * both expressible by it; otherwise it streams through `fetch`, which honors
+   * the full configuration. Explicit modes never downgrade silently.
+   *
+   * @private
+   */
+  #resolveTransport = (): EventSourceTransport => {
+    const blocker = this.#nativeBlocker();
+    const nativeAvailable = typeof EventSource !== "undefined";
+    const fetchAvailable = typeof fetch === "function";
+
+    if (this.#transportMode === "native") {
+      if (!nativeAvailable)
+        throw new Error(
+          'EventSourceClient: transport "native" requires an EventSource global, which this runtime does not provide. Supply one or use transport "auto" or "fetch".'
+        );
+      if (blocker)
+        throw new Error(
+          `EventSourceClient: transport "native" cannot honor ${blocker}. Use transport "fetch" instead.`
+        );
+      return "native";
+    }
+
+    if (this.#transportMode === "fetch") {
+      if (!fetchAvailable)
+        throw new Error(
+          'EventSourceClient: transport "fetch" requires a fetch global, which this runtime does not provide.'
+        );
+      return "fetch";
+    }
+
+    if (nativeAvailable && !blocker) return "native";
+    if (fetchAvailable) return "fetch";
+
+    throw new Error(
+      blocker
+        ? `EventSourceClient: no usable SSE transport. Native EventSource cannot honor ${blocker}, and no fetch implementation is available.`
+        : "EventSourceClient: no usable SSE transport. This runtime provides neither EventSource nor fetch."
+    );
+  };
+
+  /**
    * Open the connection.
    */
   #start = () => {
@@ -603,7 +689,9 @@ export class EventSourceClient<
     this.eventTypeBuffer = "";
     this.status = "connecting";
     this.error = null;
-    if (this.#method === "GET") this.#createEventSource();
+    const transport = this.#selectedTransport ?? this.#resolveTransport();
+    this.transport = transport;
+    if (transport === "native") this.#createEventSource();
     else void this.#connect();
   };
 
@@ -615,6 +703,9 @@ export class EventSourceClient<
       (this.status === "open" || this.status === "connecting")
     )
       return;
+    // Resolve before mutating state so an incompatible configuration leaves the
+    // client untouched.
+    this.#selectedTransport = this.#resolveTransport();
     this.#isClosed = false;
     this.#attempt = 0;
     this.#start();
@@ -635,6 +726,8 @@ export class EventSourceClient<
     this.#abortController.abort();
     this.#eventSource?.close();
     this.#eventSource = null;
+    this.#selectedTransport = null;
+    this.transport = null;
     this.status = "idle";
   };
 
