@@ -2,6 +2,8 @@
 
 In-memory mirror + **Cache API** persistence, one cache per origin name. It backs every `Socket`'s cache-first behavior and is also exported for standalone use.
 
+Cache Storage is the default persistent backend whenever it exists; `cacheFallback` only applies when it does not. Persisted entries outlive the connection and the page, are scoped to the origin (or `cacheKey`), and are shared by every page on that origin — read [Caching → Persistence and privacy](/guide/caching#persistence-and-privacy) before storing sensitive data.
+
 ```ts
 class SocketCache<State = unknown> {
   static isAvailable: boolean; // "caches" in globalThis

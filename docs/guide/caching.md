@@ -19,6 +19,7 @@ A typical flow:
 | `maxCacheAge` | `"15 minutes"` | How long entries live before expiring |
 | `clearCacheOnClose` | `false` | Clear the cache when the socket closes |
 | `disableCache` | `false` | Skip Cache API writes (keeps in-memory mirror + notifications) |
+| `cacheFallback` | `"none"` | Only consulted when Cache Storage is unavailable: `"none"` stops caching, `"memory"` opts into a non-persistent cache |
 
 ```tsx
 new SocketClient({
@@ -38,6 +39,34 @@ Entries are stored with an `Expires` timestamp of `now + maxCacheAge` plus `Cach
 - Keys are the socket's `path` (the pathname of the resolved URL) within a cache named by the **origin** (or `cacheKey`).
 - `SocketCache.set(path, value)` stores a **JSON string** with the headers above.
 - `socket.value` and `cache.value` are the in-memory mirrors of the latest parsed message.
+
+## Persistence and privacy
+
+**Cache Storage remains the default persistent backend whenever the browser provides it.** `cacheFallback` does not switch that off — it only decides what happens when Cache Storage is missing, such as in Node or a restricted context.
+
+Persisted entries:
+
+- **Outlive the connection.** Closing the socket, unmounting every component, or navigating away does not remove them. They are read back on the next `open()` until `maxCacheAge` expires them.
+- **Outlive the page.** The browser stores them per origin, so they survive reloads.
+- **Are shared across the origin.** Every page on that origin that uses the same cache name sees the same entries. Entries are keyed by the socket path, so two sockets on one origin with the same path share one entry.
+- **Are not encrypted by default.** `Cache-Control: private` is entry metadata, not an access control or a confidentiality guarantee: it does not make the stored JSON unreadable to other scripts on the origin, and it does not remove it from disk.
+
+Cached payloads are whatever your server last sent, so **avoid caching credentials, tokens, personal data, or anything whose exposure after logout would matter** — unless you mitigate it:
+
+| Mitigation | Effect |
+| --- | --- |
+| `disableCache: true` | Never writes to Cache Storage; the in-memory mirror and notifications still work |
+| `clearCacheOnClose: true` | Deletes the entry when the socket closes |
+| `maxCacheAge` | Shortens how long an entry survives |
+| `encrypt` / `decrypt` | Transforms the payload before it is stored; the cipher stays in your code |
+
+Use `SocketCache.persistence` to confirm which backend is actually live rather than assuming:
+
+| Value | Meaning |
+| --- | --- |
+| `"cache-storage"` | Persistent; survives reloads |
+| `"memory"` | In-memory only; dies with the instance |
+| `"none"` | Nothing is stored |
 
 ## Data handling & transforms
 
