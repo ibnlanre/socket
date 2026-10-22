@@ -1,4 +1,7 @@
 /* @vitest-environment node */
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { EventSourceClient } from "@/class/event-source-client";
@@ -33,7 +36,8 @@ describe("node runtime", () => {
       expect(() => socket.close()).not.toThrow();
       expect(() => socket.dispose()).not.toThrow();
     } finally {
-      if (descriptor) Object.defineProperty(globalThis, "WebSocket", descriptor);
+      if (descriptor)
+        Object.defineProperty(globalThis, "WebSocket", descriptor);
     }
   });
 
@@ -52,6 +56,62 @@ describe("node runtime", () => {
 
     client.close();
     expect(client.transport).toBeNull();
+  });
+
+  it("consumes a real SSE stream and stops when closed", async () => {
+    let connectionClosed = false;
+
+    const server = createServer((request, response) => {
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+      });
+
+      response.write("data: first\n\n");
+      response.write("event: tick\ndata: second\nid: 7\n\n");
+      response.write("data: multi\ndata: line\n\n");
+
+      request.on("close", () => {
+        connectionClosed = true;
+      });
+    });
+
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve)
+    );
+    const { port } = server.address() as AddressInfo;
+
+    const client = new EventSourceClient<string>({
+      url: `http://127.0.0.1:${port}/events`,
+      retry: false,
+    });
+
+    const messages: string[] = [];
+    const ticks: string[] = [];
+    client.on("message", (event) => messages.push(event.data));
+    client.on("tick", (event) => ticks.push(event.data));
+
+    try {
+      client.open();
+
+      await vi.waitFor(() => expect(messages).toHaveLength(2));
+
+      // Multi-line data is joined with newlines; named events stay separate.
+      expect(messages).toEqual(["first", "multi\nline"]);
+      expect(ticks).toEqual(["second"]);
+      expect(client.lastEventId).toBe("7");
+      expect(client.transport).toBe("fetch");
+
+      client.close();
+
+      // Cancellation must reach the server, not just mark the client idle.
+      await vi.waitFor(() => expect(connectionClosed).toBe(true));
+      expect(client.status).toBe("idle");
+    } finally {
+      client.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("caches nothing by default because Cache Storage is absent", async () => {
