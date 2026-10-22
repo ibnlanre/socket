@@ -16,10 +16,7 @@ import { toError } from "@/functions/to-error";
 import { schemaValue } from "@/functions/validate-schema";
 
 import type { ConnectionParams } from "@/types/connection-params";
-import type {
-  RuntimeAdapters,
-  WebSocketConstructor,
-} from "@/types/runtime";
+import type { RuntimeAdapters, WebSocketConstructor } from "@/types/runtime";
 import type { SocketCipher } from "@/types/socket/cipher";
 import type { SocketSubscriber } from "@/types/socket/client-subscriber";
 import type { SocketCommands } from "@/types/socket/commands";

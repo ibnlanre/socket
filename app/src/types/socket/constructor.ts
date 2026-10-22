@@ -1,3 +1,4 @@
+import type { RuntimeAdapters } from "../runtime";
 import type { SocketCacheOptions } from "./cache-options";
 import type { SocketDataHandlingOptions } from "./data-handling-options";
 import type { SocketDiagnostic } from "./diagnostic";
@@ -7,7 +8,6 @@ import type { SocketProtocolIdentifier } from "./protocol-identifier";
 import type { SocketQueueOptions } from "./queue-options";
 import type { SocketReconnectOptions } from "./reconnect-options";
 import type { SocketSchema } from "./schema";
-import type { RuntimeAdapters } from "../runtime";
 
 export interface SocketConstructor<
   Get = unknown,

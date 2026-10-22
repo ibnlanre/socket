@@ -4,14 +4,14 @@ import { time } from "@/functions/time";
 import { toError } from "@/functions/to-error";
 
 import type { ConnectionParams } from "@/types/connection-params";
-import type { RuntimeAdapters } from "@/types/runtime";
 import type { EventSourceClientOptions } from "@/types/event-source/constructor";
 import type { EventSourceListener } from "@/types/event-source/listener";
+import type { EventSourceStatus } from "@/types/event-source/status";
 import type {
   EventSourceTransport,
   EventSourceTransportMode,
 } from "@/types/event-source/transport";
-import type { EventSourceStatus } from "@/types/event-source/status";
+import type { RuntimeAdapters } from "@/types/runtime";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 /**

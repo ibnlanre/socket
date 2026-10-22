@@ -1,6 +1,6 @@
+import type { WebSocketConstructor } from "@/types/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Socket, readSocketSnapshot } from ".";
-import type { WebSocketConstructor } from "@/types/runtime";
 class Transport extends EventTarget {
   static OPEN = 1;
   static CLOSED = 3;
