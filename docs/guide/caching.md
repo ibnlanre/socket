@@ -58,7 +58,13 @@ Cached payloads are whatever your server last sent, so **avoid caching credentia
 | `disableCache: true` | Never writes to Cache Storage; the in-memory mirror and notifications still work |
 | `clearCacheOnClose: true` | Deletes the entry when the socket closes |
 | `maxCacheAge` | Shortens how long an entry survives |
-| `encrypt` / `decrypt` | Transforms the payload before it is stored; the cipher stays in your code |
+| `encrypt` / `decrypt` | Transforms the payload before storage; see the caveat below |
+
+::: warning Encryption does not create a same-origin boundary
+`encrypt` and `decrypt` run inside your page. Any script that can read the cached entry can also reach the cipher and any key material bundled with it, so client-side encryption does **not** protect against malicious JavaScript running on the same origin, and it does not protect against a compromised origin.
+
+It reduces what is stored in plaintext; it is not an access control. The effective boundaries are origin isolation, server-side authorization, and key management — including where the key lives and how it is rotated. Evaluate those against your own threat model rather than treating `encrypt` as a guarantee.
+:::
 
 Use `SocketCache.persistence` to confirm which backend is actually live rather than assuming:
 
