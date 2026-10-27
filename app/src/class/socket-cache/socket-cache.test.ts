@@ -334,4 +334,104 @@ describe("SocketCache", () => {
       expect(cache.persistence).toBe("none");
     });
   });
+
+  describe("stored copy", () => {
+    // A Cache Storage that keeps its stores in maps, as a browser would.
+    const createStorage = () => {
+      const stores = new Map<string, Map<string, Response>>();
+      const storage = {
+        stores,
+        delete: vi.fn(async (name: string) => stores.delete(name)),
+        open: vi.fn(async (name: string) => {
+          const entries = stores.get(name) ?? new Map<string, Response>();
+          stores.set(name, entries);
+          return {
+            delete: async (path: string) => entries.delete(path),
+            keys: async () => [...entries.keys()],
+            match: async (path: string) => entries.get(path)?.clone(),
+            put: async (path: string, response: Response) => {
+              entries.set(path, response.clone());
+            },
+          };
+        }),
+      };
+      vi.stubGlobal("caches", storage);
+      return storage;
+    };
+
+    const entry = (body: unknown, expires: number) =>
+      new Response(JSON.stringify(body), {
+        headers: { Expires: new Date(expires).toUTCString() },
+      });
+
+    const encrypt = (data: unknown) => ({ sealed: JSON.stringify(data) });
+    const decrypt = (data: unknown) =>
+      JSON.parse((data as { sealed: string }).sealed);
+
+    it("holds the readable state and stores the encrypted one", async () => {
+      const storage = createStorage();
+      const cache = new SocketCache<{ count: number }>({
+        ...defaults,
+        decryptData: false,
+        decrypt,
+        encrypt,
+        setStateAction: (next, current) => ({
+          count: (current?.count ?? 0) + next.count,
+        }),
+      });
+      await cache.initialize("/items");
+
+      await cache.set("/items", JSON.stringify({ count: 1 }));
+      await cache.set("/items", JSON.stringify({ count: 2 }));
+
+      const stored = storage.stores.get(defaults.origin)!.get("/items")!;
+      expect(cache.value).toEqual({ count: 3 });
+      expect(stored.headers.get("X-Socket-Cache-Encoding")).toBe("cipher");
+      expect(await stored.clone().json()).toEqual(encrypt({ count: 3 }));
+      await expect(cache.get("/items")).resolves.toEqual({ count: 3 });
+    });
+
+    it("encrypts the stored copy without a reducer too", async () => {
+      const storage = createStorage();
+      const cache = new SocketCache({
+        ...defaults,
+        decryptData: false,
+        decrypt,
+        encrypt,
+      });
+      await cache.initialize("/items");
+
+      await cache.set("/items", JSON.stringify({ secret: 1 }));
+
+      const stored = storage.stores.get(defaults.origin)!.get("/items")!;
+      expect(cache.value).toEqual({ secret: 1 });
+      expect(await stored.clone().json()).toEqual(encrypt({ secret: 1 }));
+    });
+
+    it("reads a reduced state back without decrypting it", async () => {
+      createStorage();
+      const cache = new SocketCache<{ count: number }>({
+        ...defaults,
+        decrypt,
+        setStateAction: (next) => next,
+      });
+      await cache.initialize("/items");
+
+      await cache.set("/items", JSON.stringify(encrypt({ count: 4 })));
+
+      expect(cache.value).toEqual({ count: 4 });
+      await expect(cache.get("/items")).resolves.toEqual({ count: 4 });
+    });
+
+    it("reads an entry stored before the header as a message", async () => {
+      const storage = createStorage();
+      const store = await storage.open(defaults.origin);
+      await store.put("/items", entry(encrypt({ old: true }), Date.now() + 1000));
+      const cache = new SocketCache({ ...defaults, decrypt });
+
+      await cache.initialize("/items");
+
+      expect(cache.value).toEqual({ old: true });
+    });
+  });
 });

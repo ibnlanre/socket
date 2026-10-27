@@ -43,6 +43,17 @@ class MemoryCache implements CacheLike {
   };
 }
 
+/**
+ * How a stored entry was written, so a read knows whether to decrypt it.
+ *
+ * - `"wire"` — the message as received; read through `decrypt` like one.
+ * - `"cipher"` — the state passed through `encrypt`; read through `decrypt`.
+ * - `"plain"` — the reduced state; read as is.
+ */
+type CacheEncoding = "cipher" | "plain" | "wire";
+
+const CacheEncodingHeader = "X-Socket-Cache-Encoding";
+
 type SocketCacheConstructor<State = unknown> = {
   decrypt?: SocketCipher;
   decryptData: boolean;
@@ -109,6 +120,25 @@ export class SocketCache<State = unknown> {
     }
   };
 
+  #decode = (data: State, encoding: string | null): State | undefined => {
+    switch (encoding) {
+      case "plain":
+        return data;
+      case "cipher":
+        // Unreadable without the counterpart to `encrypt`.
+        return this.#decrypt ? (this.#decrypt(data) as State) : undefined;
+      default:
+        // A message as received, including entries stored before the header.
+        return this.decrypt(data) as State;
+    }
+  };
+
+  #encode = (message: string, state: State): [string, CacheEncoding] => {
+    if (this.#encrypt) return [JSON.stringify(this.#encrypt(state)), "cipher"];
+    if (this.#setStateAction) return [JSON.stringify(state), "plain"];
+    return [message, "wire"];
+  };
+
   clear = async (): Promise<void> => {
     if (!this.#cache) return;
 
@@ -139,12 +169,7 @@ export class SocketCache<State = unknown> {
       }
 
       const data = await response.json();
-
-      if (this.#decryptData && this.#decrypt) {
-        return this.#decrypt(data) as State;
-      }
-
-      return data;
+      return this.#decode(data, response.headers.get(CacheEncodingHeader));
     }
   };
 
@@ -208,12 +233,6 @@ export class SocketCache<State = unknown> {
 
     if (this.#setStateAction) {
       data = this.#setStateAction(data, this.#state);
-
-      if (this.#encrypt) {
-        data = this.#encrypt(data) as State;
-      }
-
-      value = JSON.stringify(data);
     }
 
     this.#state = data;
@@ -222,16 +241,18 @@ export class SocketCache<State = unknown> {
     if (this.#disableCache) return;
     if (!this.#cache) return;
 
+    const [stored, encoding] = this.#encode(value, data);
     const timestamp = new Date(Date.now() + this.#maxCacheAge);
-    const size = new TextEncoder().encode(value).length;
+    const size = new TextEncoder().encode(stored).length;
     const headers = new Headers();
 
     headers.set("Cache-Control", "private");
     headers.set("Content-Type", "application/json");
     headers.set("Expires", timestamp.toUTCString());
     headers.set("Content-Length", size.toString());
+    headers.set(CacheEncodingHeader, encoding);
 
-    const response = new Response(value, {
+    const response = new Response(stored, {
       headers,
     });
 
