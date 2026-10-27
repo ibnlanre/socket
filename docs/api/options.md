@@ -34,7 +34,7 @@ See [Runtime support](/guide/runtime) for the support matrix and examples.
 | `cacheKey` | origin of the URL | Cache name to use |
 | `maxCacheAge` | `"15 minutes"` | Entry lifetime before expiry |
 | `clearCacheOnClose` | `false` | Clear the cache when the socket closes |
-| `disableCache` | `false` | Skip Cache API reads and writes (keep in-memory mirror) |
+| `disableCache` | `false` | Turn off storing messages in Cache Storage (values are still held in memory) |
 | `cacheFallback` | `"none"` | Backend when Cache Storage is unavailable: `"none"` stops caching, `"memory"` opts into a non-persistent cache. Inspect `SocketCache.persistence`. |
 
 ## Data handling
@@ -44,7 +44,7 @@ See [Runtime support](/guide/runtime) for the support matrix and examples.
 | `deduplicationWindow` | `0` (disabled) | Collapse identical outbound payloads within this window |
 | `placeholderData` | `undefined` | Value surfaced before the first real message |
 | `setStateAction` | identity | `(nextState, currentState?) => State` reducer for stored state |
-| `encrypt` / `decrypt` | `undefined` | `SocketCipher = (data) => unknown` applied on write / read |
+| `encrypt` / `decrypt` | `undefined` | `SocketCipher = (data) => unknown`. `encrypt` applies to the stored copy and outbound payloads; `decrypt` to incoming messages and stored copies |
 | `encryptPayload` | `true` | Encrypt the serialized payload on write |
 | `decryptData` | `true` | Decrypt data on read |
 | `messageFailurePolicy` | see below | Per-stage action for message processing failures |

@@ -61,6 +61,8 @@ The result contains read-only state, selected `data`, and `send(payload, { signa
 
 Connection controls and raw listeners belong to the imperative socket returned by `get`. The hook observes all exposed state, so metadata changes can render the component even when selected data is equal.
 
+`initialData` is data the caller already has, such as a snapshot fetched on the server. It is the value during server rendering and hydration, and seeds the socket when it resolves, so a stored copy never replaces it. It is real data: `isPending` and `isPlaceholderData` are `false`. See [Caching → initialData](/guide/caching#data-from-the-server-initialdata).
+
 ## `evict(params?, options?)`
 
 Disposes a matching socket and removes it from the pool. Resolves `false` if none exists. Uses the same parameter validation and URL identity as `get`.
@@ -79,6 +81,16 @@ Disposes all pooled sockets and invalidates pending resolutions. Returns the num
 
 ```ts
 clear(): number;
+```
+
+## `clearCache()`
+
+Deletes the client's store, as on sign-out. The store is named by `cacheKey`, or by the origin when there is none, and is shared by every client on that name. Held values and open connections are untouched; later messages are stored again. Runs whether or not `disableCache` is set.
+
+```ts
+clearCache(): Promise<void>;
+
+await client.clearCache();
 ```
 
 ## `dispose()`

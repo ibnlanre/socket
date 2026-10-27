@@ -22,6 +22,14 @@ Opens the connection. No-op when already open/opening. Loads cached data **befor
 open(): void;
 ```
 
+### `seed(value)`
+
+Holds `value` until the socket has its own, such as a snapshot the server rendered with. A stored copy read on `open()` never replaces it, and `setStateAction` applies the first message on top of it. Ignored once the socket holds a value other than `placeholderData`. `useSocket`'s `initialData` calls it.
+
+```ts
+seed(value: Get): void;
+```
+
 ### `close()`
 
 Disconnects the transport: sends a normal close (`1000`), clears caches if `clearCacheOnClose`, removes window listeners, and nulls the socket. **Subscriptions and event listeners are preserved**, so a later `open()` reconnects the same consumers. To permanently release an instance, use `dispose()`.

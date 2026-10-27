@@ -11,6 +11,8 @@ A typical flow:
 3. Component A unmounts (last subscriber leaves). After `idleConnectionTimeout` the socket closes — but the value stays cached.
 4. Component B mounts `useSocket` for the same URL. Before connecting, `open()` hydrates from the cache and renders the cached price immediately, with `status: "stale"` (`isStaleData: true`), until the first live message flips it back to `"success"`.
 
+The stored copy only fills an empty socket. A value the socket already holds, from an earlier connection or from `initialData`, is at least as fresh, so the stored copy never replaces it.
+
 ## Configuration
 
 | Option | Default | Description |
@@ -34,10 +36,20 @@ new SocketClient({
 
 Entries are stored with an `Expires` timestamp of `now + maxCacheAge` plus `Cache-Control: private` and `Content-Type: application/json`. An entry whose `Expires` has passed is **deleted on read** and treated as a cache miss — you'll see `"loading"` again, not stale data.
 
+An entry is otherwise read only by its own socket, so a `SocketClient` also deletes its store's expired entries when it creates its first socket. Entries for params the page no longer uses do not pile up.
+
 ## What's cached and where
 
 - Keys are the socket's `path` (the pathname of the resolved URL) within a cache named by the **origin** (or `cacheKey`).
-- `SocketCache.set(path, value)` stores a **JSON string** with the headers above.
+- `SocketCache.set(path, value)` stores a **JSON string** with the headers above. Which string depends on the options:
+
+| Options | Stored | Read back |
+| --- | --- | --- |
+| `encrypt` | `encrypt(state)` | through `decrypt` |
+| `setStateAction`, no `encrypt` | the reduced state, as is | as is |
+| neither | the message as received | through `decrypt` when `decryptData` is on |
+
+`socket.value` is always the readable state: `encrypt` only ever applies to the stored copy.
 - `socket.value` and `cache.value` are the in-memory mirrors of the latest parsed message.
 
 ## Persistence and privacy
@@ -56,6 +68,7 @@ Cached payloads are whatever your server last sent, so **avoid caching credentia
 | Mitigation | Effect |
 | --- | --- |
 | `disableCache: true` | Never writes to Cache Storage; the in-memory mirror and notifications still work |
+| `client.clearCache()` | Deletes the client's store, as on sign-out; see below |
 | `clearCacheOnClose: true` | Deletes the entry when the socket closes |
 | `maxCacheAge` | Shortens how long an entry survives |
 | `encrypt` / `decrypt` | Transforms the payload before storage; see the caveat below |
@@ -65,6 +78,17 @@ Cached payloads are whatever your server last sent, so **avoid caching credentia
 
 It reduces what is stored in plaintext; it is not an access control. The effective boundaries are origin isolation, server-side authorization, and key management — including where the key lives and how it is rotated. Evaluate those against your own threat model rather than treating `encrypt` as a guarantee.
 :::
+
+### Clearing on sign-out
+
+`SocketClient#clearCache()` deletes the client's store. A store is named by `cacheKey`, or by the origin when there is none, and every client on that name shares it, so clearing one client clears them all. Open connections carry on and store again from their next message. It runs whether or not `disableCache` is set, so entries stored before caching was turned off go too.
+
+```ts
+async function signOut() {
+  await Promise.all([prices.clearCache(), positions.clearCache()]);
+  // …end the session
+}
+```
 
 Use `SocketCache.persistence` to confirm which backend is actually live rather than assuming:
 
@@ -80,11 +104,25 @@ Related options for fine-grained control of stored values:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `placeholderData` | `undefined` | Value to surface before any real message (`isPlaceholderData: true`) |
+| `placeholderData` | `undefined` | Value to surface before any real message (`isPlaceholderData: true`, `isPending: true`) |
 | `setStateAction` | identity | Reducer `(nextState, currentState?) => State` that computes the stored state |
-| `encrypt` / `decrypt` | `undefined` | `SocketCipher = (data) => unknown` applied on write / read |
+| `encrypt` / `decrypt` | `undefined` | `SocketCipher = (data) => unknown`. `encrypt` applies to the stored copy and outbound payloads; `decrypt` to incoming messages and stored copies. Supply both to store encrypted |
 | `encryptPayload` | `true` | Encrypt the serialized payload on write |
 | `decryptData` | `true` | Decrypt data on read via `get`/`set` |
+
+## Data from the server: `initialData`
+
+A server render has no Cache Storage, so a page rendered there starts empty. When the server can fetch a snapshot of the stream, pass it as `initialData`:
+
+```tsx
+function Prices({ snapshot }: { snapshot: Prices }) {
+  const { data } = prices.useSocket({ initialData: snapshot });
+  // data is the snapshot on the server and through hydration,
+  // then live messages as they arrive.
+}
+```
+
+It is the hook's value during server rendering and hydration, and seeds the socket when it resolves: a stored copy never replaces it, and `setStateAction` applies the first message on top of it. Unlike `placeholderData` it is real data, so `isPending` and `isPlaceholderData` are `false`. It is read once, when the subscription starts.
 
 ## Standalone use
 

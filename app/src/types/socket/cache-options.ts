@@ -16,7 +16,7 @@ export type SocketCacheOptions = {
   clearCacheOnClose?: boolean;
 
   /**
-   * Whether to cache the data or not
+   * Stop storing messages in Cache Storage. Values are still held in memory.
    *
    * @default false
    */

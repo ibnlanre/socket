@@ -29,13 +29,15 @@ get(path: string): Promise<State | undefined>;
 
 ### `set(path, value)`
 
-Stores a JSON string under `path` with `Expires = now + maxCacheAge` and `Cache-Control: private`, `Content-Type: application/json`, `Content-Length`. With `disableCache`, writes to the Cache API are skipped but the in-memory mirror and notifications still update.
+Stores a JSON string under `path` with `Expires = now + maxCacheAge` and `Cache-Control: private`, `Content-Type: application/json`, `Content-Length`, and `X-Socket-Cache-Encoding` (`wire`, `cipher` or `plain`) so a read knows whether to decrypt. The held state is always readable; `encrypt` applies to the stored copy only. With `disableCache`, writes to the Cache API are skipped but the in-memory mirror and notifications still update.
 
 ```ts
 set(path: string, value: string): Promise<void>;
 ```
 
 ### `has(path)` / `remove(path)` / `clear()`
+
+`clear()` deletes the whole store (by its name, `cacheKey` or the origin), not just this cache's path. The held state stays, and a later `set` creates the store again.
 
 ```ts
 has(path: string): Promise<boolean>;
@@ -45,15 +47,23 @@ clear(): Promise<void>;
 
 ### `subscribe(observer)`
 
-Registers a state observer (add-only — there is no unsubscribe). `Socket` wires its state observer here so cached writes flow into `socket.value`/`status`.
+Registers a state observer and returns its unsubscribe. `Socket` wires its state observer here so cached writes flow into `socket.value`/`status`.
 
 ```ts
-subscribe(observer: (state: State) => void): void;
+subscribe(observer: (state: State) => void): () => void;
+```
+
+### `seed(value)`
+
+Holds `value` when nothing is held yet, and returns whether it did. Seeded state is not stored, and `initialize` does not replace it.
+
+```ts
+seed(value: State): boolean;
 ```
 
 ### `initialize(path)`
 
-Selects the storage backend and hydrates the in-memory state from the stored entry for `path`:
+Selects the storage backend and hydrates the in-memory state from the stored entry for `path`, unless state is already held.
 
 - Cache Storage (ambient, or injected as `runtime.caches`) → `persistence: "cache-storage"`.
 - Otherwise `cacheFallback: "none"` (the default) → no caching, `persistence: "none"`.

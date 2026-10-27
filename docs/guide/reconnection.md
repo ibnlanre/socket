@@ -26,6 +26,10 @@ jitterFactor = minJitterValue + random() * (maxJitterValue - minJitterValue)
 backoff      = delay * jitterFactor
 ```
 
+### When the count resets
+
+`failureCount` returns to `0` once a connection proves healthy: when it delivers its first message, or when it has stayed open for `maxRetryDelay`. Opening is not enough. A server that accepts the handshake and then drops the connection keeps counting failures, so the backoff grows and `retryCount` still ends the attempts.
+
 ## Retry decision
 
 A reconnect is scheduled only when **all** of these hold:
