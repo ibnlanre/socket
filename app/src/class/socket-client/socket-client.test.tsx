@@ -393,6 +393,8 @@ describe("SocketClient", () => {
         })
       );
       expect(result.current.data).toBe("Waiting for live update");
+      expect(result.current.isPlaceholderData).toBe(true);
+      expect(result.current.isPending).toBe(true);
       placeholderClient.clear();
     });
     it("should expose a live state snapshot once connected", async () => {

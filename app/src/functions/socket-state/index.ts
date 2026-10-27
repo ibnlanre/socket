@@ -23,7 +23,8 @@ export function socketState<Get>(
     isError: error !== null,
     isIdle: !enabled,
     isLoading: enabled && !error,
-    isPending: value === undefined,
+    // Placeholder data is still pending, as a socket reports it.
+    isPending: true,
     isPlaceholderData: value !== undefined,
     isRefetchError: false,
     isRefetching: false,
