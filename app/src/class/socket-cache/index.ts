@@ -1,3 +1,4 @@
+import { getCacheStorage } from "@/functions/get-cache-storage";
 import { isJSON } from "@/functions/is-json";
 import type { RuntimeAdapters } from "@/types/runtime";
 import type { CachePersistence } from "@/types/socket/cache-persistence";
@@ -76,18 +77,19 @@ export class SocketCache<State = unknown> {
   /** The backend in use; resolved by `initialize()`. */
   persistence: CachePersistence = "none";
 
-  #cache: CacheLike | undefined;
   #decrypt?: SocketCipher;
   #decryptData: boolean;
   #disableCache: boolean;
   #encrypt?: SocketCipher;
   #fallback: "none" | "memory";
   #maxCacheAge: number;
+  #memory: MemoryCache | undefined;
   #observers: Set<(value: State) => void> = new Set();
   #origin: string;
   #runtime?: RuntimeAdapters;
   #setStateAction?: SocketSetStateAction<State>;
   #state: State | undefined;
+  #storage: CacheStorage | undefined;
   #writes: Promise<void> = Promise.resolve();
 
   constructor({
@@ -139,12 +141,16 @@ export class SocketCache<State = unknown> {
     return [message, "wire"];
   };
 
-  clear = async (): Promise<void> => {
-    if (!this.#cache) return;
+  // Opened by name each time, so a deleted store is never written to through
+  // a handle held from before.
+  #open = async (): Promise<CacheLike | undefined> =>
+    this.#storage ? this.#storage.open(this.#origin) : this.#memory;
 
+  /** Deletes the store, every path in it; the held state stays. */
+  clear = async (): Promise<void> => {
     await this.#writes;
-    const keys = await this.#cache.keys();
-    await Promise.all(keys.map((request) => this.#cache!.delete(request)));
+    if (this.#storage) await this.#storage.delete(this.#origin);
+    else if (this.#memory) this.#memory = new MemoryCache();
   };
 
   decrypt = (data: State) => {
@@ -155,16 +161,17 @@ export class SocketCache<State = unknown> {
   };
 
   get = async (path: string): Promise<State | undefined> => {
-    if (!this.#cache) return;
+    const cache = await this.#open();
+    if (!cache) return;
 
     await this.#writes;
-    const response = await this.#cache.match(path);
+    const response = await cache.match(path);
 
     if (response) {
       const timestamp = response.headers.get("Expires") || 0;
 
       if (new Date(timestamp).getTime() < Date.now()) {
-        await this.#cache.delete(path);
+        await cache.delete(path);
         return;
       }
 
@@ -174,10 +181,11 @@ export class SocketCache<State = unknown> {
   };
 
   has = async (path: string): Promise<boolean> => {
-    if (!this.#cache) return false;
+    const cache = await this.#open();
+    if (!cache) return false;
 
     await this.#writes;
-    const response = await this.#cache.match(path);
+    const response = await cache.match(path);
     return response !== undefined;
   };
 
@@ -187,15 +195,13 @@ export class SocketCache<State = unknown> {
       return;
     }
 
-    const storage =
-      this.#runtime?.caches ??
-      (typeof caches === "undefined" ? undefined : caches);
+    const storage = getCacheStorage(this.#runtime);
 
     if (storage) {
-      this.#cache = await storage.open(this.#origin);
+      this.#storage = storage;
       this.persistence = "cache-storage";
     } else if (this.#fallback === "memory") {
-      this.#cache ??= new MemoryCache();
+      this.#memory ??= new MemoryCache();
       this.persistence = "memory";
     } else {
       this.persistence = "none";
@@ -218,10 +224,11 @@ export class SocketCache<State = unknown> {
   };
 
   remove = async (path: string): Promise<boolean> => {
-    if (!this.#cache) return false;
+    const cache = await this.#open();
+    if (!cache) return false;
 
     await this.#writes;
-    return await this.#cache.delete(path);
+    return await cache.delete(path);
   };
 
   set = async (path: string, value: string): Promise<void> => {
@@ -239,7 +246,7 @@ export class SocketCache<State = unknown> {
     this.#notifyObservers();
 
     if (this.#disableCache) return;
-    if (!this.#cache) return;
+    if (!this.#storage && !this.#memory) return;
 
     const [stored, encoding] = this.#encode(value, data);
     const timestamp = new Date(Date.now() + this.#maxCacheAge);
@@ -256,8 +263,10 @@ export class SocketCache<State = unknown> {
       headers,
     });
 
-    const cache = this.#cache;
-    const write = this.#writes.then(() => cache.put(path, response));
+    const write = this.#writes.then(async () => {
+      const cache = await this.#open();
+      await cache?.put(path, response);
+    });
     this.#writes = write.catch(() => {});
     await write;
   };

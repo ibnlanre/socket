@@ -423,6 +423,21 @@ describe("SocketCache", () => {
       await expect(cache.get("/items")).resolves.toEqual({ count: 4 });
     });
 
+    it("deletes the named store on clear, and stores again after", async () => {
+      const storage = createStorage();
+      const cache = new SocketCache(defaults);
+      await cache.initialize("/items");
+      await cache.set("/items", JSON.stringify({ count: 1 }));
+
+      await cache.clear();
+
+      expect(storage.stores.has(defaults.origin)).toBe(false);
+      expect(cache.value).toEqual({ count: 1 });
+
+      await cache.set("/items", JSON.stringify({ count: 2 }));
+      await expect(cache.get("/items")).resolves.toEqual({ count: 2 });
+    });
+
     it("reads an entry stored before the header as a message", async () => {
       const storage = createStorage();
       const store = await storage.open(defaults.origin);
