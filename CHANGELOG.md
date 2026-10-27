@@ -2,6 +2,33 @@
 
 All notable changes to `@ibnlanre/socket` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-27
+
+Reconnection and cache fixes, data from the server, and clearing stored data. No export was removed or renamed; the behavior changes below are fixes, listed so nothing that relied on the old behavior is caught out.
+
+### Added
+
+- `initialData` on `useSocket`: data the caller already has, such as a snapshot fetched on the server. It is the hook's value during server rendering and hydration, and seeds the socket when it resolves, so a stored copy never replaces it. Unlike `placeholderData` it is real data (`isPending: false`).
+- `SocketClient#clearCache()`: deletes the client's store (named by `cacheKey` or the origin), as on sign-out, whether or not `disableCache` is set.
+- `Socket#seed(value)` and `SocketCache#seed(value)`, which `initialData` builds on.
+- Stored entries carry an `X-Socket-Cache-Encoding` header (`wire`, `cipher` or `plain`) so a read knows whether to decrypt.
+
+### Changed
+
+- A stored copy fills only an empty socket. State already held, from an earlier connection or `initialData`, is no longer replaced by the stored copy when a socket reopens.
+- A `SocketClient` deletes its store's expired entries when it creates its first socket. Before, an entry expired only when its own path was read again, so stores collected every set of params they had seen. An `Expires` that is not a date now counts as expired; such an entry was kept forever.
+- `SocketCache#clear()` deletes the store rather than its entries one by one.
+- Cache Storage is opened by name for each operation rather than held open, so deleting a store (`clear()`, `clearCache()` or `caches.delete()`) never leaves a live socket writing into a store nobody can read.
+- With `encrypt` set, the stored copy is `encrypt(state)` whether or not `setStateAction` is set. Before, `encrypt` applied only with a reducer.
+- Before a socket resolves, `useSocket` reports constructor `placeholderData` as `isPending: true`, as the socket itself does. It reported `false`.
+
+### Fixed
+
+- The failure count reset when a connection opened, so a server that accepts the handshake and then drops the connection was retried at the first backoff step forever, and `retryCount` never ended it. The count now resets once a connection delivers a message or stays open for `maxRetryDelay`.
+- With `setStateAction` and `encrypt` both set, the held state was the encrypted value: observers saw ciphertext, and the next message was reduced onto it. The held state is now always readable; `encrypt` applies to the stored copy only.
+- With `setStateAction` and `decrypt` but no `encrypt`, the reduced state was stored as plain JSON and then passed through `decrypt` on read. It is now read as is.
+- `disableCache`'s description read as the opposite of what it does.
+
 ## [0.2.0] - 2026-10-22
 
 Runtime portability. Additive: no export was removed or renamed, and every new option is optional.

@@ -1,5 +1,14 @@
 # Prelaunch API changes
 
+## 0.3.0 — reconnection and cache fixes
+
+0.3.0 adds `initialData` on `useSocket` and `clearCache()` on `SocketClient`, and fixes reconnection and the cache. No export was removed or renamed. Check these if you relied on the old behavior:
+
+- **`failureCount` no longer resets when a connection opens**, only once it delivers a message or stays open for `maxRetryDelay`. With a finite `retryCount`, a server that keeps accepting and dropping connections is now given up on, as `retryCount` intends.
+- **A stored copy no longer replaces a held value** when a socket reopens.
+- **`encrypt` now applies to the stored copy without `setStateAction` too.** Supply `decrypt` as its counterpart, or stored entries cannot be read back.
+- **`useSocket` reports `placeholderData` as `isPending: true`** before the socket resolves, as the socket itself does.
+
 ## 0.2.0 — runtime portability
 
 0.2.0 is additive: no export was removed or renamed, and the new options are optional. One behavior changed — how `EventSourceClient` picks its transport — but requests that worked before keep working without a code change.
