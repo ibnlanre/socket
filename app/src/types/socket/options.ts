@@ -14,6 +14,15 @@ export type UseSocketOptions<Get = unknown, State = Get, Params = never> = {
   enabled?: boolean;
 
   /**
+   * Data the caller already has, such as a snapshot fetched on the server.
+   *
+   * @description The value while server rendering and until the socket has
+   * its own; a stored copy does not replace it. Unlike `placeholderData`, it
+   * is real data. Read once, when the subscription starts.
+   */
+  initialData?: Get;
+
+  /**
    * A function to select a part of the state returned by the hook.
    *
    * @description By default, the entire state is returned

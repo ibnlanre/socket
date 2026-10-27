@@ -438,6 +438,31 @@ describe("SocketCache", () => {
       await expect(cache.get("/items")).resolves.toEqual({ count: 2 });
     });
 
+    it("keeps a seeded value over an older stored copy", async () => {
+      const storage = createStorage();
+      const store = await storage.open(defaults.origin);
+      await store.put("/items", entry({ from: "store" }, Date.now() + 1000));
+      const cache = new SocketCache(defaults);
+
+      expect(cache.seed({ from: "server" })).toBe(true);
+      expect(cache.seed({ from: "elsewhere" })).toBe(false);
+      await cache.initialize("/items");
+
+      expect(cache.value).toEqual({ from: "server" });
+    });
+
+    it("keeps a received value when it initializes again", async () => {
+      createStorage();
+      const cache = new SocketCache(defaults);
+      await cache.initialize("/items");
+      await cache.set("/items", JSON.stringify({ count: 1 }));
+      await cache.set("/items", JSON.stringify({ count: 2 }));
+
+      await cache.initialize("/items");
+
+      expect(cache.value).toEqual({ count: 2 });
+    });
+
     it("reads an entry stored before the header as a message", async () => {
       const storage = createStorage();
       const store = await storage.open(defaults.origin);

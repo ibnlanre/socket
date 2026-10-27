@@ -203,6 +203,40 @@ describe("SocketClient", () => {
       expect(storage.delete).toHaveBeenLastCalledWith("prices");
     });
   });
+  describe("initialData", () => {
+    const silent = ws.link("wss://test.example.com/ws/silent");
+    const silentConfig = { ...mockConfig, url: "/ws/silent" };
+    const initialData = { message: "From the server", timestamp: 1 };
+
+    beforeEach(() => {
+      // Accepts connections and never sends, so only initialData can show.
+      server.use(silent.addEventListener("connection", () => {}));
+    });
+
+    it("is real data before the socket resolves", () => {
+      const silentClient = new SocketClient<TestData>(silentConfig);
+      const { result } = renderHook(() =>
+        silentClient.useSocket({ initialData })
+      );
+
+      expect(result.current.data).toEqual(initialData);
+      expect(result.current.isPending).toBe(false);
+      expect(result.current.isPlaceholderData).toBe(false);
+      silentClient.clear();
+    });
+
+    it("seeds the socket, and stays until a message arrives", async () => {
+      const silentClient = new SocketClient<TestData>(silentConfig);
+      const { result } = renderHook(() =>
+        silentClient.useSocket({ initialData })
+      );
+
+      await waitFor(() => expect(result.current.isConnected).toBe(true));
+      expect(result.current.data).toEqual(initialData);
+      expect((await silentClient.get()).value).toEqual(initialData);
+      silentClient.clear();
+    });
+  });
   describe("expired entries", () => {
     it("are deleted from the store once, on the first socket", async () => {
       const at = (offset: number) =>

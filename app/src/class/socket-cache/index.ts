@@ -209,7 +209,8 @@ export class SocketCache<State = unknown> {
 
     const cachedData = await this.get(path);
 
-    if (current() && isJSON(cachedData)) {
+    // State already held, seeded or received, is at least as fresh.
+    if (current() && this.#state === undefined && isJSON(cachedData)) {
       this.#state = cachedData;
       this.#notifyObservers();
     }
@@ -228,6 +229,14 @@ export class SocketCache<State = unknown> {
 
     await this.#writes;
     return await cache.delete(path);
+  };
+
+  /** Hold `value` if nothing is held yet, without storing it. */
+  seed = (value: State): boolean => {
+    if (this.#state !== undefined) return false;
+    this.#state = value;
+    this.#notifyObservers();
+    return true;
   };
 
   set = async (path: string, value: string): Promise<void> => {

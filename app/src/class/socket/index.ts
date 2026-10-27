@@ -861,6 +861,16 @@ export class Socket<
     };
   };
 
+  /**
+   * Hold `value` until the socket has its own, as `useSocket`'s `initialData`
+   * does. Ignored once it holds a value other than `placeholderData`.
+   */
+  seed = (value: Get) => {
+    this.#assertActive();
+    if (this.value !== undefined && !this.isPlaceholderData) return;
+    if (this.cache.seed(value)) this.#setValue(value);
+  };
+
   open = () => {
     this.#assertActive();
     if (this.ws || this.#isOpen) return;

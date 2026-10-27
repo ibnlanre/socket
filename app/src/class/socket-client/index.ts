@@ -174,6 +174,7 @@ export class SocketClient<
   useSocket = <State = Get | undefined>({
     params = {} as ParamsInput,
     enabled = true,
+    initialData,
     select = (value) => value as State,
   }: UseSocketOptions<Get, State, ParamsInput> = {}): UseSocketResult<
     Get,
@@ -206,8 +207,11 @@ export class SocketClient<
       subscription.current = resolution;
       resolution.promise.then(
         (socket) => {
-          if (!controller.signal.aborted)
-            setResult({ resolution, socket, error: null });
+          if (controller.signal.aborted) return;
+          // Before the first render that reads the socket, so the initial
+          // data never gives way to an empty socket.
+          if (initialData !== undefined) socket.seed(initialData);
+          setResult({ resolution, socket, error: null });
         },
         (error) => {
           if (!controller.signal.aborted)
@@ -223,14 +227,16 @@ export class SocketClient<
     const current = result?.resolution === subscription.current ? result : null;
     const socket = current?.socket;
     const error = current?.error ?? null;
+    // initialData is read when the subscription starts, not on every render.
     const fallback = useMemo(
       () =>
-        socketState(
+        socketState({
+          binaryType: this.#configuration.binaryType,
           enabled,
-          this.#configuration.placeholderData,
           error,
-          this.#configuration.binaryType
-        ),
+          initialData,
+          placeholderData: this.#configuration.placeholderData,
+        }),
       [this, enabled, error]
     );
     const subscribe = useCallback(

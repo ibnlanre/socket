@@ -1,12 +1,19 @@
 import type { SocketState } from "@/types/socket/state";
 
 /** State for a subscription that has not resolved a managed socket yet. */
-export function socketState<Get>(
-  enabled: boolean,
-  value?: Get,
-  error: Error | null = null,
-  binaryType: BinaryType = "blob"
-): SocketState<Get> {
+export function socketState<Get>({
+  binaryType = "blob",
+  enabled,
+  error = null,
+  initialData,
+  placeholderData,
+}: {
+  binaryType?: BinaryType;
+  enabled: boolean;
+  error?: Error | null;
+  initialData?: Get;
+  placeholderData?: Get;
+}): SocketState<Get> {
   return Object.freeze({
     binaryType,
     dataUpdatedAt: 0,
@@ -24,12 +31,13 @@ export function socketState<Get>(
     isIdle: !enabled,
     isLoading: enabled && !error,
     // Placeholder data is still pending, as a socket reports it.
-    isPending: true,
-    isPlaceholderData: value !== undefined,
+    isPending: initialData === undefined,
+    isPlaceholderData:
+      initialData === undefined && placeholderData !== undefined,
     isRefetchError: false,
     isRefetching: false,
     isStaleData: false,
     isSuccess: false,
-    value,
+    value: initialData ?? placeholderData,
   });
 }
