@@ -169,6 +169,78 @@ describe("connection lifecycle", () => {
     expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
   });
 });
+describe("reconnection backoff", () => {
+  const drop = (transport: Transport) => {
+    transport.readyState = 3;
+    transport.onclose?.(
+      new CloseEvent("close", { code: 1006, wasClean: false })
+    );
+  };
+  const reconnect = async (previous: Transport) => {
+    await vi.waitFor(() =>
+      expect(Transport.instances.at(-1)).not.toBe(previous)
+    );
+    const transport = Transport.instances.at(-1)!;
+    transport.connect();
+    return transport;
+  };
+  const backoff = {
+    retry: true,
+    retryCount: 10,
+    retryDelay: 5,
+    minJitterValue: 1,
+    maxJitterValue: 1,
+  };
+
+  it("keeps counting failures while a server accepts and then drops each connection", async () => {
+    const socket = create({ ...backoff, maxRetryDelay: "10 seconds" });
+    let transport = await connect(socket);
+    drop(transport);
+    expect(socket.failureCount).toBe(1);
+
+    transport = await reconnect(transport);
+    expect(socket.failureCount).toBe(1);
+    drop(transport);
+    expect(socket.failureCount).toBe(2);
+
+    transport = await reconnect(transport);
+    drop(transport);
+    expect(socket.failureCount).toBe(3);
+  });
+
+  it("gives up after retryCount even when every attempt opens", async () => {
+    const socket = create({ ...backoff, retryCount: 2, maxRetryDelay: "10 seconds" });
+    let transport = await connect(socket);
+    drop(transport);
+    transport = await reconnect(transport);
+    drop(transport);
+    transport = await reconnect(transport);
+    drop(transport);
+    expect(socket.failureCount).toBe(3);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(Transport.instances.at(-1)).toBe(transport);
+  });
+
+  it("resets the count once a connection delivers a message", async () => {
+    const socket = create({ ...backoff, maxRetryDelay: "10 seconds" });
+    let transport = await connect(socket);
+    drop(transport);
+    transport = await reconnect(transport);
+    expect(socket.failureCount).toBe(1);
+    transport.message({ ok: true });
+    await vi.waitFor(() => expect(socket.failureCount).toBe(0));
+  });
+
+  it("resets the count once a connection stays open for maxRetryDelay", async () => {
+    const socket = create({ ...backoff, maxRetryDelay: 30 });
+    const transport = await connect(socket);
+    drop(transport);
+    await reconnect(transport);
+    expect(socket.failureCount).toBe(1);
+    await vi.waitFor(() => expect(socket.failureCount).toBe(0));
+  });
+});
+
 it("rejects pending waits on cancellation and disconnection", async () => {
   const socket = create();
   const controller = new AbortController();

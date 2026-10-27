@@ -134,6 +134,7 @@ export class Socket<
   #retryOnSpecificCloseCodes: SocketCode[];
   #subscribers: Set<SocketSubscriber<Get, Post, Params>> = new Set();
   #reconnectionTimerId: SocketTimeout = undefined;
+  #failureResetTimerId: SocketTimeout = undefined;
   #messageSchema?: SocketConstructor<Get, Post, Params>["messageSchema"];
   #messageFailurePolicy: Required<SocketMessageFailurePolicy>;
   #preserveTerminalMetadata: boolean = false;
@@ -301,6 +302,7 @@ export class Socket<
     preserveFailure?: boolean;
   } = {}) => {
     clearTimeout(this.#reconnectionTimerId);
+    clearTimeout(this.#failureResetTimerId);
 
     this.#cleanupEventListeners();
     this.#preserveTerminalMetadata = false;
@@ -435,11 +437,16 @@ export class Socket<
       this.#setState({
         binaryType: this.binaryType,
         fetchStatus: "connected",
-        failureCount: 0,
         failureReason: null,
         error: null,
         errorUpdatedAt: 0,
       });
+
+      // Opening alone does not show the server will keep the connection.
+      this.#failureResetTimerId = setTimeout(
+        this.#resetFailures,
+        this.#maxRetryDelay
+      );
 
       if (this.#shouldLog("open")) {
         const target = ev.target as WebSocket;
@@ -469,6 +476,7 @@ export class Socket<
             await this.#saveData(ev, current);
             if (!current()) return;
 
+            this.#resetFailures();
             this.#setState({
               status: "success",
               dataUpdatedAt: Date.now(),
@@ -536,6 +544,7 @@ export class Socket<
       this.ws = null;
       this.#diagnostic({ type: "connection", phase: "closed" });
       clearTimeout(this.#reconnectionTimerId);
+      clearTimeout(this.#failureResetTimerId);
 
       if (this.#clearCacheOnClose) {
         this.cache.remove(this.path);
@@ -584,6 +593,12 @@ export class Socket<
       delay: backoffDelay,
     });
     this.#reconnectionTimerId = setTimeout(this.#connect, backoffDelay);
+  };
+
+  /** Called once a connection has delivered a message or stayed open. */
+  #resetFailures = () => {
+    clearTimeout(this.#failureResetTimerId);
+    if (this.failureCount > 0) this.#setState({ failureCount: 0 });
   };
 
   #decodeMessageData = async (data: SocketData["data"]): Promise<string> => {
