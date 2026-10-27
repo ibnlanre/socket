@@ -181,6 +181,28 @@ describe("SocketClient", () => {
       expect(await client.get({ userId: "456" })).not.toBe(socket2);
     });
   });
+  describe("clearCache", () => {
+    const storage = { delete: vi.fn(async () => true) };
+    const runtime = { caches: storage as unknown as CacheStorage };
+
+    it("deletes the store named by the origin, even with caching disabled", async () => {
+      await new SocketClient({
+        ...mockConfig,
+        disableCache: true,
+        runtime,
+      }).clearCache();
+      expect(storage.delete).toHaveBeenLastCalledWith("wss://test.example.com");
+    });
+
+    it("deletes the store named by cacheKey", async () => {
+      await new SocketClient({
+        ...mockConfig,
+        cacheKey: "prices",
+        runtime,
+      }).clearCache();
+      expect(storage.delete).toHaveBeenLastCalledWith("prices");
+    });
+  });
   describe("useSocket hook", () => {
     it("should expose a read-only result through useSocket", async () => {
       const { result } = renderHook(() => client.useSocket());

@@ -1,4 +1,6 @@
 import { Socket, readSocketSnapshot } from "@/class/socket";
+import { extractOrigin } from "@/functions/extract-origin";
+import { getCacheStorage } from "@/functions/get-cache-storage";
 import { getUri } from "@/functions/get-uri";
 import { serializeJSON } from "@/functions/serialize-json";
 import { socketState } from "@/functions/socket-state";
@@ -39,6 +41,12 @@ export class SocketClient<
       throw new Error("SocketClient: this client has been disposed.");
     if (pool !== this.#pool)
       throw new DOMException("Client cleared", "AbortError");
+  };
+
+  /** The Cache Storage store this client's sockets write to. */
+  #storeName = (): string => {
+    const { baseURL, cacheKey, url } = this.#configuration;
+    return cacheKey ?? extractOrigin(getUri({ baseURL, url }));
   };
 
   #resolve = (params: ParamsInput): Promise<string> => {
@@ -118,6 +126,22 @@ export class SocketClient<
     pool.forEach((socket) => socket.dispose());
     pool.clear();
     return count;
+  };
+
+  /**
+   * Delete the client's store, as on sign-out, whether or not `disableCache`
+   * is set. Clients with the same `cacheKey`, or origin, share one store.
+   * Held values stay, and later messages are stored again.
+   */
+  clearCache = async (): Promise<void> => {
+    // Each socket's own clear waits for its pending writes, so none lands
+    // after the store is gone.
+    await Promise.all(
+      [...this.#pool.values()].map((socket) => socket.cache.clear())
+    );
+    await getCacheStorage(this.#configuration.runtime)?.delete(
+      this.#storeName()
+    );
   };
 
   dispose = (): void => {
