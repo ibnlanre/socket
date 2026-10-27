@@ -2,6 +2,7 @@ import { Socket, readSocketSnapshot } from "@/class/socket";
 import { extractOrigin } from "@/functions/extract-origin";
 import { getCacheStorage } from "@/functions/get-cache-storage";
 import { getUri } from "@/functions/get-uri";
+import { isExpired } from "@/functions/is-expired";
 import { serializeJSON } from "@/functions/serialize-json";
 import { socketState } from "@/functions/socket-state";
 import { toError } from "@/functions/to-error";
@@ -23,6 +24,7 @@ export class SocketClient<
   #pool = new Map<string, Socket<Get, Post, Params>>();
   #resolving = new Map<string, Promise<string>>();
   #disposed = false;
+  #swept = false;
   #maxPoolSize: number;
   #configuration: SocketClientConstructor<Get, Post, Params, ParamsInput>;
 
@@ -47,6 +49,22 @@ export class SocketClient<
   #storeName = (): string => {
     const { baseURL, cacheKey, url } = this.#configuration;
     return cacheKey ?? extractOrigin(getUri({ baseURL, url }));
+  };
+
+  /**
+   * Delete the store's expired entries. An entry otherwise goes only when its
+   * own path is read again, so a store keeps every identity it has seen.
+   */
+  #sweep = async (): Promise<void> => {
+    const storage = getCacheStorage(this.#configuration.runtime);
+    const name = this.#storeName();
+    if (!storage || !(await storage.has(name))) return;
+
+    const store = await storage.open(name);
+    for (const request of await store.keys()) {
+      const response = await store.match(request);
+      if (response && isExpired(response)) await store.delete(request);
+    }
   };
 
   #resolve = (params: ParamsInput): Promise<string> => {
@@ -97,6 +115,10 @@ export class SocketClient<
       url: key,
     });
     this.#pool.set(key, socket);
+    if (!this.#swept) {
+      this.#swept = true;
+      void this.#sweep().catch(() => {});
+    }
     return socket;
   };
 

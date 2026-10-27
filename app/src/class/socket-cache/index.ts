@@ -1,4 +1,5 @@
 import { getCacheStorage } from "@/functions/get-cache-storage";
+import { isExpired } from "@/functions/is-expired";
 import { isJSON } from "@/functions/is-json";
 import type { RuntimeAdapters } from "@/types/runtime";
 import type { CachePersistence } from "@/types/socket/cache-persistence";
@@ -168,9 +169,7 @@ export class SocketCache<State = unknown> {
     const response = await cache.match(path);
 
     if (response) {
-      const timestamp = response.headers.get("Expires") || 0;
-
-      if (new Date(timestamp).getTime() < Date.now()) {
+      if (isExpired(response)) {
         await cache.delete(path);
         return;
       }

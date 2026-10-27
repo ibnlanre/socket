@@ -203,6 +203,40 @@ describe("SocketClient", () => {
       expect(storage.delete).toHaveBeenLastCalledWith("prices");
     });
   });
+  describe("expired entries", () => {
+    it("are deleted from the store once, on the first socket", async () => {
+      const at = (offset: number) =>
+        new Response("{}", {
+          headers: { Expires: new Date(Date.now() + offset).toUTCString() },
+        });
+      const entries = new Map([
+        ["/fresh", at(60000)],
+        ["/old", at(-1000)],
+      ]);
+      const store = {
+        delete: vi.fn(async (path: string) => entries.delete(path)),
+        keys: async () => [...entries.keys()],
+        match: async (path: string) => entries.get(path)?.clone(),
+        put: async () => {},
+      };
+      const storage = {
+        has: vi.fn(async () => true),
+        open: vi.fn(async () => store),
+      };
+      const storedClient = new SocketClient<TestData, never, TestParams>({
+        ...mockConfig,
+        disableCache: true,
+        runtime: { caches: storage as unknown as CacheStorage },
+      });
+
+      await storedClient.get({ userId: "1" });
+      await vi.waitFor(() => expect([...entries.keys()]).toEqual(["/fresh"]));
+      await storedClient.get({ userId: "2" });
+
+      expect(storage.has).toHaveBeenCalledTimes(1);
+      storedClient.clear();
+    });
+  });
   describe("useSocket hook", () => {
     it("should expose a read-only result through useSocket", async () => {
       const { result } = renderHook(() => client.useSocket());
