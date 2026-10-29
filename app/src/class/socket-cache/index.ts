@@ -1,49 +1,13 @@
+import { MemoryCache } from "@/class/memory-cache";
+import { CacheEncodingHeader } from "@/constants/cache-encoding-header";
 import { getCacheStorage } from "@/functions/get-cache-storage";
 import { isExpired } from "@/functions/is-expired";
 import { isJSON } from "@/functions/is-json";
 import type { RuntimeAdapters } from "@/types/runtime";
+import type { CacheLike } from "@/types/socket/cache-like";
 import type { CachePersistence } from "@/types/socket/cache-persistence";
 import type { SocketCipher } from "@/types/socket/cipher";
 import type { SocketSetStateAction } from "@/types/socket/set-state-action";
-
-/** The subset of the Cache API that `SocketCache` relies on. */
-type CacheLike = {
-  delete(request: RequestInfo | URL): Promise<boolean>;
-  keys(): Promise<readonly RequestInfo[]>;
-  match(request: RequestInfo | URL): Promise<Response | undefined>;
-  put(request: RequestInfo | URL, response: Response): Promise<void>;
-};
-
-/**
- * Non-persistent stand-in used when `cacheFallback: "memory"` is requested and
- * the runtime has no Cache Storage. It does not survive a reload, which is why
- * `persistence` reports `"memory"` and not `"cache-storage"`.
- */
-class MemoryCache implements CacheLike {
-  #entries = new Map<string, Response>();
-
-  #key = (request: RequestInfo | URL): string => {
-    if (typeof request === "string") return request;
-    if ("url" in request) return request.url;
-    return String(request);
-  };
-
-  delete = async (request: RequestInfo | URL): Promise<boolean> =>
-    this.#entries.delete(this.#key(request));
-
-  keys = async (): Promise<readonly RequestInfo[]> => [...this.#entries.keys()];
-
-  // Response bodies are single-use, so hand out a clone on every read.
-  match = async (request: RequestInfo | URL): Promise<Response | undefined> =>
-    this.#entries.get(this.#key(request))?.clone();
-
-  put = async (
-    request: RequestInfo | URL,
-    response: Response
-  ): Promise<void> => {
-    this.#entries.set(this.#key(request), response.clone());
-  };
-}
 
 /**
  * How a stored entry was written, so a read knows whether to decrypt it.
@@ -53,8 +17,6 @@ class MemoryCache implements CacheLike {
  * - `"plain"` — the reduced state; read as is.
  */
 type CacheEncoding = "cipher" | "plain" | "wire";
-
-const CacheEncodingHeader = "X-Socket-Cache-Encoding";
 
 type SocketCacheConstructor<State = unknown> = {
   decrypt?: SocketCipher;

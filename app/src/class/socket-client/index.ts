@@ -1,17 +1,20 @@
+import type { ConnectionParams } from "@/types/connection-params";
+import type { ReconnectExhaustedOptions } from "@/types/reconnect-exhausted-options";
+import type { SocketClientConstructor } from "@/types/socket/client-constructor";
+import type { UseSocketOptions } from "@/types/socket/options";
+import type { UseSocketResult } from "@/types/use-socket-result";
+
 import { Socket, readSocketSnapshot } from "@/class/socket";
 import { extractOrigin } from "@/functions/extract-origin";
 import { getCacheStorage } from "@/functions/get-cache-storage";
 import { getUri } from "@/functions/get-uri";
 import { isExpired } from "@/functions/is-expired";
+import { reconnectExhausted } from "@/functions/reconnect-exhausted";
 import { serializeJSON } from "@/functions/serialize-json";
 import { socketState } from "@/functions/socket-state";
 import { toError } from "@/functions/to-error";
 import { schemaValue } from "@/functions/validate-schema";
 import { withSignal } from "@/functions/with-signal";
-import type { ConnectionParams } from "@/types/connection-params";
-import type { SocketClientConstructor } from "@/types/socket/client-constructor";
-import type { UseSocketOptions } from "@/types/socket/options";
-import type { UseSocketResult } from "@/types/use-socket-result";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSyncExternalStore } from "use-sync-external-store/shim";
 
@@ -22,6 +25,8 @@ export class SocketClient<
   ParamsInput = Params,
 > {
   #pool = new Map<string, Socket<Get, Post, Params>>();
+  /** Told when a pooled socket's state, or its subscribers, change. */
+  #listeners = new Set<() => void>();
   #resolving = new Map<string, Promise<string>>();
   #disposed = false;
   #swept = false;
@@ -115,6 +120,7 @@ export class SocketClient<
       url: key,
     });
     this.#pool.set(key, socket);
+    socket.observe(this.#announce);
     if (!this.#swept) {
       this.#swept = true;
       void this.#sweep().catch(() => {});
@@ -136,6 +142,7 @@ export class SocketClient<
     if (!socket) return false;
     socket.dispose();
     this.#pool.delete(key);
+    this.#announce();
     return true;
   };
 
@@ -147,6 +154,7 @@ export class SocketClient<
     const count = pool.size;
     pool.forEach((socket) => socket.dispose());
     pool.clear();
+    if (count) this.#announce();
     return count;
   };
 
@@ -169,7 +177,41 @@ export class SocketClient<
   dispose = (): void => {
     this.clear();
     this.#disposed = true;
+    this.#listeners.clear();
   };
+
+  #announce = () => {
+    this.#listeners.forEach((listener) => listener());
+  };
+
+  /**
+   * The pooled sockets that have stopped after failures they will not retry
+   * (`isExhausted`) and that something still reads: those a caller would offer
+   * to reconnect. A stopped socket nothing reads any more is left alone.
+   */
+  exhausted = (): Socket<Get, Post, Params>[] =>
+    [...this.#pool.values()].filter(
+      (socket) => socket.isExhausted && socket.hasSubscribers()
+    );
+
+  /**
+   * Be told when the pool's sockets change state or subscribers, as when one
+   * stops or starts again. Returns a function that stops the notices.
+   */
+  subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
+  };
+
+  /**
+   * Open the stopped sockets again (`exhausted()`), one after another, with
+   * `stagger` between each, so a struggling server is not met with every
+   * handshake at once. Resolves with how many it reopened.
+   */
+  reconnect = (options: ReconnectExhaustedOptions = {}): Promise<number> =>
+    reconnectExhausted([this], options);
 
   useSocket = <State = Get | undefined>({
     params = {} as ParamsInput,
@@ -304,6 +346,7 @@ export class SocketClient<
         isConnecting: snapshot.isConnecting,
         isDisconnected: snapshot.isDisconnected,
         isError: snapshot.isError,
+        isExhausted: snapshot.isExhausted,
         isIdle: snapshot.isIdle,
         isLoading: snapshot.isLoading,
         isPending: snapshot.isPending,

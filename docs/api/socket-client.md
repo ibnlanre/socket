@@ -93,6 +93,30 @@ clearCache(): Promise<void>;
 await client.clearCache();
 ```
 
+## `exhausted()`
+
+The pooled sockets that have stopped after failures they will not retry (`isExhausted`) and that something still reads: those to offer to reconnect.
+
+```ts
+exhausted(): Socket<Get, Post, Params>[];
+```
+
+## `subscribe(listener)`
+
+Notice when the pool's sockets change state or subscribers, as when one stops or starts again. Returns a function that stops the notices.
+
+```ts
+subscribe(listener: () => void): () => void;
+```
+
+## `reconnect(options?)`
+
+Reopens the stopped sockets, one after another, `stagger` apart (default `0`). Resolves with how many it reopened. Across several clients, use `reconnectExhausted(clients, options)` or the `useExhaustedSockets` hook ([Reconnection](/guide/reconnection#when-retries-run-out)).
+
+```ts
+reconnect(options?: { stagger?: UnitValue }): Promise<number>;
+```
+
 ## `dispose()`
 
 Permanently releases the client and its sockets. Further resolution rejects. Call this when the owner of the client is finished with it.

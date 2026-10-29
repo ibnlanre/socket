@@ -93,6 +93,18 @@ subscribe(
 
 The last subscriber unsubscribing arms `close()` after `idleConnectionTimeout` (default 5 minutes).
 
+### `observe(listener)`
+
+Watches the socket's state, and its subscribers coming and going, without subscribing: an observer neither keeps the connection open nor stops it closing when idle. For tooling that watches many sockets. Returns a function that stops watching.
+
+```ts
+observe(listener: () => void): () => void;
+```
+
+### `hasSubscribers()`
+
+Whether anything subscribes to the socket now.
+
 ## State
 
 ### Instance fields
@@ -108,6 +120,7 @@ The last subscriber unsubscribing arms `close()` after `idleConnectionTimeout` (
 | `failureCount` | `number` | `0` |
 | `failureReason` | `string \| null` | `null` |
 | `fetchStatus` | `SocketFetchStatus` | `"idle"` |
+| `isExhausted` | `boolean` | `false` |
 | `isPlaceholderData` | `boolean` | `false` |
 | `path` | `string` | pathname of the resolved href |
 | `status` | `SocketStatus` | `"loading"` |
@@ -119,6 +132,8 @@ The last subscriber unsubscribing arms `close()` after `idleConnectionTimeout` (
 `isIdle`, `isPreparing`, `isConnecting`, `isConnected`, `isDisconnected` — derived from `fetchStatus`.
 
 `isLoading`, `isSuccess`, `isError`, `isPending`, `isRefetching`, `isRefetchError`, `isStaleData` — derived from `status`/`failureCount`/`value`.
+
+`isExhausted` is a field: `true` once the socket stops after a failure it will not retry, until `open()` or `close()`.
 
 See [Lifecycle & status](/guide/lifecycle) for semantics.
 

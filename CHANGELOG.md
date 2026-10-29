@@ -2,6 +2,24 @@
 
 All notable changes to `@ibnlanre/socket` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-29
+
+Paced handshakes, and stopped sockets: begin connections to a server one after another rather than all at once, and know which sockets have given up, to reopen them on request. Additive, apart from the fix below.
+
+### Added
+
+- `SocketGate`: paces handshakes, no more than `concurrency` (default 1) at once to any one server, the rest queued in order. Pass the same gate as `gate` to every socket or client that talks to a server that stalls or drops several handshakes begun together. A turn lasts from just before the transport is created until the handshake opens, closes or errors, or `timeout` (default 10 seconds) passes; retries take their turn like any other attempt. A socket waiting for its turn reports `fetchStatus: "preparing"`. Each origin has its own queue unless `lane` maps several to one, as for hosts behind one proxy.
+
+- `isExhausted` on a socket's state and on `useSocket`'s result: the socket stopped after a failure it will not retry (its retries used up, or `retry` off), and waits closed until `open()`.
+- `Socket#observe(listener)`: watch a socket's state, and its subscribers coming and going, without subscribing. An observer neither keeps the connection open nor stops it closing when idle.
+- `Socket#hasSubscribers()`: whether anything subscribes to the socket now.
+- `SocketClient#exhausted()`: the pooled sockets that have stopped and are still read; `SocketClient#subscribe(listener)`: notice when the pool's sockets change; `SocketClient#reconnect({ stagger })`: reopen the stopped ones, one after another.
+- `useExhaustedSockets(clients, { stagger })`: one count of stopped sockets across several clients, with `reconnect()` and `isReconnecting`, for an app-wide "live updates have stopped" notice. `reconnectExhausted(clients, { stagger })` is the same outside React.
+
+### Fixed
+
+- A socket that gave up after an unclean close could not be reopened: it stayed marked open with no connection, so `open()` returned at once. It now closes when it stops, as it already did when preparing a connection failed, and `open()` starts it again.
+
 ## [0.3.0] - 2026-10-27
 
 Reconnection and cache fixes, data from the server, and clearing stored data. No export was removed or renamed; the behavior changes below are fixes, listed so nothing that relied on the old behavior is caught out.

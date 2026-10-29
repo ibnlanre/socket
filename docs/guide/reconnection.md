@@ -78,3 +78,41 @@ These reconnect a socket even after retries would normally be exhausted:
 - While a retry is scheduled, `fetchStatus` becomes `"disconnected"`.
 - If a cached value exists, `status` stays/becomes `"stale"` so the UI can keep rendering data.
 - When retries are exhausted on an unclean close, terminal failure metadata (`failureReason`, `failureCount`) is recorded and the socket settles into `"error"`.
+
+## Pacing handshakes
+
+Some servers, and the proxies before them, take connections one after another well but stall or drop several begun together, as a page opening all its feeds at once begins them, and then every retry adds to the crowd. A `SocketGate` paces them: no more than `concurrency` handshakes at once to any one server (origin), the rest queued in order.
+
+```ts
+const gate = new SocketGate({ concurrency: 1 });
+
+const prices = new SocketClient({ url: "wss://feeds.example.com/prices", gate });
+const orders = new SocketClient({ url: "wss://feeds.example.com/orders", gate });
+```
+
+A turn lasts from just before the transport is created until the handshake opens, closes or errors, or `timeout` passes (default 10 seconds, so a server that never answers cannot hold the queue). Retries wait their turn like any other attempt. While it waits, a socket reports `fetchStatus: "preparing"`. Sockets to different servers never wait on each other, unless `lane` says otherwise: it maps a URL to its queue (by default its origin). Where several hosts sit behind one proxy, give them one lane, so their handshakes are paced together:
+
+```ts
+const gate = new SocketGate({ lane: () => "edge-proxy" });
+```
+
+## When retries run out
+
+A socket that has stopped after a failure it will not retry reports `isExhausted: true`. It stays closed, its error and failure count kept, until `open()` starts it again, so an app can offer "reconnect" rather than keep calling a server that is struggling.
+
+Across many sockets, a client knows which of its own have stopped and are still read (`client.exhausted()`), and tells listeners when that changes (`client.subscribe()`). `useExhaustedSockets` counts them across several clients for one notice, and reopens them one after another, `stagger` apart, so a recovering server is not met with every handshake at once:
+
+```tsx
+const network = useExhaustedSockets([prices, orders], { stagger: "400 milliseconds" });
+
+if (network.count) {
+  return (
+    <p>
+      Live updates have stopped.{" "}
+      <button disabled={network.isReconnecting} onClick={network.reconnect}>
+        Reconnect
+      </button>
+    </p>
+  );
+}
+```

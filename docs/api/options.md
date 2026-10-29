@@ -87,6 +87,7 @@ When `deduplicationWindow` is `0`, deduplication is disabled and repeated sends 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `prepareConnection` | `SocketPrepareConnection` | — | Runs before every transport attempt (e.g. auth/token refresh). Returning `{ url, protocols }` overrides that attempt only; pool and cache identity are unchanged. |
+| `gate` | `SocketGate` | — | Paces handshakes with every socket sharing the gate: waits for a turn before each attempt, retries included ([Pacing handshakes](/guide/reconnection#pacing-handshakes)). |
 | `onDiagnostic` | `(event: SocketDiagnostic) => void` | — | Receives structured `connection` / `retry` / `queue` / `validation` / `cache` events. Events do not directly include payloads or URLs; validation errors may include details from the schema. |
 
 On `SocketClient`, `maxPoolSize` (default `1000`) bounds the number of pooled sockets; exceeding it throws a `RangeError` rather than silently evicting.

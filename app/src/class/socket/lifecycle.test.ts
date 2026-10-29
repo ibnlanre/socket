@@ -1,6 +1,8 @@
-import type { WebSocketConstructor } from "@/types/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Socket, readSocketSnapshot } from ".";
+
+import type { WebSocketConstructor } from "@/types/runtime";
+
 class Transport extends EventTarget {
   static OPEN = 1;
   static CLOSED = 3;
@@ -209,7 +211,11 @@ describe("reconnection backoff", () => {
   });
 
   it("gives up after retryCount even when every attempt opens", async () => {
-    const socket = create({ ...backoff, retryCount: 2, maxRetryDelay: "10 seconds" });
+    const socket = create({
+      ...backoff,
+      retryCount: 2,
+      maxRetryDelay: "10 seconds",
+    });
     let transport = await connect(socket);
     drop(transport);
     transport = await reconnect(transport);
@@ -219,6 +225,43 @@ describe("reconnection backoff", () => {
     expect(socket.failureCount).toBe(3);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(Transport.instances.at(-1)).toBe(transport);
+  });
+
+  it("marks a socket that gave up as exhausted, and open() starts it again", async () => {
+    const socket = create({
+      ...backoff,
+      retryCount: 1,
+      maxRetryDelay: "10 seconds",
+    });
+    let transport = await connect(socket);
+    drop(transport);
+    transport = await reconnect(transport);
+    expect(socket.isExhausted).toBe(false);
+    drop(transport);
+
+    expect(socket.isExhausted).toBe(true);
+    expect(readSocketSnapshot(socket).isExhausted).toBe(true);
+    expect(socket.ws).toBeNull();
+    expect(socket.isError).toBe(true);
+
+    socket.open();
+    await vi.waitFor(() =>
+      expect(Transport.instances.at(-1)).not.toBe(transport)
+    );
+    expect(socket.isExhausted).toBe(false);
+    expect(socket.failureCount).toBe(0);
+  });
+
+  it("stops being exhausted once closed on purpose", async () => {
+    const socket = create({
+      ...backoff,
+      retryCount: 0,
+      maxRetryDelay: "10 seconds",
+    });
+    drop(await connect(socket));
+    expect(socket.isExhausted).toBe(true);
+    socket.close();
+    expect(socket.isExhausted).toBe(false);
   });
 
   it("resets the count once a connection delivers a message", async () => {
@@ -238,6 +281,45 @@ describe("reconnection backoff", () => {
     await reconnect(transport);
     expect(socket.failureCount).toBe(1);
     await vi.waitFor(() => expect(socket.failureCount).toBe(0));
+  });
+});
+
+describe("observers", () => {
+  it("hear every change of state, and of subscribers", async () => {
+    const socket = create();
+    const observer = vi.fn();
+    socket.observe(observer);
+    const unsubscribe = socket.subscribe(() => {}, false);
+    expect(observer).toHaveBeenCalledTimes(1);
+    expect(socket.hasSubscribers()).toBe(true);
+
+    observer.mockClear();
+    const transport = await connect(socket);
+    transport.message({ ok: true });
+    await vi.waitFor(() => expect(observer).toHaveBeenCalled());
+
+    observer.mockClear();
+    unsubscribe();
+    expect(observer).toHaveBeenCalledTimes(1);
+    expect(socket.hasSubscribers()).toBe(false);
+  });
+
+  it("do not keep an idle socket open", async () => {
+    const socket = create({ idleConnectionTimeout: 20 });
+    socket.observe(() => {});
+    const unsubscribe = socket.subscribe(() => {}, false);
+    const transport = await connect(socket);
+    const close = vi.spyOn(transport, "close");
+    unsubscribe();
+    await vi.waitFor(() => expect(close).toHaveBeenCalled());
+  });
+
+  it("stop hearing once they stop watching", () => {
+    const socket = create();
+    const observer = vi.fn();
+    socket.observe(observer)();
+    socket.subscribe(() => {}, false);
+    expect(observer).not.toHaveBeenCalled();
   });
 });
 

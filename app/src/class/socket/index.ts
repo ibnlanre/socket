@@ -1,10 +1,8 @@
 import { SocketCache } from "@/class/socket-cache";
 import { SocketOutbox } from "@/class/socket-outbox";
-import {
-  SocketCloseCode,
-  type SocketCode,
-} from "@/constants/socket-close-code";
+import { SocketCloseCode } from "@/constants/socket-close-code";
 import { SocketCloseReason } from "@/constants/socket-close-reason";
+import { SocketReadyState } from "@/constants/socket-ready-state";
 import { arrayBufferToBlob } from "@/functions/array-buffer-to-blob";
 import { blobToJson } from "@/functions/blob-to-json";
 import { extractOrigin } from "@/functions/extract-origin";
@@ -15,6 +13,8 @@ import { time } from "@/functions/time";
 import { toError } from "@/functions/to-error";
 import { schemaValue } from "@/functions/validate-schema";
 
+import type { SocketGate } from "@/class/socket-gate";
+import type { SocketCode } from "@/constants/socket-close-code";
 import type { ConnectionParams } from "@/types/connection-params";
 import type { RuntimeAdapters, WebSocketConstructor } from "@/types/runtime";
 import type { SocketCipher } from "@/types/socket/cipher";
@@ -68,20 +68,6 @@ export function readSocketSnapshot<G, P, Pr extends ConnectionParams>(
   );
 }
 
-/**
- * `WebSocket#readyState` values, fixed by the WebSocket specification.
- *
- * Read as literals rather than through the `WebSocket` constructor so that
- * state checks stay safe in runtimes where no `WebSocket` global exists —
- * notably when dispatching or tearing down a socket that was never opened.
- */
-const SocketReadyState = {
-  CONNECTING: 0,
-  OPEN: 1,
-  CLOSING: 2,
-  CLOSED: 3,
-} as const;
-
 export class Socket<
   Get = unknown,
   Post = never,
@@ -99,6 +85,12 @@ export class Socket<
   failureCount: number = 0;
   failureReason: string | null = null;
   fetchStatus: SocketFetchStatus = "idle";
+  /**
+   * Whether the socket has stopped after a failure it will not retry, its
+   * retries used up (or retrying switched off). It stays closed until
+   * `open()` starts it again, which is how a caller offers "reconnect".
+   */
+  isExhausted: boolean = false;
   isPlaceholderData: boolean = false;
   path: string = "";
   status: SocketStatus = "loading";
@@ -133,6 +125,8 @@ export class Socket<
   #retryOnCustomCondition?: (event: CloseEvent, target: WebSocket) => boolean;
   #retryOnSpecificCloseCodes: SocketCode[];
   #subscribers: Set<SocketSubscriber<Get, Post, Params>> = new Set();
+  /** Watchers of its state that, unlike subscribers, do not keep it open. */
+  #observers: Set<() => void> = new Set();
   #reconnectionTimerId: SocketTimeout = undefined;
   #failureResetTimerId: SocketTimeout = undefined;
   #messageSchema?: SocketConstructor<Get, Post, Params>["messageSchema"];
@@ -146,6 +140,7 @@ export class Socket<
   #waiters = new Set<() => void>();
   #runtime?: RuntimeAdapters;
   #prepareConnection?: SocketPrepareConnection;
+  #gate?: SocketGate;
   #onDiagnostic?: (event: SocketDiagnostic) => void;
   #maxBufferedAmount: number;
   #maxPendingMessages: number;
@@ -155,6 +150,7 @@ export class Socket<
   constructor(
     {
       prepareConnection,
+      gate,
       runtime,
       onDiagnostic,
       maxQueueSize,
@@ -205,6 +201,7 @@ export class Socket<
     params = {} as Params
   ) {
     this.#prepareConnection = prepareConnection;
+    this.#gate = gate;
     this.#runtime = runtime;
     this.#onDiagnostic = onDiagnostic;
     this.#maxBufferedAmount = maxBufferedAmount;
@@ -308,6 +305,7 @@ export class Socket<
     this.#preserveTerminalMetadata = false;
     this.#setState({
       fetchStatus: "idle",
+      isExhausted: false,
       ...(preserveError
         ? {}
         : { status: this.value === undefined ? "idle" : "stale" }),
@@ -388,6 +386,9 @@ export class Socket<
     this.#controller = controller;
     const current = () => generation === this.#generation && this.#isOpen;
     this.#setState({ fetchStatus: "preparing" });
+    // This attempt's turn at the gate, if it has one: ended once the
+    // handshake opens, closes or errors, whatever has become of the socket.
+    let endTurn = () => {};
     try {
       this.#diagnostic({ type: "connection", phase: "preparing" });
       const prepared = await this.#prepareConnection?.({
@@ -397,11 +398,20 @@ export class Socket<
         attempt: this.failureCount,
       });
       if (!current()) return;
+      const href = prepared?.url ?? this.#href;
+      if (this.#gate) {
+        // Wait for a turn to connect to this server; still "preparing" meanwhile.
+        endTurn = await this.#gate.acquire(href, {
+          signal: controller.signal,
+        });
+        if (!current()) return endTurn();
+      }
       this.ws = new (this.#webSocketConstructor())(
-        prepared?.url ?? this.#href,
+        href,
         prepared?.protocols ?? this.#protocols
       );
     } catch (error) {
+      endTurn();
       if (!current()) return;
       this.#controller = null;
       this.#setState({
@@ -413,7 +423,7 @@ export class Socket<
       });
       if (this.#retry && this.failureCount <= this.#retryCount)
         this.#reconnect();
-      else this.#isOpen = false;
+      else this.#stop();
       return;
     }
     this.#messages = Promise.resolve();
@@ -430,6 +440,7 @@ export class Socket<
     });
 
     this.ws.onopen = (ev: Event) => {
+      endTurn();
       if (!current()) return;
       this.#outbox.flush();
       this.#diagnostic({ type: "connection", phase: "open" });
@@ -537,6 +548,7 @@ export class Socket<
     };
 
     this.ws.onclose = (event: CloseEvent) => {
+      endTurn();
       if (!current()) return;
       this.#generation += 1;
       this.#controller?.abort();
@@ -563,13 +575,15 @@ export class Socket<
         return;
       }
 
-      this.#cleanup({
-        preserveError: this.#preserveTerminalMetadata,
-        preserveFailure: this.#preserveTerminalMetadata,
-      });
+      // A failure it will not retry: the socket stops, its error and failure
+      // count kept, until it is opened again.
+      const failed = this.#preserveTerminalMetadata;
+      this.#cleanup({ preserveError: failed, preserveFailure: failed });
+      if (failed) this.#stop();
     };
 
     this.ws.onerror = (event: Event) => {
+      endTurn();
       if (!current()) return;
       this.#setState({
         status: "error",
@@ -583,6 +597,20 @@ export class Socket<
   #notifySubscribers = () => {
     const state = storeSocketSnapshot(this);
     this.#subscribers.forEach((listener) => listener(state));
+    this.#notifyObservers();
+  };
+
+  #notifyObservers = () => {
+    this.#observers.forEach((listener) => listener());
+  };
+
+  /**
+   * Stop after a failure it will not retry. Closed for good until `open()`:
+   * otherwise `open()` would find it still marked open and do nothing.
+   */
+  #stop = () => {
+    this.#isOpen = false;
+    this.#setState({ isExhausted: true });
   };
 
   #reconnect = () => {
@@ -806,6 +834,8 @@ export class Socket<
   close = () => {
     const code = SocketCloseCode.NORMAL_CLOSURE;
     const reason = SocketCloseReason[code];
+    // Closed on purpose: no longer waiting to be reopened.
+    if (this.isExhausted) this.#setState({ isExhausted: false });
 
     this.#generation += 1;
     this.#controller?.abort();
@@ -916,6 +946,7 @@ export class Socket<
     this.#disposed = true;
     this.#eventListeners.clear();
     this.#subscribers.clear();
+    this.#observers.clear();
     snapshots.delete(this);
   };
 
@@ -951,10 +982,11 @@ export class Socket<
     if (!this.#subscribers.has(listener)) {
       if (immediate) listener(readSocketSnapshot(this));
       this.#subscribers.add(listener);
+      this.#notifyObservers();
     }
 
     return () => {
-      this.#subscribers.delete(listener);
+      if (this.#subscribers.delete(listener)) this.#notifyObservers();
 
       if (!this.#disposed && this.#subscribers.size === 0) {
         this.#idleConnectionTimerId = setTimeout(
@@ -964,6 +996,23 @@ export class Socket<
       }
     };
   };
+
+  /**
+   * Watch the socket's state, and its subscribers coming and going, without
+   * subscribing: an observer neither keeps the connection open nor stops it
+   * closing when idle. For tooling that watches many sockets, such as a
+   * client noticing which have stopped. Returns a function that stops watching.
+   */
+  observe = (listener: () => void) => {
+    this.#assertActive();
+    this.#observers.add(listener);
+    return () => {
+      this.#observers.delete(listener);
+    };
+  };
+
+  /** Whether anything subscribes to the socket, so is reading it now. */
+  hasSubscribers = (): boolean => this.#subscribers.size > 0;
 
   waitUntil = (
     state: SocketConnectionEvent,

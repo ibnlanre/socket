@@ -8,7 +8,7 @@ This page summarizes the exported types, unions, and constants from the package 
 
 ```ts
 EventSourceClient, Socket, SocketCache, SocketClient,
-SocketCloseCode, SocketCloseReason
+SocketCloseCode, SocketCloseReason, SocketGate, reconnectExhausted, useExhaustedSockets
 ```
 
 **Types**
@@ -22,7 +22,8 @@ SocketMessageFailureAction, SocketMessageFailurePolicy, SocketFetchStatus,
 InferSocketSchema, SocketListener, UseSocketOptions, SocketParamsSerializer,
 SocketQueueOptions, SocketReconnectOptions, SocketSchema, SocketSelector,
 SocketState, SocketStatus, SocketTimeout, SocketURI, TimeUnit, Unit, UnitValue,
-UseSocketResult, SocketDiagnostic, RuntimeAdapters, WebSocketConstructor
+UseSocketResult, SocketDiagnostic, RuntimeAdapters, WebSocketConstructor,
+ReconnectExhaustedOptions, ExhaustedClient, UseExhaustedSocketsResult, SocketGateOptions
 ```
 
 ## Runtime
@@ -103,6 +104,7 @@ interface SocketState<Get> {
   readonly isConnecting: boolean;
   readonly isDisconnected: boolean;
   readonly isError: boolean;
+  readonly isExhausted: boolean;
   readonly isIdle: boolean;
   readonly isLoading: boolean;
   readonly isPending: boolean;

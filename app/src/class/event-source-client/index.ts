@@ -1,3 +1,4 @@
+import { NativeUnsupportedInit } from "@/constants/native-unsupported-init";
 import { getUri } from "@/functions/get-uri";
 import { shallowMerge } from "@/functions/shallow-merge";
 import { time } from "@/functions/time";
@@ -13,21 +14,6 @@ import type {
 } from "@/types/event-source/transport";
 import type { RuntimeAdapters } from "@/types/runtime";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-
-/**
- * `RequestInit` fields a native `EventSource` cannot express. Supplying any of
- * them disqualifies the native transport under `"auto"` and is an error under
- * `"native"`, so configuration is never silently discarded.
- */
-const NATIVE_UNSUPPORTED_INIT: readonly (keyof RequestInit)[] = [
-  "mode",
-  "redirect",
-  "referrer",
-  "referrerPolicy",
-  "integrity",
-  "keepalive",
-  "window",
-];
 
 /**
  * https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
@@ -661,7 +647,7 @@ export class EventSourceClient<
     if (this.#init.body != null) return "a request body";
     if (this.#init.headers !== undefined) return "custom headers";
     if (this.#init.credentials === "omit") return 'credentials: "omit"';
-    for (const key of NATIVE_UNSUPPORTED_INIT)
+    for (const key of NativeUnsupportedInit)
       if (this.#init[key] !== undefined) return `the "${key}" request option`;
     return null;
   };

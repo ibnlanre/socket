@@ -35,6 +35,11 @@ export interface SocketState<Get> {
   readonly isDisconnected: boolean;
   /** Whether the socket is in an error state. */
   readonly isError: boolean;
+  /**
+   * Whether the socket has stopped after a failure it will not retry (its
+   * retries used up, or retrying off). It waits closed until `open()`.
+   */
+  readonly isExhausted: boolean;
   /** Whether the socket has never opened a connection. */
   readonly isIdle: boolean;
   /** Whether the socket is loading its first payload. */

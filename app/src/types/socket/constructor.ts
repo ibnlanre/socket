@@ -1,3 +1,4 @@
+import type { SocketGate } from "@/class/socket-gate";
 import type { RuntimeAdapters } from "../runtime";
 import type { SocketCacheOptions } from "./cache-options";
 import type { SocketDataHandlingOptions } from "./data-handling-options";
@@ -23,6 +24,13 @@ export interface SocketConstructor<
     SocketQueueOptions {
   /** Runs before every transport attempt; does not change pool/cache identity. */
   prepareConnection?: SocketPrepareConnection;
+
+  /**
+   * Paces this socket's handshakes with others' (`SocketGate`): it waits for a
+   * turn before each attempt, retries included, so the sockets sharing a gate
+   * never begin more than its `concurrency` handshakes at once to one server.
+   */
+  gate?: SocketGate;
 
   /**
    * Environment implementations to use instead of ambient globals.
