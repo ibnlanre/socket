@@ -34,9 +34,11 @@ export interface SocketState<Get> {
   /** Whether the socket is in an error state. */
   readonly isError: boolean;
   /**
-   * Whether the socket has stopped after a failure it will not retry (its
-   * retries used up, or retrying off). It waits closed until `open()`, and
-   * stops waiting when closed on purpose or when its last subscriber leaves.
+   * Whether the socket has stopped after a failure it will not retry: its
+   * retries used up, or its close code one it does not retry. It waits closed
+   * until `open()`, and stops waiting when closed on purpose or when its last
+   * subscriber leaves. With retrying off, a failed close ends quietly instead,
+   * so the socket is never exhausted.
    */
   readonly isExhausted: boolean;
   /** Whether the socket has never opened a connection. */

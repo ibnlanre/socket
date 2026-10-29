@@ -160,18 +160,33 @@ describe("Socket", () => {
     });
   });
   describe("retry", () => {
-    it("should transition to idle after a clean close with a specific code", async () => {
+    it("should retry a clean close whose code it is told to retry", async () => {
       const client = new Socket({
         retry: true,
         retryCount: 2,
+        retryDelay: "1 minute",
         retryOnSpecificCloseCodes: [3000],
         url: "wss://echo.websocket.org",
       });
       client.open();
       await client.waitUntil("open");
       client.ws?.close(3000);
+      await vi.waitFor(() => expect(client.isDisconnected).toBe(true));
+      expect(client.failureCount).toBe(1);
+      client.close();
+    });
+    it("should transition to idle after a normal clean close", async () => {
+      const client = new Socket({
+        retry: true,
+        retryCount: 2,
+        url: "wss://echo.websocket.org",
+      });
+      client.open();
+      await client.waitUntil("open");
+      client.ws?.close(1000);
       await client.waitUntil("close");
       expect(client.isIdle).toBe(true);
+      expect(client.isExhausted).toBe(false);
     });
     it("should increment failureCount and enter disconnected state on an unclean close", async () => {
       const client = new Socket({

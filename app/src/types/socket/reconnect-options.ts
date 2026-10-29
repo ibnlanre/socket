@@ -29,7 +29,8 @@ export interface SocketReconnectOptions extends ReconnectionPolicy {
   reconnectOnPageRestore?: boolean;
 
   /**
-   * Whether to retry the connection when the window regains focus
+   * Whether to retry the connection when the window itself regains focus
+   * (not when an element inside the page takes it)
    *
    * @default true
    */
@@ -43,7 +44,9 @@ export interface SocketReconnectOptions extends ReconnectionPolicy {
   retryOnCustomCondition?: (event: CloseEvent, socket: WebSocket) => boolean;
 
   /**
-   * An array of specific close codes that should trigger a retry
+   * With `retry` on, the close codes that should trigger a retry, whether
+   * the close was clean or not. A clean close with 1000, 1001 or no status
+   * is never retried: it ends the connection quietly.
    *
    * @default
    * [

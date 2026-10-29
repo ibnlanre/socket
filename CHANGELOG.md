@@ -2,6 +2,18 @@
 
 All notable changes to `@ibnlanre/socket` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-10-29
+
+Three fixes around a failed connection: how it is recognised, counted and
+revived. The first is for a server that ends a stream with an error after its
+first message.
+
+### Fixed
+
+- A clean close with a code that reports a fault (`1011` for an error on the server, `1012`, `1013`, an application's own code) was treated as a deliberate end: the socket went idle, with no retry, no error and no `isExhausted`, so a feed could stop with nothing to show for it. With `retry` on, it is now a failure, retried when its code is in `retryOnSpecificCloseCodes` (whose defaults `1012` and `1013`, sent cleanly, were never retried before) and otherwise stopped with `isExhausted`. With `retry` off, it ends quietly as before. Only `1000`, `1001` and a close without a status always end a connection quietly.
+- A close it would not retry counted twice in `failureCount`, once as a retry it then did not make and once as the failure; it counts once, so a reopened socket's backoff starts from the right attempt.
+- `reconnectOnWindowFocus` listened in the capture phase, so any element taking focus inside the page reopened an idle socket, as though the window had regained focus. It now answers the window's own focus only.
+
 ## [0.4.0] - 2026-10-29
 
 Paced handshakes, and stopped sockets: begin connections to a server one after another rather than all at once, and know which sockets have given up, to reopen them on request. Additive, apart from the fix below.

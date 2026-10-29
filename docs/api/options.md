@@ -104,10 +104,10 @@ On `SocketClient`, `maxPoolSize` (default `1000`) bounds the number of pooled so
 | `retryBackoffStrategy` | `"exponential"` on `Socket`, `"fixed"` on `EventSourceClient` | Delay growth |
 | `maxRetryDelay` | `"1 minute"` | Backoff cap |
 | `minJitterValue` / `maxJitterValue` | `0.8` / `1.2` | Jitter multiplier bounds |
-| `retryOnSpecificCloseCodes` | `[1006, 1012, 1013]` | Close codes that trigger a retry |
+| `retryOnSpecificCloseCodes` | `[1006, 1012, 1013]` | With `retry` on, the failed closes that trigger a retry, clean or not. A clean `1000`, `1001` or close without a status is never retried |
 | `retryOnCustomCondition` | `undefined` | `(event: CloseEvent, socket: WebSocket) => boolean` |
 | `reconnectOnNetworkRestore` | `true` | Reconnect on `window` `"online"` |
-| `reconnectOnWindowFocus` | `true` | Reconnect on window `focus` |
+| `reconnectOnWindowFocus` | `true` | Reconnect when the window itself regains `focus` (not when an element in the page takes it) |
 | `reconnectOnPageRestore` | `true` | bfcache: close on `pagehide`, reopen on persisted `pageshow` |
 | `idleConnectionTimeout` | `"5 minutes"` | Close after the last subscriber unsubscribes |
 

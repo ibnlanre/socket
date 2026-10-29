@@ -26,6 +26,7 @@ import type { UnitValue } from "@/types/time-unit";
 
 import { SocketCache } from "@/class/socket-cache";
 import { SocketOutbox } from "@/class/socket-outbox";
+import { QuietCloseCodes } from "@/constants/quiet-close-codes";
 import { SocketCloseCode } from "@/constants/socket-close-code";
 import { SocketCloseReason } from "@/constants/socket-close-reason";
 import { SocketReadyState } from "@/constants/socket-ready-state";
@@ -65,8 +66,10 @@ export class Socket<
   failureReason: null | string = null;
   fetchStatus: SocketFetchStatus = "idle";
   /**
-   * Whether the socket has stopped after a failure it will not retry, its
-   * retries used up (or retrying switched off). It stays closed until
+   * Whether the socket has stopped after a failure it will not retry: its
+   * retries used up, or its close code not one it retries. With retrying
+   * off, a failed close ends quietly instead, and only a connection that
+   * could not be prepared stops. It stays closed until
    * `open()` starts it again, which is how a caller offers "reconnect".
    * Closing it on purpose, or its last subscriber leaving, clears it: nothing
    * waits on it then.
@@ -639,7 +642,7 @@ export class Socket<
 
   #cleanupWindowFocusListener = () => {
     if (this.#focusListener) {
-      window.removeEventListener("focus", this.#focusListener, true);
+      window.removeEventListener("focus", this.#focusListener);
       this.#focusListener = null;
     }
   };
@@ -844,7 +847,7 @@ export class Socket<
         this.cache.remove(this.path);
       }
 
-      if (event.wasClean) {
+      if (!this.#isFailure(event)) {
         return this.#cleanup({
           preserveError: this.#preserveTerminalMetadata,
           preserveFailure: this.#preserveTerminalMetadata,
@@ -937,6 +940,17 @@ export class Socket<
   #getMessageFailureCode = (error: Error): SocketCloseCode => {
     if (this.#isMessageFailure(error)) return error.closeCode;
     return SocketCloseCode.INVALID_PAYLOAD_DATA;
+  };
+
+  /**
+   * Whether a close is a failure: one without a close frame, or a clean one
+   * whose code reports a fault (1011 for an error on the server, 1013 to try
+   * again later, an application's own code). A normal close, a going away and
+   * a close without a status end the connection quietly.
+   */
+  #isFailure = (event: CloseEvent): boolean => {
+    if (!event.wasClean) return true;
+    return !QuietCloseCodes.includes(event.code);
   };
 
   #isMessageFailure = (error: Error): error is SocketMessageFailure => {
@@ -1052,7 +1066,9 @@ export class Socket<
       if (this.isIdle) this.#connect();
     };
 
-    window.addEventListener("focus", this.#focusListener, true);
+    // The window's own focus only: not in the capture phase, where every
+    // element's focus inside the page would reach it as well.
+    window.addEventListener("focus", this.#focusListener);
   };
 
   #setValue = (value: Get) => {
@@ -1080,28 +1096,37 @@ export class Socket<
       });
     }
 
-    if (this.#retry && this.failureCount < this.#retryCount) {
+    // Only failures reach here: a quiet close has already ended the connection.
+    const retryable =
+      this.#retry &&
+      this.failureCount < this.#retryCount &&
+      (this.#retryOnCustomCondition?.(event, target) ||
+        this.#retryOnSpecificCloseCodes.includes(errorCode));
+
+    if (retryable) {
       this.#setState({
         failureCount: this.failureCount + 1,
         failureReason: reason,
         fetchStatus: "disconnected",
         status: "idle",
       });
-
-      if (this.#retryOnCustomCondition?.(event, target)) return true;
-      if (this.#retryOnSpecificCloseCodes.includes(errorCode)) return true;
+      return true;
     }
 
-    if (!event.wasClean && this.#retry) {
-      this.#preserveTerminalMetadata = true;
-      this.#setState({
-        error: this.error ?? new Error(reason),
-        errorUpdatedAt: this.errorUpdatedAt || Date.now(),
-        failureCount: this.failureCount + 1,
-        failureReason: reason,
-        status: "error",
-      });
-    }
+    // Retrying off: the connection ends quietly, as a quiet close does, and
+    // the environment's reconnects (focus, network, page restore) may revive it.
+    if (!this.#retry) return false;
+
+    // A failure it will not retry, its retries used up or its code not asked
+    // for: counted once, and kept until it is opened again.
+    this.#preserveTerminalMetadata = true;
+    this.#setState({
+      error: this.error ?? new Error(reason),
+      errorUpdatedAt: this.errorUpdatedAt || Date.now(),
+      failureCount: this.failureCount + 1,
+      failureReason: reason,
+      status: "error",
+    });
 
     return false;
   };

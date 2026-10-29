@@ -360,12 +360,82 @@ it.each(["focus", "online"])(
   async (event) => {
     const socket = create();
     const first = await connect(socket);
-    first.onclose?.(new CloseEvent("close", { wasClean: true }));
+    first.onclose?.(new CloseEvent("close", { code: 1000, wasClean: true }));
     expect(socket.isIdle).toBe(true);
     window.dispatchEvent(new Event(event));
     await vi.waitFor(() => expect(Transport.instances).toHaveLength(2));
   }
 );
+
+it("reconnects on the window's focus, not when an element inside the page takes it", async () => {
+  const socket = create();
+  const first = await connect(socket);
+  first.onclose?.(new CloseEvent("close", { code: 1000, wasClean: true }));
+  const button = document.body.appendChild(document.createElement("button"));
+  button.focus();
+  button.dispatchEvent(new FocusEvent("focus"));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(Transport.instances).toHaveLength(1);
+  button.remove();
+
+  window.dispatchEvent(new FocusEvent("focus"));
+  await vi.waitFor(() => expect(Transport.instances).toHaveLength(2));
+});
+
+it.each([1000, 1001, 1005])("ends quietly on a clean close with code %i", async (code) => {
+  const socket = create({ retry: true, retryCount: 2 });
+  const transport = await connect(socket);
+  transport.onclose?.(new CloseEvent("close", { code, wasClean: true }));
+  expect(socket.isIdle).toBe(true);
+  expect(socket.isError).toBe(false);
+  expect(socket.isExhausted).toBe(false);
+});
+
+it("treats a clean close reporting a server error as a failure: retried, then stopped", async () => {
+  const socket = create({
+    maxJitterValue: 1,
+    minJitterValue: 1,
+    retry: true,
+    retryCount: 1,
+    retryDelay: 5,
+    retryOnSpecificCloseCodes: [1011],
+  });
+  const first = await connect(socket);
+  first.onclose?.(new CloseEvent("close", { code: 1011, wasClean: true }));
+  expect(socket.failureCount).toBe(1);
+  await vi.waitFor(() => expect(Transport.instances).toHaveLength(2));
+  Transport.instances[1].onclose?.(new CloseEvent("close", { code: 1011, wasClean: true }));
+  expect(socket.isExhausted).toBe(true);
+  expect(socket.isError).toBe(true);
+});
+
+it("stops on a clean close reporting a fault it is not told to retry, counting it once", async () => {
+  const socket = create({ retry: true, retryCount: 3 });
+  const transport = await connect(socket);
+  transport.onclose?.(new CloseEvent("close", { code: 1011, wasClean: true }));
+  expect(socket.isExhausted).toBe(true);
+  expect(socket.isError).toBe(true);
+  expect(socket.failureCount).toBe(1);
+});
+
+it("counts an unclean close it will not retry once", async () => {
+  const socket = create({ retry: true, retryCount: 3 });
+  const transport = await connect(socket);
+  transport.onclose?.(new CloseEvent("close", { code: 3001, wasClean: false }));
+  expect(socket.isExhausted).toBe(true);
+  expect(socket.failureCount).toBe(1);
+});
+
+it("ends quietly on a fault close with retrying off, for the environment to revive", async () => {
+  const socket = create({ retry: false });
+  const transport = await connect(socket);
+  transport.onclose?.(new CloseEvent("close", { code: 1011, wasClean: true }));
+  expect(socket.isIdle).toBe(true);
+  expect(socket.isExhausted).toBe(false);
+  expect(socket.failureCount).toBe(0);
+  window.dispatchEvent(new Event("online"));
+  await vi.waitFor(() => expect(Transport.instances).toHaveLength(2));
+});
 
 describe("runtime without a WebSocket global", () => {
   // Regression: `WebSocket.OPEN` and `WebSocket.CLOSED` were read from the

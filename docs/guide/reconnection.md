@@ -38,6 +38,10 @@ A reconnect is scheduled only when **all** of these hold:
 2. `failureCount < retryCount`, **and**
 3. `retryOnCustomCondition` returns `true` **or** the close code is in `retryOnSpecificCloseCodes`.
 
+Only failures are considered. A close is a failure when the connection drops without a close frame, or when the server closes it cleanly with a code that reports a fault: `1011` for an error on the server, `1012` and `1013` for a restart or "try again later", or an application's own code. A clean close with `1000` (normal), `1001` (going away) or no status ends the connection quietly: the socket goes idle, with no retry and no error, even if its code is listed. With `retry` off, a failure ends quietly too, and `reconnectOnWindowFocus`, `reconnectOnNetworkRestore` and `reconnectOnPageRestore` may still revive the socket; with it on, a failure it will not retry stops the socket with `isExhausted`.
+
+A server that sends a message and then fails each time resets `failureCount` with every message, so retrying its close code retries it for as long as it keeps doing so. Leave such a code out of `retryOnSpecificCloseCodes`, and the socket stops at the first failure, `isExhausted` and waiting to be reopened.
+
 ```tsx
 import { SocketClient, SocketCloseCode } from "@ibnlanre/socket";
 
@@ -70,14 +74,14 @@ These reconnect a socket even after retries would normally be exhausted:
 | Option | Default | Behavior |
 | --- | --- | --- |
 | `reconnectOnNetworkRestore` | `true` | Reconnect on `window` `"online"` |
-| `reconnectOnWindowFocus` | `true` | Reconnect when the window regains `focus` |
+| `reconnectOnWindowFocus` | `true` | Reconnect when the window itself regains `focus`, not when an element in the page takes it |
 | `reconnectOnPageRestore` | `true` | **bfcache**: close cleanly on `pagehide` so the browser can cache the page, reopen on `pageshow` when `event.persisted` |
 
 ## State during reconnect
 
 - While a retry is scheduled, `fetchStatus` becomes `"disconnected"`.
 - If a cached value exists, `status` stays/becomes `"stale"` so the UI can keep rendering data.
-- When retries are exhausted on an unclean close, terminal failure metadata (`failureReason`, `failureCount`) is recorded and the socket settles into `"error"`.
+- When retries are exhausted on a failed close, terminal failure metadata (`failureReason`, `failureCount`) is recorded and the socket settles into `"error"`.
 
 ## Pacing handshakes
 
