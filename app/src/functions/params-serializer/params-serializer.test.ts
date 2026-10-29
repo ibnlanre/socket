@@ -1,6 +1,7 @@
 import type { ConnectionParams } from "@/types/connection-params";
 
 import { describe, expect, it } from "vitest";
+
 import { paramsSerializer } from "./index";
 
 describe("paramsSerializer", () => {
@@ -8,32 +9,32 @@ describe("paramsSerializer", () => {
     decodedToBe(received: string, expected: string) {
       const pass = decodeURIComponent(received) === expected;
       return {
-        pass,
         message: () => `expected ${pass ? "not " : ""}to be ${expected}`,
+        pass,
       };
     },
   });
 
   it("should serialize simple key-value pairs", () => {
-    const params: ConnectionParams = { foo: "bar", baz: "qux" };
+    const params: ConnectionParams = { baz: "qux", foo: "bar" };
     const result = paramsSerializer(params);
     expect(result).toBe("baz=qux&foo=bar");
   });
 
   it("should ignore empty values", () => {
-    const params: ConnectionParams = { foo: "", baz: "qux" };
+    const params: ConnectionParams = { baz: "qux", foo: "" };
     const result = paramsSerializer(params);
     expect(result).toBe("baz=qux");
   });
 
   it("should ignore null values", () => {
-    const params: ConnectionParams = { foo: null, baz: "qux" };
+    const params: ConnectionParams = { baz: "qux", foo: null };
     const result = paramsSerializer(params);
     expect(result).toBe("baz=qux");
   });
 
   it("should ignore undefined values", () => {
-    const params: ConnectionParams = { foo: undefined, baz: "qux" };
+    const params: ConnectionParams = { baz: "qux", foo: undefined };
     const result = paramsSerializer(params);
     expect(result).toBe("baz=qux");
   });
@@ -52,7 +53,7 @@ describe("paramsSerializer", () => {
   });
 
   it("should handle custom ignore values", () => {
-    const params: ConnectionParams = { foo: "bar", baz: null, qux: "quux" };
+    const params: ConnectionParams = { baz: null, foo: "bar", qux: "quux" };
     const result = paramsSerializer(params, ["null"]);
     expect(result).toBe("foo=bar&qux=quux");
   });

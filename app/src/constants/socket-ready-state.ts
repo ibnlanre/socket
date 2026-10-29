@@ -6,8 +6,8 @@
  * notably when dispatching or tearing down a socket that was never opened.
  */
 export const SocketReadyState = {
+  CLOSED: 3,
+  CLOSING: 2,
   CONNECTING: 0,
   OPEN: 1,
-  CLOSING: 2,
-  CLOSED: 3,
 } as const;

@@ -22,8 +22,6 @@ export function socketState<Get>({
     failureCount: 0,
     failureReason: null,
     fetchStatus: enabled && !error ? "preparing" : "idle",
-    status: error ? "error" : enabled ? "loading" : "idle",
-    isPreparing: enabled && !error,
     isConnected: false,
     isConnecting: false,
     isDisconnected: false,
@@ -35,10 +33,12 @@ export function socketState<Get>({
     isPending: initialData === undefined,
     isPlaceholderData:
       initialData === undefined && placeholderData !== undefined,
+    isPreparing: enabled && !error,
     isRefetchError: false,
     isRefetching: false,
     isStaleData: false,
     isSuccess: false,
+    status: error ? "error" : enabled ? "loading" : "idle",
     value: initialData ?? placeholderData,
   });
 }

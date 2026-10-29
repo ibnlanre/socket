@@ -28,9 +28,9 @@ describe("node runtime", () => {
 
     try {
       const socket = new Socket({
-        url: "wss://example.com/ws",
         disableCache: true,
         log: [],
+        url: "wss://example.com/ws",
       });
 
       expect(() => socket.close()).not.toThrow();
@@ -44,9 +44,9 @@ describe("node runtime", () => {
   it("selects fetch for a default GET SSE connection", () => {
     const fetched = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
     const client = new EventSourceClient({
-      url: "https://example.com/events",
       retry: false,
       runtime: { fetch: fetched },
+      url: "https://example.com/events",
     });
 
     client.open();
@@ -63,8 +63,8 @@ describe("node runtime", () => {
 
     const server = createServer((request, response) => {
       response.writeHead(200, {
-        "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
+        "Content-Type": "text/event-stream",
       });
 
       response.write("data: first\n\n");
@@ -82,8 +82,8 @@ describe("node runtime", () => {
     const { port } = server.address() as AddressInfo;
 
     const client = new EventSourceClient<string>({
-      url: `http://127.0.0.1:${port}/events`,
       retry: false,
+      url: `http://127.0.0.1:${port}/events`,
     });
 
     const messages: string[] = [];

@@ -95,23 +95,23 @@ await client.clearCache();
 
 ## `exhausted()`
 
-The pooled sockets that have stopped after failures they will not retry (`isExhausted`) and that something still reads: those to offer to reconnect.
+The pooled sockets that have stopped after failures they will not retry (`isExhausted`): those to offer to reconnect. A socket stops being one when its last subscriber leaves, so a screen left behind offers nothing; one opened without subscribers stays one until opened again.
 
 ```ts
 exhausted(): Socket<Get, Post, Params>[];
 ```
 
-## `subscribe(listener)`
+## `observe(listener)`
 
-Notice when the pool's sockets change state or subscribers, as when one stops or starts again. Returns a function that stops the notices.
+Watch the pool's sockets change state or subscribers, as when one stops or starts again, without subscribing to any. The listener is told that something changed, not what: read `exhausted()` or the sockets. Returns a function that stops watching.
 
 ```ts
-subscribe(listener: () => void): () => void;
+observe(listener: () => void): () => void;
 ```
 
 ## `reconnect(options?)`
 
-Reopens the stopped sockets, one after another, `stagger` apart (default `0`). Resolves with how many it reopened. Across several clients, use `reconnectExhausted(clients, options)` or the `useExhaustedSockets` hook ([Reconnection](/guide/reconnection#when-retries-run-out)).
+Reopens the stopped sockets, one after another, `stagger` apart (default `0`). Resolves once each has connected, stopped again or been closed, with how many connected. A socket disposed meanwhile is passed over and the rest still open. Across several clients, use `reconnectExhausted(clients, options)` or the `useExhaustedSockets` hook ([Reconnection](/guide/reconnection#when-retries-run-out)).
 
 ```ts
 reconnect(options?: { stagger?: UnitValue }): Promise<number>;

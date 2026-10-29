@@ -47,7 +47,7 @@ Multiple related types in one `types/` file is normal (`time-unit.ts`, `data-han
 
 - `#private` fields; `#camelCase` private methods; public commands as arrow-function properties (`open = () => { ... }`).
 - **Named exports only** — no `export default`.
-- Imports: value imports first, then `import type`, grouped by layer (`@/class`, `@/constants`, `@/functions`, `@/types`, then external packages).
+- **Ordering is enforced** by `eslint-plugin-perfectionist` (`recommended-natural`, scoped to `app/src`): imports and exports, interface and object-type members, union types, class members, and object literals without a spread. Never hand-order any of it — run `pnpm exec eslint app/src --fix`. Imports sort type-first, then external named values, then internal `@/…` values, matching `~/Desktop/workspace/scouting`. An object literal containing a spread is left untouched, so spread-then-override objects keep their semantics.
 - One concern per module. Anything public is reachable from `index.ts`; everything else stays internal.
 - Comments explain *why*, not *what*; match the existing doc-comment tone.
 - Keep each file's existing line endings. Do not reformat files wholesale — unrelated reflow obscures review.
@@ -69,7 +69,7 @@ Run these before reporting work as done:
 ```bash
 app/node_modules/.bin/tsc --noEmit -p app/tsconfig.json
 cd app && npx vitest --run
-pnpm exec eslint app/src
+pnpm exec eslint app/src --fix
 npx playwright test tests/socket-library.spec.ts
 pnpm --filter @ibnlanre/socket-docs build
 ```

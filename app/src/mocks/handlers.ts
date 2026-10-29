@@ -26,11 +26,11 @@ export const handlers: Array<WebSocketHandler> = [
     // Send initial connection message
     client.send(
       JSON.stringify({
-        type: "connection",
         message: `Connected to test server`,
-        userId,
         room,
         timestamp: Date.now(),
+        type: "connection",
+        userId,
       })
     );
 
@@ -40,19 +40,19 @@ export const handlers: Array<WebSocketHandler> = [
         const data = JSON.parse(event.data as string);
         client.send(
           JSON.stringify({
-            type: "echo",
             data,
-            userId,
             room,
             timestamp: Date.now(),
+            type: "echo",
+            userId,
           })
         );
       } catch {
         client.send(
           JSON.stringify({
-            type: "error",
             message: "Invalid JSON",
             timestamp: Date.now(),
+            type: "error",
           })
         );
       }

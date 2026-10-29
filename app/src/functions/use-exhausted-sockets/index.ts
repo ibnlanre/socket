@@ -1,24 +1,11 @@
-import { reconnectExhausted } from "@/functions/reconnect-exhausted";
 import type { ExhaustedClient } from "@/types/exhausted-client";
 import type { ReconnectExhaustedOptions } from "@/types/reconnect-exhausted-options";
 import type { UseExhaustedSocketsResult } from "@/types/use-exhausted-sockets-result";
-import { useCallback, useRef, useState } from "react";
+
+import { useCallback, useState } from "react";
 import { useSyncExternalStore } from "use-sync-external-store/shim";
 
-/**
- * The same clients as last render, if they are the same: callers often pass a
- * fresh array.
- */
-function useStableClients(
-  clients: readonly ExhaustedClient[]
-): readonly ExhaustedClient[] {
-  const stable = useRef(clients);
-  const same =
-    stable.current.length === clients.length &&
-    stable.current.every((client, index) => client === clients[index]);
-  if (!same) stable.current = clients;
-  return stable.current;
-}
+import { reconnectExhausted } from "@/functions/reconnect-exhausted";
 
 /**
  * Watch several clients' sockets for those that have stopped after failures
@@ -33,7 +20,7 @@ export function useExhaustedSockets(
   const watched = useStableClients(clients);
   const subscribe = useCallback(
     (notify: () => void) => {
-      const stops = watched.map((client) => client.subscribe(notify));
+      const stops = watched.map((client) => client.observe(notify));
       return () => stops.forEach((stop) => stop());
     },
     [watched]
@@ -58,4 +45,21 @@ export function useExhaustedSockets(
   }, [watched, stagger]);
 
   return { count, isReconnecting, reconnect };
+}
+
+/**
+ * The same clients as last render, if they are the same: callers often pass a
+ * fresh array. Kept in state, adjusted while rendering, so a render React
+ * throws away leaves nothing behind.
+ */
+function useStableClients(
+  clients: readonly ExhaustedClient[]
+): readonly ExhaustedClient[] {
+  const [stable, setStable] = useState(clients);
+  const same =
+    stable.length === clients.length &&
+    stable.every((client, index) => client === clients[index]);
+
+  if (!same) setStable(clients);
+  return same ? stable : clients;
 }

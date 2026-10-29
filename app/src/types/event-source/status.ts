@@ -1,1 +1,1 @@
-export type EventSourceStatus = "idle" | "connecting" | "open" | "error";
+export type EventSourceStatus = "connecting" | "error" | "idle" | "open";

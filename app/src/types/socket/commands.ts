@@ -1,7 +1,6 @@
-import type { UnitValue } from "@/types/time-unit";
-
 import type { SocketConnectionEvent } from "./connection-event";
 import type { SocketListener } from "./listener";
+import type { UnitValue } from "@/types/time-unit";
 
 /**
  * The imperative commands a {@link Socket} exposes to callers.

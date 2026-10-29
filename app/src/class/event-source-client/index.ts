@@ -1,8 +1,4 @@
-import { NativeUnsupportedInit } from "@/constants/native-unsupported-init";
-import { getUri } from "@/functions/get-uri";
-import { shallowMerge } from "@/functions/shallow-merge";
-import { time } from "@/functions/time";
-import { toError } from "@/functions/to-error";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 import type { ConnectionParams } from "@/types/connection-params";
 import type { EventSourceClientOptions } from "@/types/event-source/constructor";
@@ -13,7 +9,12 @@ import type {
   EventSourceTransportMode,
 } from "@/types/event-source/transport";
 import type { RuntimeAdapters } from "@/types/runtime";
-import type { StandardSchemaV1 } from "@standard-schema/spec";
+
+import { NativeUnsupportedInit } from "@/constants/native-unsupported-init";
+import { getUri } from "@/functions/get-uri";
+import { shallowMerge } from "@/functions/shallow-merge";
+import { time } from "@/functions/time";
+import { toError } from "@/functions/to-error";
 
 /**
  * https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
@@ -22,46 +23,46 @@ export class EventSourceClient<
   Data = unknown,
   Params extends ConnectionParams = never,
 > {
+  // Pure event field buffers (Reset dynamically at event dispatch boundaries)
+  dataBuffer: string = "";
   error: Error | null = null;
+  eventTypeBuffer: string = "";
+  lastEventId: string = "";
   status: EventSourceStatus = "idle";
   /** Transport used for the current connection; `null` while idle. */
   transport: EventSourceTransport | null = null;
   #abortController: AbortController = new AbortController();
+  #attempt = 0;
   #cache: string;
+  #disposed = false;
   #eventSource: EventSource | null = null;
-  #lastEventId: string | null;
+  #generation = 0;
   #href: string;
   #init: RequestInit;
+  #isClosed: boolean = true;
+  #iterators = new Set<() => void>();
+  #lastEventId: null | string;
   #listeners: Map<string, Set<(event: MessageEvent) => void>> = new Map();
+  #maxJitterValue: number;
+  #maxPendingMessages: number;
+  #maxRetryDelay: number;
+  #messages: Promise<void> = Promise.resolve();
+  #messageSchema?: StandardSchemaV1<unknown, Data>;
+  #method: string;
+  #minJitterValue: number;
   // One forwarding handler per subscribed named event, used to bridge events
   // from a native EventSource (GET mode) into the shared listener dispatch.
   #nativeForwarders: Map<string, EventListener> = new Map();
-  #retry: boolean;
-  #retryDelay: number;
-  #maxJitterValue: number;
-  #maxRetryDelay: number;
-  #method: string;
-  #minJitterValue: number;
-  #transportMode: EventSourceTransportMode;
-  #selectedTransport: EventSourceTransport | null = null;
-  #retryCount: number;
-  #retryBackoffStrategy: "fixed" | "exponential";
-  #reconnectionTimerId: ReturnType<typeof setTimeout> | undefined;
-  #isClosed: boolean = true;
-  #generation = 0;
   #pendingMessages = 0;
-  #maxPendingMessages: number;
-  #messages: Promise<void> = Promise.resolve();
-  #disposed = false;
-  #iterators = new Set<() => void>();
-  #attempt = 0;
-  #messageSchema?: StandardSchemaV1<unknown, Data>;
-  #runtime?: RuntimeAdapters;
+  #reconnectionTimerId: ReturnType<typeof setTimeout> | undefined;
+  #retry: boolean;
+  #retryBackoffStrategy: "exponential" | "fixed";
+  #retryCount: number;
+  #retryDelay: number;
 
-  // Pure event field buffers (Reset dynamically at event dispatch boundaries)
-  dataBuffer: string = "";
-  lastEventId: string = "";
-  eventTypeBuffer: string = "";
+  #runtime?: RuntimeAdapters;
+  #selectedTransport: EventSourceTransport | null = null;
+  #transportMode: EventSourceTransportMode;
 
   /**
    * Constructor to initialize the EventSourceClient.
@@ -70,22 +71,22 @@ export class EventSourceClient<
    */
   constructor(
     {
-      url,
       baseURL,
+      cache = "no-store",
       initialLastEventId = null,
       maxJitterValue = 1.2,
+      maxPendingMessages = 1000,
       maxRetryDelay = "1 minute",
+      messageSchema,
       method = "GET",
       minJitterValue = 0.8,
-      transport: transportMode = "auto",
       retry = false,
-      retryDelay = "5 seconds",
-      retryCount = 3,
       retryBackoffStrategy = "fixed",
-      cache = "no-store",
-      messageSchema,
-      maxPendingMessages = 1000,
+      retryCount = 3,
+      retryDelay = "5 seconds",
       runtime,
+      transport: transportMode = "auto",
+      url,
       ...init
     }: EventSourceClientOptions<Data>,
     params = {} as Params
@@ -94,7 +95,7 @@ export class EventSourceClient<
     if (!Number.isInteger(maxPendingMessages) || maxPendingMessages < 1)
       throw new RangeError("maxPendingMessages must be a positive integer.");
     this.#cache = cache;
-    this.#href = getUri({ url, baseURL, params });
+    this.#href = getUri({ baseURL, params, url });
     this.#lastEventId = initialLastEventId;
     this.lastEventId = initialLastEventId || "";
     this.#init = init;
@@ -112,15 +113,273 @@ export class EventSourceClient<
   }
 
   /**
+   * Close the connection.
+   */
+  close = () => {
+    this.#isClosed = true;
+    this.#iterators.forEach((stop) => stop());
+    this.#generation += 1;
+    this.#messages = Promise.resolve();
+    this.#pendingMessages = 0;
+    clearTimeout(this.#reconnectionTimerId);
+
+    this.#reconnectionTimerId = undefined;
+    this.#abortController.abort();
+    this.#eventSource?.close();
+    this.#eventSource = null;
+    this.#selectedTransport = null;
+    this.transport = null;
+    this.status = "idle";
+  };
+
+  dispose = () => {
+    this.close();
+    this.#disposed = true;
+    this.#listeners.clear();
+    this.#nativeForwarders.clear();
+  };
+
+  /**
+   * An asynchronous generator function that yields `MessageEvent` objects.
+   * This function continuously listens for "message" events and yields each event as it occurs.
+   *
+   * @async
+   * @generator
+   * @yields {MessageEvent} The next message event.
+   */
+  events = ({
+    maxQueueSize = 1000,
+    signal,
+  }: {
+    maxQueueSize?: number;
+    signal?: AbortSignal;
+  } = {}): AsyncIterableIterator<MessageEvent<Data>> => {
+    if (!Number.isInteger(maxQueueSize) || maxQueueSize < 1) {
+      throw new RangeError("maxQueueSize must be a positive integer.");
+    }
+
+    const queue: MessageEvent<Data>[] = [];
+    const waiting: {
+      reject: (error: unknown) => void;
+      resolve: (result: IteratorResult<MessageEvent<Data>>) => void;
+    }[] = [];
+
+    let ended = false;
+    let failure: unknown;
+    let unsubscribe = () => {};
+
+    const stop = (error?: unknown) => {
+      if (ended) return;
+
+      ended = true;
+      failure = error;
+      queue.length = 0;
+
+      unsubscribe();
+      signal?.removeEventListener("abort", abort);
+      this.#iterators.delete(close);
+
+      for (const waiter of waiting.splice(0)) {
+        if (error) waiter.reject(error);
+        else waiter.resolve({ done: true, value: undefined });
+      }
+    };
+
+    const abort = () => {
+      return stop(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+
+    const close = () => stop();
+    unsubscribe = this.on("message", (event) => {
+      const waiter = waiting.shift();
+      if (waiter) {
+        waiter.resolve({ done: false, value: event as MessageEvent<Data> });
+      } else if (queue.length >= maxQueueSize) {
+        stop(new RangeError("EventSourceClient: iterator queue is full."));
+      } else queue.push(event as MessageEvent<Data>);
+    });
+
+    this.#iterators.add(close);
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+
+    return {
+      next() {
+        if (failure) return Promise.reject(failure);
+        if (ended) return Promise.resolve({ done: true, value: undefined });
+        const event = queue.shift();
+        if (event) return Promise.resolve({ done: false, value: event });
+        return new Promise((resolve, reject) =>
+          waiting.push({ reject, resolve })
+        );
+      },
+      return() {
+        stop();
+        return Promise.resolve({ done: true, value: undefined });
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+  };
+
+  /**
+   * Subscribe to an SSE event. Returns an unsubscribe function.
+   *
+   * The store is keyed by the handler that was passed: each distinct handler
+   * owns its own subscription, while registering the same handler again is a
+   * no-op that returns the shared unsubscribe.
+   */
+  on = <Name extends string>(
+    type: Name,
+    listener: EventSourceListener<Data>
+  ): (() => void) => {
+    if (this.#disposed)
+      throw new Error("EventSourceClient: this instance has been disposed.");
+    let listeners = this.#listeners.get(type);
+    listeners ??= new Set();
+
+    const eventListener = listener as (event: MessageEvent) => void;
+    const isAbsent = !listeners.has(eventListener);
+
+    listeners.add(eventListener);
+    this.#listeners.set(type, listeners);
+
+    // Native EventSources only deliver events for names subscribed to up
+    // front, so ensure a forwarder exists for the native (GET) transport path.
+    if (isAbsent) this.#attachNativeForwarder(type);
+
+    return () => {
+      if (!listeners.has(eventListener)) return;
+      listeners.delete(eventListener);
+
+      if (listeners.size === 0) {
+        this.#listeners.delete(type);
+        this.#detachNativeForwarder(type);
+      }
+    };
+  };
+
+  open = () => {
+    if (this.#disposed) {
+      throw new Error("EventSourceClient: this instance has been disposed.");
+    }
+
+    if (
+      !this.#isClosed &&
+      (this.status === "open" || this.status === "connecting")
+    ) {
+      return;
+    }
+
+    // Resolve before mutating state so an incompatible configuration leaves the client untouched.
+    this.#selectedTransport = this.#resolveTransport();
+    this.#isClosed = false;
+    this.#attempt = 0;
+    this.#start();
+  };
+
+  [Symbol.asyncIterator](): AsyncIterableIterator<MessageEvent<Data>> {
+    return this.events();
+  }
+
+  /**
+   * Register (or reuse) a forwarding listener for a named event. The forwarder
+   * re-enters the shared dispatch so the payload is schema-validated and routed
+   * to every listener for that type. Native EventSources only deliver events
+   * for names subscribed to up front, so registering before `open()` matters:
+   * the forwarder is stored now and attached to each freshly created EventSource.
+   */
+  #attachNativeForwarder = (type: string) => {
+    if (type === "message" || type === "error") return;
+    if (this.#nativeForwarders.has(type)) return;
+
+    const generation = this.#generation;
+    const source = this.#eventSource;
+    const forwarder = (event: MessageEvent) => {
+      if (source !== this.#eventSource) return;
+      this.#enqueueMessage(event, generation);
+    };
+
+    this.#nativeForwarders.set(type, forwarder as EventListener);
+    this.#eventSource?.addEventListener(type, forwarder as EventListener);
+  };
+
+  /**
+   * Calculate backoff delay.
+   * @returns The calculated backoff delay.
+   * @private
+   */
+  #calculateBackoff = (): number => {
+    switch (this.#retryBackoffStrategy) {
+      case "fixed": {
+        return Math.min(this.#retryDelay, this.#maxRetryDelay);
+      }
+      case "exponential": {
+        const delay = Math.min(
+          this.#retryDelay * Math.pow(2, this.#attempt),
+          this.#maxRetryDelay
+        );
+
+        const jitterBufferValue = this.#maxJitterValue - this.#minJitterValue;
+        const jitterBufferTarget = Math.random() * jitterBufferValue;
+        const jitterFactor = this.#minJitterValue + jitterBufferTarget;
+
+        return delay * jitterFactor;
+      }
+    }
+  };
+
+  /**
+   * Connect using the fetch API and process the event stream.
+   * @private
+   */
+  #connect = async () => {
+    const generation = this.#generation;
+    const requestInit = this.#initialize();
+    try {
+      const fetchImplementation = this.#fetchImplementation();
+      if (!fetchImplementation) {
+        throw new Error(
+          'EventSourceClient: transport "fetch" requires a fetch implementation. Pass `runtime.fetch`.'
+        );
+      }
+
+      const response = await fetchImplementation(this.#href, requestInit);
+      if (this.#isClosed || generation !== this.#generation) {
+        await response.body?.cancel();
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      if (!response.body) {
+        this.#reconnect();
+        return;
+      }
+
+      this.status = "open";
+      await this.#readBody(response.body.getReader(), generation);
+    } catch (error) {
+      if (this.#isClosed || generation !== this.#generation) return;
+      this.#handleError(error);
+      this.#reconnect();
+    }
+  };
+
+  /**
    * Create an EventSource instance and set up event handlers.
    * @private
    */
   #createEventSource = () => {
     const EventSourceImplementation = this.#eventSourceConstructor();
-    if (!EventSourceImplementation)
+    if (!EventSourceImplementation) {
       throw new Error(
         'EventSourceClient: transport "native" requires an EventSource implementation. Pass `runtime.eventSource`.'
       );
+    }
 
     this.#eventSource = new EventSourceImplementation(this.#href, {
       withCredentials: this.#init.credentials === "include",
@@ -155,37 +414,219 @@ export class EventSourceClient<
     }
   };
 
+  #detachNativeForwarder = (type: string) => {
+    const forwarder = this.#nativeForwarders.get(type);
+    if (!forwarder) return;
+
+    this.#nativeForwarders.delete(type);
+    this.#eventSource?.removeEventListener(type, forwarder);
+  };
+
   /**
-   * Connect using the fetch API and process the event stream.
+   * Dispatch the event to listeners.
    * @private
    */
-  #connect = async () => {
-    const generation = this.#generation;
-    const requestInit = this.#initialize();
-    try {
-      const fetchImplementation = this.#fetchImplementation();
-      if (!fetchImplementation)
-        throw new Error(
-          'EventSourceClient: transport "fetch" requires a fetch implementation. Pass `runtime.fetch`.'
-        );
-      const response = await fetchImplementation(this.#href, requestInit);
-      if (this.#isClosed || generation !== this.#generation) {
-        await response.body?.cancel();
-        return;
-      }
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
-      if (!response.body) {
-        this.#reconnect();
-        return;
-      }
-      this.status = "open";
-      await this.#readBody(response.body.getReader(), generation);
-    } catch (error) {
-      if (this.#isClosed || generation !== this.#generation) return;
-      this.#handleError(error);
-      this.#reconnect();
+  #dispatchEvent = async (generation: number) => {
+    const payload = this.dataBuffer.endsWith("\n")
+      ? this.dataBuffer.slice(0, -1)
+      : this.dataBuffer;
+
+    const type = this.eventTypeBuffer || "message";
+    const hasData = this.dataBuffer !== "";
+    const lastEventId = this.lastEventId;
+
+    this.dataBuffer = "";
+    this.eventTypeBuffer = "";
+
+    if (hasData) {
+      await this.#handleMessage(payload, type, generation, lastEventId);
     }
+  };
+
+  #enqueueMessage = (event: MessageEvent, generation: number) => {
+    if (event.currentTarget && event.currentTarget !== this.#eventSource) {
+      return;
+    }
+
+    const { data, lastEventId, type } = event;
+    if (!this.#messageSchema) {
+      void this.#handleMessage(String(data), type, generation, lastEventId);
+      return;
+    }
+
+    if (this.#pendingMessages >= this.#maxPendingMessages) {
+      this.close();
+      this.#handleError(
+        new RangeError("EventSourceClient: incoming message queue is full.")
+      );
+      return;
+    }
+
+    this.#pendingMessages += 1;
+    this.#messages = this.#messages
+      .then(() =>
+        this.#handleMessage(String(data), type, generation, lastEventId)
+      )
+      .catch((error) => {
+        if (!this.#isClosed && generation === this.#generation)
+          this.#handleError(error);
+      })
+      .finally(() => {
+        if (generation === this.#generation) this.#pendingMessages -= 1;
+      });
+  };
+
+  /**
+   * The EventSource implementation to use: injected adapter first, then the
+   * ambient global.
+   * @private
+   */
+  #eventSourceConstructor = (): typeof EventSource | undefined =>
+    this.#runtime?.eventSource ??
+    (typeof EventSource === "undefined" ? undefined : EventSource);
+
+  /**
+   * The fetch implementation to use: injected adapter first, then the ambient
+   * global.
+   * @private
+   */
+  #fetchImplementation = (): typeof fetch | undefined =>
+    this.#runtime?.fetch ?? (typeof fetch === "function" ? fetch : undefined);
+
+  /**
+   * Handle errors.
+   * @param error The error object.
+   * @private
+   */
+  #handleError = (error: unknown) => {
+    const failure = toError(error, "EventSource connection failed");
+    this.error = failure;
+    this.status = "error";
+
+    const event = new MessageEvent("error", { data: failure });
+    this.#listeners.forEach((listeners, eventName) => {
+      if (eventName === "error") {
+        listeners.forEach((listener) => listener(event));
+      }
+    });
+  };
+
+  /**
+   * Handle incoming messages.
+   * @param payload The transport string coming in.
+   * @param type The SSE event type (defaults to "message").
+   * @private
+   */
+  #handleMessage = async (
+    payload: string,
+    type: string,
+    generation: number,
+    lastEventId: string
+  ) => {
+    const current = () => !this.#isClosed && generation === this.#generation;
+    if (!current()) return;
+    let data: Data | string = payload;
+
+    if (this.#messageSchema) {
+      try {
+        const parsed = JSON.parse(payload);
+        const result = this.#messageSchema["~standard"].validate(parsed);
+        const resolved = await result;
+        if (!current()) return;
+
+        if (resolved.issues) {
+          this.#handleError(
+            new Error("EventSourceClient: schema validation failed", {
+              cause: resolved.issues,
+            })
+          );
+          return;
+        }
+
+        data = resolved.value;
+      } catch (error) {
+        if (!current()) return;
+        this.#handleError(
+          new Error("EventSourceClient: failed to parse SSE data as JSON", {
+            cause: error,
+          })
+        );
+        return;
+      }
+    }
+
+    // A delivered event proves the stream is live again after a message-level
+    // error flipped the status to "error".
+    if (!current()) return;
+    this.status = "open";
+    this.error = null;
+    this.lastEventId = lastEventId;
+    this.#lastEventId = lastEventId;
+
+    const event = new MessageEvent(type, {
+      data,
+      lastEventId,
+      origin: new URL(this.#href).origin,
+    });
+
+    this.#listeners.forEach((listeners, eventName) => {
+      if (eventName === type) {
+        listeners.forEach((listener) => listener(event));
+      }
+    });
+  };
+
+  /**
+   * Initialize the request.
+   * @returns The initialized request.
+   * @private
+   */
+  #initialize = () => {
+    this.#abortController = new AbortController();
+
+    const cache = this.#cache;
+    const headers = new Headers(this.#init.headers);
+    const signal = this.#abortController.signal;
+    const method = this.#method;
+
+    headers.set("Accept", "text/event-stream");
+    headers.set("Cache-Control", "no-cache");
+    headers.set("Connection", "keep-alive");
+
+    if (this.#lastEventId) {
+      headers.set("Last-Event-ID", this.#lastEventId);
+    }
+
+    const request = {
+      cache,
+      headers,
+      method,
+      signal,
+    };
+
+    return shallowMerge(this.#init, request);
+  };
+
+  /**
+   * The first configuration a native `EventSource` cannot honor, if any.
+   * @private
+   */
+  #nativeBlocker = (): null | string => {
+    if (this.#method !== "GET") {
+      return `method "${this.#method}" (the EventSource API only issues GET requests)`;
+    }
+    if (this.#lastEventId) {
+      return "an initial Last-Event-ID (the EventSource API only sets it on reconnects)";
+    }
+    if (this.#init.body != null) return "a request body";
+    if (this.#init.headers !== undefined) return "custom headers";
+    if (this.#init.credentials === "omit") return 'credentials: "omit"';
+
+    for (const key of NativeUnsupportedInit) {
+      if (this.#init[key] !== undefined) return `the "${key}" request option`;
+    }
+
+    return null;
   };
 
   /**
@@ -273,54 +714,6 @@ export class EventSourceClient<
   };
 
   /**
-   * Dispatch the event to listeners.
-   * @private
-   */
-  #dispatchEvent = async (generation: number) => {
-    const payload = this.dataBuffer.endsWith("\n")
-      ? this.dataBuffer.slice(0, -1)
-      : this.dataBuffer;
-    const type = this.eventTypeBuffer || "message";
-    const hasData = this.dataBuffer !== "";
-    const lastEventId = this.lastEventId;
-    this.dataBuffer = "";
-    this.eventTypeBuffer = "";
-    if (hasData)
-      await this.#handleMessage(payload, type, generation, lastEventId);
-  };
-
-  /**
-   * Initialize the request.
-   * @returns The initialized request.
-   * @private
-   */
-  #initialize = () => {
-    this.#abortController = new AbortController();
-
-    const cache = this.#cache;
-    const headers = new Headers(this.#init.headers);
-    const signal = this.#abortController.signal;
-    const method = this.#method;
-
-    headers.set("Accept", "text/event-stream");
-    headers.set("Cache-Control", "no-cache");
-    headers.set("Connection", "keep-alive");
-
-    if (this.#lastEventId) {
-      headers.set("Last-Event-ID", this.#lastEventId);
-    }
-
-    const request = {
-      headers,
-      method,
-      signal,
-      cache,
-    };
-
-    return shallowMerge(this.#init, request);
-  };
-
-  /**
    * Reconnect logic with backoff strategy.
    * @private
    */
@@ -337,319 +730,6 @@ export class EventSourceClient<
         this.#start();
       }, backoffDelay);
     }
-  };
-
-  /**
-   * Calculate backoff delay.
-   * @returns The calculated backoff delay.
-   * @private
-   */
-  #calculateBackoff = (): number => {
-    switch (this.#retryBackoffStrategy) {
-      case "fixed":
-        return Math.min(this.#retryDelay, this.#maxRetryDelay);
-      case "exponential": {
-        const delay = Math.min(
-          this.#retryDelay * Math.pow(2, this.#attempt),
-          this.#maxRetryDelay
-        );
-
-        const jitterBufferValue = this.#maxJitterValue - this.#minJitterValue;
-        const jitterBufferTarget = Math.random() * jitterBufferValue;
-        const jitterFactor = this.#minJitterValue + jitterBufferTarget;
-
-        return delay * jitterFactor;
-      }
-    }
-  };
-
-  /**
-   * Handle incoming messages.
-   * @param payload The transport string coming in.
-   * @param type The SSE event type (defaults to "message").
-   * @private
-   */
-  #handleMessage = async (
-    payload: string,
-    type: string,
-    generation: number,
-    lastEventId: string
-  ) => {
-    const current = () => !this.#isClosed && generation === this.#generation;
-    if (!current()) return;
-    let data: string | Data = payload;
-
-    if (this.#messageSchema) {
-      try {
-        const parsed = JSON.parse(payload);
-        const result = this.#messageSchema["~standard"].validate(parsed);
-        const resolved = await result;
-        if (!current()) return;
-
-        if (resolved.issues) {
-          this.#handleError(
-            new Error("EventSourceClient: schema validation failed", {
-              cause: resolved.issues,
-            })
-          );
-          return;
-        }
-
-        data = resolved.value;
-      } catch (error) {
-        if (!current()) return;
-        this.#handleError(
-          new Error("EventSourceClient: failed to parse SSE data as JSON", {
-            cause: error,
-          })
-        );
-        return;
-      }
-    }
-
-    // A delivered event proves the stream is live again after a message-level
-    // error flipped the status to "error".
-    if (!current()) return;
-    this.status = "open";
-    this.error = null;
-    this.lastEventId = lastEventId;
-    this.#lastEventId = lastEventId;
-
-    const event = new MessageEvent(type, {
-      data,
-      lastEventId,
-      origin: new URL(this.#href).origin,
-    });
-
-    this.#listeners.forEach((listeners, eventName) => {
-      if (eventName === type) {
-        listeners.forEach((listener) => listener(event));
-      }
-    });
-  };
-
-  #enqueueMessage = (event: MessageEvent, generation: number) => {
-    if (event.currentTarget && event.currentTarget !== this.#eventSource)
-      return;
-    const { data, type, lastEventId } = event;
-    if (!this.#messageSchema) {
-      void this.#handleMessage(String(data), type, generation, lastEventId);
-      return;
-    }
-    if (this.#pendingMessages >= this.#maxPendingMessages) {
-      this.close();
-      this.#handleError(
-        new RangeError("EventSourceClient: incoming message queue is full.")
-      );
-      return;
-    }
-    this.#pendingMessages += 1;
-    this.#messages = this.#messages
-      .then(() =>
-        this.#handleMessage(String(data), type, generation, lastEventId)
-      )
-      .catch((error) => {
-        if (!this.#isClosed && generation === this.#generation)
-          this.#handleError(error);
-      })
-      .finally(() => {
-        if (generation === this.#generation) this.#pendingMessages -= 1;
-      });
-  };
-
-  /**
-   * Handle errors.
-   * @param error The error object.
-   * @private
-   */
-  #handleError = (error: unknown) => {
-    const failure = toError(error, "EventSource connection failed");
-    this.error = failure;
-    this.status = "error";
-
-    const event = new MessageEvent("error", { data: failure });
-    this.#listeners.forEach((listeners, eventName) => {
-      if (eventName === "error") {
-        listeners.forEach((listener) => listener(event));
-      }
-    });
-  };
-
-  /**
-   * Subscribe to an SSE event. Returns an unsubscribe function.
-   *
-   * The store is keyed by the handler that was passed: each distinct handler
-   * owns its own subscription, while registering the same handler again is a
-   * no-op that returns the shared unsubscribe.
-   */
-  on = <Name extends string>(
-    type: Name,
-    listener: EventSourceListener<Data>
-  ): (() => void) => {
-    if (this.#disposed)
-      throw new Error("EventSourceClient: this instance has been disposed.");
-    let listeners = this.#listeners.get(type);
-    listeners ??= new Set();
-
-    const eventListener = listener as (event: MessageEvent) => void;
-    const isAbsent = !listeners.has(eventListener);
-
-    listeners.add(eventListener);
-    this.#listeners.set(type, listeners);
-
-    // Native EventSources only deliver events for names subscribed to up
-    // front, so ensure a forwarder exists for the native (GET) transport path.
-    if (isAbsent) this.#attachNativeForwarder(type);
-
-    return () => {
-      if (!listeners.has(eventListener)) return;
-      listeners.delete(eventListener);
-
-      if (listeners.size === 0) {
-        this.#listeners.delete(type);
-        this.#detachNativeForwarder(type);
-      }
-    };
-  };
-
-  /**
-   * Register (or reuse) a forwarding listener for a named event. The forwarder
-   * re-enters the shared dispatch so the payload is schema-validated and routed
-   * to every listener for that type. Native EventSources only deliver events
-   * for names subscribed to up front, so registering before `open()` matters:
-   * the forwarder is stored now and attached to each freshly created EventSource.
-   */
-  #attachNativeForwarder = (type: string) => {
-    if (type === "message" || type === "error") return;
-    if (this.#nativeForwarders.has(type)) return;
-
-    const generation = this.#generation;
-    const source = this.#eventSource;
-    const forwarder = (event: MessageEvent) => {
-      if (source !== this.#eventSource) return;
-      this.#enqueueMessage(event, generation);
-    };
-
-    this.#nativeForwarders.set(type, forwarder as EventListener);
-    this.#eventSource?.addEventListener(type, forwarder as EventListener);
-  };
-
-  #detachNativeForwarder = (type: string) => {
-    const forwarder = this.#nativeForwarders.get(type);
-    if (!forwarder) return;
-
-    this.#nativeForwarders.delete(type);
-    this.#eventSource?.removeEventListener(type, forwarder);
-  };
-
-  /**
-   * An asynchronous generator function that yields `MessageEvent` objects.
-   * This function continuously listens for "message" events and yields each event as it occurs.
-   *
-   * @async
-   * @generator
-   * @yields {MessageEvent} The next message event.
-   */
-  events = ({
-    signal,
-    maxQueueSize = 1000,
-  }: {
-    signal?: AbortSignal;
-    maxQueueSize?: number;
-  } = {}): AsyncIterableIterator<MessageEvent<Data>> => {
-    if (!Number.isInteger(maxQueueSize) || maxQueueSize < 1)
-      throw new RangeError("maxQueueSize must be a positive integer.");
-    const queue: MessageEvent<Data>[] = [];
-    const waiting: {
-      resolve: (result: IteratorResult<MessageEvent<Data>>) => void;
-      reject: (error: unknown) => void;
-    }[] = [];
-    let ended = false;
-    let failure: unknown;
-    let unsubscribe = () => {};
-    const stop = (error?: unknown) => {
-      if (ended) return;
-      ended = true;
-      failure = error;
-      queue.length = 0;
-      unsubscribe();
-      signal?.removeEventListener("abort", abort);
-      this.#iterators.delete(close);
-      for (const waiter of waiting.splice(0)) {
-        if (error) waiter.reject(error);
-        else waiter.resolve({ done: true, value: undefined });
-      }
-    };
-    const abort = () =>
-      stop(signal?.reason ?? new DOMException("Aborted", "AbortError"));
-    const close = () => stop();
-    unsubscribe = this.on("message", (event) => {
-      const waiter = waiting.shift();
-      if (waiter)
-        waiter.resolve({ done: false, value: event as MessageEvent<Data> });
-      else if (queue.length >= maxQueueSize)
-        stop(new RangeError("EventSourceClient: iterator queue is full."));
-      else queue.push(event as MessageEvent<Data>);
-    });
-    this.#iterators.add(close);
-    if (signal?.aborted) abort();
-    else signal?.addEventListener("abort", abort, { once: true });
-    return {
-      [Symbol.asyncIterator]() {
-        return this;
-      },
-      next() {
-        if (failure) return Promise.reject(failure);
-        if (ended) return Promise.resolve({ done: true, value: undefined });
-        const event = queue.shift();
-        if (event) return Promise.resolve({ done: false, value: event });
-        return new Promise((resolve, reject) =>
-          waiting.push({ resolve, reject })
-        );
-      },
-      return() {
-        stop();
-        return Promise.resolve({ done: true, value: undefined });
-      },
-    };
-  };
-
-  [Symbol.asyncIterator](): AsyncIterableIterator<MessageEvent<Data>> {
-    return this.events();
-  }
-
-  /**
-   * The EventSource implementation to use: injected adapter first, then the
-   * ambient global.
-   * @private
-   */
-  #eventSourceConstructor = (): typeof EventSource | undefined =>
-    this.#runtime?.eventSource ??
-    (typeof EventSource === "undefined" ? undefined : EventSource);
-
-  /**
-   * The fetch implementation to use: injected adapter first, then the ambient
-   * global.
-   * @private
-   */
-  #fetchImplementation = (): typeof fetch | undefined =>
-    this.#runtime?.fetch ?? (typeof fetch === "function" ? fetch : undefined);
-
-  /**
-   * The first configuration a native `EventSource` cannot honor, if any.
-   * @private
-   */
-  #nativeBlocker = (): string | null => {
-    if (this.#method !== "GET")
-      return `method "${this.#method}" (the EventSource API only issues GET requests)`;
-    if (this.#lastEventId)
-      return "an initial Last-Event-ID (the EventSource API only sets it on reconnects)";
-    if (this.#init.body != null) return "a request body";
-    if (this.#init.headers !== undefined) return "custom headers";
-    if (this.#init.credentials === "omit") return 'credentials: "omit"';
-    for (const key of NativeUnsupportedInit)
-      if (this.#init[key] !== undefined) return `the "${key}" request option`;
-    return null;
   };
 
   /**
@@ -711,48 +791,5 @@ export class EventSourceClient<
     this.transport = transport;
     if (transport === "native") this.#createEventSource();
     else void this.#connect();
-  };
-
-  open = () => {
-    if (this.#disposed)
-      throw new Error("EventSourceClient: this instance has been disposed.");
-    if (
-      !this.#isClosed &&
-      (this.status === "open" || this.status === "connecting")
-    )
-      return;
-    // Resolve before mutating state so an incompatible configuration leaves the
-    // client untouched.
-    this.#selectedTransport = this.#resolveTransport();
-    this.#isClosed = false;
-    this.#attempt = 0;
-    this.#start();
-  };
-
-  /**
-   * Close the connection.
-   */
-  close = () => {
-    this.#isClosed = true;
-    this.#iterators.forEach((stop) => stop());
-    this.#generation += 1;
-    this.#messages = Promise.resolve();
-    this.#pendingMessages = 0;
-    clearTimeout(this.#reconnectionTimerId);
-
-    this.#reconnectionTimerId = undefined;
-    this.#abortController.abort();
-    this.#eventSource?.close();
-    this.#eventSource = null;
-    this.#selectedTransport = null;
-    this.transport = null;
-    this.status = "idle";
-  };
-
-  dispose = () => {
-    this.close();
-    this.#disposed = true;
-    this.#listeners.clear();
-    this.#nativeForwarders.clear();
   };
 }

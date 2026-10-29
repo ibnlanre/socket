@@ -7,8 +7,8 @@
  * point of use.
  */
 export interface RuntimeAdapters {
-  /** WebSocket constructor. Falls back to the ambient `WebSocket` global. */
-  webSocket?: WebSocketConstructor;
+  /** Cache Storage implementation. Falls back to the ambient `caches` global. */
+  caches?: CacheStorage;
 
   /** EventSource constructor. Falls back to the ambient `EventSource` global. */
   eventSource?: typeof EventSource;
@@ -16,8 +16,8 @@ export interface RuntimeAdapters {
   /** Fetch implementation. Falls back to the ambient `fetch` global. */
   fetch?: typeof fetch;
 
-  /** Cache Storage implementation. Falls back to the ambient `caches` global. */
-  caches?: CacheStorage;
+  /** WebSocket constructor. Falls back to the ambient `WebSocket` global. */
+  webSocket?: WebSocketConstructor;
 }
 
 /**

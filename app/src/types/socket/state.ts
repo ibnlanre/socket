@@ -12,7 +12,7 @@ import type { SocketStatus } from "./status";
  */
 export interface SocketState<Get> {
   /** Preferred representation for inbound binary frames. */
-  readonly binaryType: "blob" | "arraybuffer";
+  readonly binaryType: "arraybuffer" | "blob";
   /** Timestamp (ms) of the last successful data update. */
   readonly dataUpdatedAt: number;
   /** The most recent connection or message error, if any. */
@@ -22,11 +22,9 @@ export interface SocketState<Get> {
   /** Number of consecutive failed connection attempts. */
   readonly failureCount: number;
   /** Human-readable reason for the most recent failure. */
-  readonly failureReason: string | null;
+  readonly failureReason: null | string;
   /** Low-level connection phase: idle, connecting, connected, or disconnected. */
   readonly fetchStatus: SocketFetchStatus;
-  /** Whether subscription parameters or connection credentials are resolving. */
-  readonly isPreparing: boolean;
   /** Whether the transport is currently connected. */
   readonly isConnected: boolean;
   /** Whether the transport is currently establishing a connection. */
@@ -37,7 +35,8 @@ export interface SocketState<Get> {
   readonly isError: boolean;
   /**
    * Whether the socket has stopped after a failure it will not retry (its
-   * retries used up, or retrying off). It waits closed until `open()`.
+   * retries used up, or retrying off). It waits closed until `open()`, and
+   * stops waiting when closed on purpose or when its last subscriber leaves.
    */
   readonly isExhausted: boolean;
   /** Whether the socket has never opened a connection. */
@@ -48,6 +47,8 @@ export interface SocketState<Get> {
   readonly isPending: boolean;
   /** Whether the current value is placeholder data. */
   readonly isPlaceholderData: boolean;
+  /** Whether subscription parameters or connection credentials are resolving. */
+  readonly isPreparing: boolean;
   /** Whether the latest attempt failed after a previous success. */
   readonly isRefetchError: boolean;
   /** Whether a refetch (reconnect) is currently in flight. */

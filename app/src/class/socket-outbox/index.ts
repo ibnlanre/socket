@@ -1,34 +1,35 @@
+import type { SocketQueueOptions } from "@/types/socket/queue-options";
+
 import { serializeJSON } from "@/functions/serialize-json";
 import { time } from "@/functions/time";
 import { withSignal } from "@/functions/with-signal";
-import type { SocketQueueOptions } from "@/types/socket/queue-options";
+
+type Action = "deduplicated" | "dropped" | "expired" | "queued" | "sent";
 
 type Entry = {
-  payload?: unknown;
-  key?: string;
-  expiresAt: number;
   cancel: (error: Error) => void;
+  expiresAt: number;
+  key?: string;
+  payload?: unknown;
 };
-
-type Action = "queued" | "sent" | "expired" | "dropped" | "deduplicated";
 type NotifyEvent = {
-  type: "queue";
-  size: number;
   action: Action;
+  size: number;
+  type: "queue";
 };
 
 /** Ordered, bounded waiting sends; independent of transport lifecycle. */
 export class SocketOutbox {
+  #dispatch: (payload: unknown) => boolean;
   #entries = new Set<Entry>();
   #history = new Map<string, number>();
-  #timer: ReturnType<typeof setTimeout> | undefined;
-  #maxSize: number;
   #maxAge: number;
   #maxHistory: number;
-  #window: number;
-  #overflow: "reject" | "drop-oldest";
-  #dispatch: (payload: unknown) => boolean;
+  #maxSize: number;
   #notify: (event: NotifyEvent) => void;
+  #overflow: "drop-oldest" | "reject";
+  #timer: ReturnType<typeof setTimeout> | undefined;
+  #window: number;
 
   constructor(
     options: SocketQueueOptions & { deduplicationWindow?: number },
@@ -58,111 +59,15 @@ export class SocketOutbox {
     }
   }
 
-  #emit = (action: Action) => {
-    this.#notify({ type: "queue", size: this.#entries.size, action });
-  };
-
-  #remove = (entry: Entry, error: Error, action: "expired" | "dropped") => {
-    if (!this.#entries.delete(entry)) return;
-    entry.cancel(error);
-    this.#emit(action);
-  };
-
-  #prune = () => {
-    const now = Date.now();
-    for (const entry of this.#entries) {
-      if (entry.expiresAt <= now)
-        this.#remove(
-          entry,
-          new Error("Socket: queued send expired."),
-          "expired"
-        );
-    }
-    for (const [key, sentAt] of this.#history) {
-      if (now - sentAt >= this.#window) this.#history.delete(key);
-    }
-  };
-
-  #reserve = (cancel: Entry["cancel"]): Entry => {
-    this.#prune();
-    if (this.#entries.size >= this.#maxSize) {
-      if (this.#overflow === "reject")
-        throw new RangeError("Socket: send queue is full.");
+  clear = () => {
+    for (const entry of this.#entries)
       this.#remove(
-        this.#entries.values().next().value!,
-        new Error("Socket: queued send dropped."),
+        entry,
+        new DOMException("Socket closed", "AbortError"),
         "dropped"
       );
-    }
-    const entry = {
-      expiresAt: Date.now() + this.#maxAge,
-      cancel,
-    };
-    this.#entries.add(entry);
-    this.#schedule();
-    return entry;
-  };
-
-  #prepare = (entry: Entry, payload: unknown): boolean => {
-    if (!this.#entries.has(entry)) return false;
-    const key = serializeJSON(payload);
-    this.#prune();
-    if (!this.#entries.has(entry)) return false;
-    const duplicate =
-      this.#window > 0 &&
-      (this.#history.has(key) ||
-        [...this.#entries].some(
-          (other) => other !== entry && other.key === key
-        ));
-    if (duplicate) {
-      this.#entries.delete(entry);
-      this.#emit("deduplicated");
-      this.flush();
-      return false;
-    }
-    // Snapshot the JSON value: mutation after send cannot change a queued frame.
-    entry.payload = JSON.parse(key);
-    entry.key = key;
-    this.#emit("queued");
-    this.flush();
-    return true;
-  };
-
-  #schedule = () => {
+    this.#history.clear();
     clearTimeout(this.#timer);
-    if (!this.#entries.size && !this.#history.size) return;
-    this.#timer = setTimeout(this.flush, 25);
-  };
-
-  send = async (
-    validate: () => unknown | Promise<unknown>,
-    signal?: AbortSignal
-  ): Promise<boolean> => {
-    signal?.throwIfAborted();
-    const controller = new AbortController();
-    const entry = this.#reserve((error) => controller.abort(error));
-    const abort = () => {
-      this.#remove(entry, signal!.reason, "dropped");
-      this.flush();
-    };
-    signal?.addEventListener("abort", abort, { once: true });
-
-    try {
-      const payload = await withSignal(
-        Promise.resolve().then(validate),
-        controller.signal
-      );
-      controller.signal.throwIfAborted();
-      const accepted = this.#prepare(entry, payload);
-      controller.signal.throwIfAborted();
-      return accepted;
-    } catch (error) {
-      this.#remove(entry, error as Error, "dropped");
-      this.flush();
-      throw error;
-    } finally {
-      signal?.removeEventListener("abort", abort);
-    }
   };
 
   flush = () => {
@@ -192,14 +97,128 @@ export class SocketOutbox {
     this.#schedule();
   };
 
-  clear = () => {
-    for (const entry of this.#entries)
+  send = async (
+    validate: () => Promise<unknown> | unknown,
+    signal?: AbortSignal
+  ): Promise<boolean> => {
+    signal?.throwIfAborted();
+
+    const controller = new AbortController();
+    const entry = this.#reserve((error) => controller.abort(error));
+    const abort = () => {
+      this.#remove(entry, signal!.reason, "dropped");
+      this.flush();
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+
+    try {
+      const payload = await withSignal(
+        Promise.resolve().then(validate),
+        controller.signal
+      );
+      controller.signal.throwIfAborted();
+
+      const accepted = this.#prepare(entry, payload);
+      controller.signal.throwIfAborted();
+
+      return accepted;
+    } catch (error) {
+      this.#remove(entry, error as Error, "dropped");
+      this.flush();
+
+      throw error;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+    }
+  };
+
+  #emit = (action: Action) => {
+    this.#notify({ action, size: this.#entries.size, type: "queue" });
+  };
+
+  #prepare = (entry: Entry, payload: unknown): boolean => {
+    if (!this.#entries.has(entry)) return false;
+    const key = serializeJSON(payload);
+
+    this.#prune();
+    if (!this.#entries.has(entry)) return false;
+
+    const duplicate =
+      this.#window > 0 &&
+      (this.#history.has(key) ||
+        [...this.#entries].some(
+          (other) => other !== entry && other.key === key
+        ));
+
+    if (duplicate) {
+      this.#entries.delete(entry);
+      this.#emit("deduplicated");
+      this.flush();
+      return false;
+    }
+
+    // Snapshot the JSON value: mutation after send cannot change a queued frame.
+    entry.payload = JSON.parse(key);
+    entry.key = key;
+
+    this.#emit("queued");
+    this.flush();
+
+    return true;
+  };
+
+  #prune = () => {
+    const now = Date.now();
+    for (const entry of this.#entries) {
+      if (entry.expiresAt <= now) {
+        this.#remove(
+          entry,
+          new Error("Socket: queued send expired."),
+          "expired"
+        );
+      }
+    }
+
+    for (const [key, sentAt] of this.#history) {
+      if (now - sentAt >= this.#window) this.#history.delete(key);
+    }
+  };
+
+  #remove = (entry: Entry, error: Error, action: "dropped" | "expired") => {
+    if (!this.#entries.delete(entry)) return;
+    entry.cancel(error);
+    this.#emit(action);
+  };
+
+  #reserve = (cancel: Entry["cancel"]): Entry => {
+    this.#prune();
+
+    if (this.#entries.size >= this.#maxSize) {
+      if (this.#overflow === "reject") {
+        throw new RangeError("Socket: send queue is full.");
+      }
+
       this.#remove(
-        entry,
-        new DOMException("Socket closed", "AbortError"),
+        this.#entries.values().next().value!,
+        new Error("Socket: queued send dropped."),
         "dropped"
       );
-    this.#history.clear();
+    }
+
+    const entry = {
+      cancel,
+      expiresAt: Date.now() + this.#maxAge,
+    };
+
+    this.#entries.add(entry);
+    this.#schedule();
+
+    return entry;
+  };
+
+  #schedule = () => {
     clearTimeout(this.#timer);
+    if (!this.#entries.size && !this.#history.size) return;
+    this.#timer = setTimeout(this.flush, 25);
   };
 }

@@ -1,26 +1,26 @@
 import type { TimeUnit, UnitValue } from "@/types/time-unit";
 
 const temporal = {
-  get millisecond() {
-    return 1;
-  },
-  get second() {
-    return 1000 * this.millisecond;
-  },
-  get minute() {
-    return 60 * this.second;
+  get day() {
+    return 24 * this.hour;
   },
   get hour() {
     return 60 * this.minute;
   },
-  get day() {
-    return 24 * this.hour;
+  get millisecond() {
+    return 1;
   },
-  get week() {
-    return 7 * this.day;
+  get minute() {
+    return 60 * this.second;
   },
   get month() {
     return 30.4375 * this.day;
+  },
+  get second() {
+    return 1000 * this.millisecond;
+  },
+  get week() {
+    return 7 * this.day;
   },
   get year() {
     return 365.25 * this.day;
@@ -28,46 +28,46 @@ const temporal = {
 };
 
 const timeUnitValues: Record<TimeUnit, number> = {
-  y: temporal.year,
-  yr: temporal.year,
-  yrs: temporal.year,
-  year: temporal.year,
-  years: temporal.year,
-  mo: temporal.month,
-  mth: temporal.month,
-  mos: temporal.month,
-  month: temporal.month,
-  months: temporal.month,
-  w: temporal.week,
-  wk: temporal.week,
-  wks: temporal.week,
-  week: temporal.week,
-  weeks: temporal.week,
   d: temporal.day,
-  dy: temporal.day,
-  dys: temporal.day,
   day: temporal.day,
   days: temporal.day,
+  dy: temporal.day,
+  dys: temporal.day,
   h: temporal.hour,
-  hr: temporal.hour,
-  hrs: temporal.hour,
   hour: temporal.hour,
   hours: temporal.hour,
+  hr: temporal.hour,
+  hrs: temporal.hour,
   m: temporal.minute,
+  millisecond: temporal.millisecond,
+  milliseconds: temporal.millisecond,
   min: temporal.minute,
   mins: temporal.minute,
   minute: temporal.minute,
   minutes: temporal.minute,
-  s: temporal.second,
-  sec: temporal.second,
-  secs: temporal.second,
-  second: temporal.second,
-  seconds: temporal.second,
+  mo: temporal.month,
+  month: temporal.month,
+  months: temporal.month,
+  mos: temporal.month,
   ms: temporal.millisecond,
   msec: temporal.millisecond,
   msecs: temporal.millisecond,
-  millisecond: temporal.millisecond,
-  milliseconds: temporal.millisecond,
+  mth: temporal.month,
+  s: temporal.second,
+  sec: temporal.second,
+  second: temporal.second,
+  seconds: temporal.second,
+  secs: temporal.second,
+  w: temporal.week,
+  week: temporal.week,
+  weeks: temporal.week,
+  wk: temporal.week,
+  wks: temporal.week,
+  y: temporal.year,
+  year: temporal.year,
+  years: temporal.year,
+  yr: temporal.year,
+  yrs: temporal.year,
 };
 
 const units = [
@@ -98,10 +98,6 @@ export function convert(value: number, from: TimeUnit, to: TimeUnit): number {
   return inMilliseconds / timeUnitValues[to];
 }
 
-export function toSignificantDigits(value: number, digits: number = 2): number {
-  return parseFloat(value.toFixed(digits));
-}
-
 export function time(value: UnitValue, to: TimeUnit = "ms"): number {
   if (typeof value === "number") return convert(value, "ms", to);
 
@@ -118,4 +114,8 @@ export function time(value: UnitValue, to: TimeUnit = "ms"): number {
   const timeUnit = unit.toLowerCase() as TimeUnit;
 
   return toSignificantDigits(convert(+number, timeUnit, to));
+}
+
+export function toSignificantDigits(value: number, digits: number = 2): number {
+  return parseFloat(value.toFixed(digits));
 }

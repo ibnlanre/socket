@@ -90,7 +90,7 @@ const prices = new SocketClient({ url: "wss://feeds.example.com/prices", gate })
 const orders = new SocketClient({ url: "wss://feeds.example.com/orders", gate });
 ```
 
-A turn lasts from just before the transport is created until the handshake opens, closes or errors, or `timeout` passes (default 10 seconds, so a server that never answers cannot hold the queue). Retries wait their turn like any other attempt. While it waits, a socket reports `fetchStatus: "preparing"`. Sockets to different servers never wait on each other, unless `lane` says otherwise: it maps a URL to its queue (by default its origin). Where several hosts sit behind one proxy, give them one lane, so their handshakes are paced together:
+A turn lasts from just before the transport is created until the handshake opens or closes, or the socket is closed, or `timeout` passes (default 10 seconds, so a server that never answers cannot hold the queue). Retries wait their turn like any other attempt. While it waits, a socket reports `fetchStatus: "preparing"`. Sockets to different servers never wait on each other, unless `lane` says otherwise: it maps a URL to its queue (by default its origin). Where several hosts sit behind one proxy, give them one lane, so their handshakes are paced together:
 
 ```ts
 const gate = new SocketGate({ lane: () => "edge-proxy" });
@@ -98,14 +98,14 @@ const gate = new SocketGate({ lane: () => "edge-proxy" });
 
 ## When retries run out
 
-A socket that has stopped after a failure it will not retry reports `isExhausted: true`. It stays closed, its error and failure count kept, until `open()` starts it again, so an app can offer "reconnect" rather than keep calling a server that is struggling.
+A socket that has stopped after a failure it will not retry reports `isExhausted: true`. It stays closed, its error and failure count kept, until `open()` starts it again, so an app can offer "reconnect" rather than keep calling a server that is struggling. Closing it on purpose, or its last subscriber leaving, clears the flag: nothing waits on it then.
 
-Across many sockets, a client knows which of its own have stopped and are still read (`client.exhausted()`), and tells listeners when that changes (`client.subscribe()`). `useExhaustedSockets` counts them across several clients for one notice, and reopens them one after another, `stagger` apart, so a recovering server is not met with every handshake at once:
+Across many sockets, a client knows which of its own have stopped (`client.exhausted()`), and tells observers when that changes (`client.observe()`). `useExhaustedSockets` counts them across several clients for one notice, and reopens them one after another, `stagger` apart, so a recovering server is not met with every handshake at once. `reconnect()` resolves, and `isReconnecting` turns false, once each has connected or stopped again:
 
 ```tsx
 const network = useExhaustedSockets([prices, orders], { stagger: "400 milliseconds" });
 
-if (network.count) {
+if (network.count || network.isReconnecting) {
   return (
     <p>
       Live updates have stopped.{" "}

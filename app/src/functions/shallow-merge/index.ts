@@ -5,5 +5,5 @@ export function shallowMerge<Target extends object, Source>(
   return Object.defineProperties(
     target,
     Object.getOwnPropertyDescriptors(source)
-  ) as Target & Source;
+  ) as Source & Target;
 }

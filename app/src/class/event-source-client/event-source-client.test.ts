@@ -10,7 +10,6 @@ import {
   it,
   vi,
 } from "vitest";
-
 import { z } from "zod";
 
 import { EventSourceClient } from "./index";
@@ -22,18 +21,6 @@ const messageSchema = z.object({
   value: z.number(),
 });
 
-function createSSEStream(...chunks: string[]) {
-  const encoder = new TextEncoder();
-  return new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(chunk));
-      }
-      controller.close();
-    },
-  });
-}
-
 /**
  * Minimal stand-in for the browser-native EventSource so the GET transport path
  * (which jsdom does not implement) can be exercised. Default events are routed
@@ -42,11 +29,11 @@ function createSSEStream(...chunks: string[]) {
  */
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
-  readonly url: string;
-  onopen: (() => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onerror: ((error: unknown) => void) | null = null;
   closed = false;
+  onerror: ((error: unknown) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onopen: (() => void) | null = null;
+  readonly url: string;
   #handlers = new Map<string, (event: MessageEvent) => void>();
 
   constructor(url: string) {
@@ -56,10 +43,6 @@ class FakeEventSource {
 
   addEventListener(type: string, handler: (event: MessageEvent) => void) {
     this.#handlers.set(type, handler);
-  }
-
-  removeEventListener(type: string) {
-    this.#handlers.delete(type);
   }
 
   close() {
@@ -72,6 +55,22 @@ class FakeEventSource {
     const handler = this.#handlers.get(type);
     if (handler) handler(event);
   }
+
+  removeEventListener(type: string) {
+    this.#handlers.delete(type);
+  }
+}
+
+function createSSEStream(...chunks: string[]) {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
 }
 
 const server = setupServer();
@@ -101,8 +100,8 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<string>({
-        url: TEST_URL,
         method: "POST",
+        url: TEST_URL,
       });
 
       client.open();
@@ -125,8 +124,8 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<string>({
-        url: TEST_URL,
         method: "POST",
+        url: TEST_URL,
       });
       client.open();
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -146,11 +145,11 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<string>({
-        url: TEST_URL,
         method: "POST",
         retry: true,
         retryCount: 2,
         retryDelay: "10 milliseconds",
+        url: TEST_URL,
       });
 
       client.open();
@@ -171,8 +170,8 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<string>({
-        url: TEST_URL,
         method: "POST",
+        url: TEST_URL,
       });
       const first = vi.fn();
       const second = vi.fn();
@@ -193,7 +192,7 @@ describe("EventSourceClient", () => {
 
     it("should include the most recent event ID when reconnecting", async () => {
       let callCount = 0;
-      let reconnectLastEventId: string | null = null;
+      let reconnectLastEventId: null | string = null;
 
       server.use(
         http.post(TEST_URL, ({ request }) => {
@@ -211,11 +210,11 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<string>({
-        url: TEST_URL,
         method: "POST",
         retry: true,
         retryCount: 1,
         retryDelay: "10 milliseconds",
+        url: TEST_URL,
       });
 
       client.open();
@@ -243,8 +242,8 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<string>({
-        url: TEST_URL,
         method: "POST",
+        url: TEST_URL,
       });
       client.open();
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -255,8 +254,8 @@ describe("EventSourceClient", () => {
   describe("close", () => {
     it("should abort the fetch request on close", () => {
       const client = new EventSourceClient<string>({
-        url: TEST_URL,
         method: "POST",
+        url: TEST_URL,
       });
 
       client.open();
@@ -283,11 +282,11 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<string>({
-        url: TEST_URL,
         method: "POST",
         retry: true,
         retryCount: 1,
         retryDelay: "50 milliseconds",
+        url: TEST_URL,
       });
 
       client.open();
@@ -311,9 +310,9 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<{ type: string; value: number }>({
-        url: TEST_URL,
-        method: "POST",
         messageSchema,
+        method: "POST",
+        url: TEST_URL,
       });
       client.open();
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -333,9 +332,9 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<{ type: string; value: number }>({
-        url: TEST_URL,
-        method: "POST",
         messageSchema,
+        method: "POST",
+        url: TEST_URL,
       });
       client.open();
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -353,9 +352,9 @@ describe("EventSourceClient", () => {
       );
 
       const client = new EventSourceClient<{ type: string; value: number }>({
-        url: TEST_URL,
-        method: "POST",
         messageSchema,
+        method: "POST",
+        url: TEST_URL,
       });
       client.open();
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -388,7 +387,7 @@ describe("EventSourceClient", () => {
       source?.emit("update", "first");
       expect(update).toHaveBeenCalledTimes(1);
       expect(update).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "update", data: "first" })
+        expect.objectContaining({ data: "first", type: "update" })
       );
 
       // Unsubscribing detaches the native forwarder, so later events are dropped.
@@ -423,10 +422,10 @@ describe("EventSourceClient", () => {
       vi.stubGlobal("EventSource", FakeEventSource);
 
       const client = new EventSourceClient<string>({
-        url: TEST_URL,
         retry: true,
         retryCount: 2,
         retryDelay: "5 milliseconds",
+        url: TEST_URL,
       });
       const update = vi.fn();
       client.on("update", update);
@@ -482,8 +481,8 @@ describe("SSE async message lifecycle", () => {
       return { value };
     });
     const client = new EventSourceClient({
+      messageSchema: { "~standard": { validate, vendor: "test", version: 1 } },
       url: TEST_URL,
-      messageSchema: { "~standard": { version: 1, vendor: "test", validate } },
     });
     const received: unknown[] = [];
     client.on("update", (event) => received.push(event.data));
@@ -503,11 +502,8 @@ describe("SSE async message lifecycle", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let release!: () => void;
     const client = new EventSourceClient({
-      url: TEST_URL,
       messageSchema: {
         "~standard": {
-          version: 1,
-          vendor: "test",
           validate: async (value: unknown) => {
             if (value === "old")
               await new Promise<void>((resolve) => {
@@ -515,8 +511,11 @@ describe("SSE async message lifecycle", () => {
               });
             return { value };
           },
+          vendor: "test",
+          version: 1,
         },
       },
+      url: TEST_URL,
     });
     const received: unknown[] = [];
     client.on("update", (event) => received.push(event.data));
@@ -547,7 +546,7 @@ describe("SSE async message lifecycle", () => {
       "fetch",
       vi.fn(async () => new Response(stream))
     );
-    const client = new EventSourceClient({ url: TEST_URL, method: "POST" });
+    const client = new EventSourceClient({ method: "POST", url: TEST_URL });
     const listener = vi.fn();
     client.on("message", listener);
     client.open();
@@ -640,7 +639,7 @@ describe("SSE transport selection", () => {
   it("auto selects fetch for a non-GET method", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const fetchMock = stubFetch();
-    const client = new EventSourceClient({ url: TEST_URL, method: "POST" });
+    const client = new EventSourceClient({ method: "POST", url: TEST_URL });
 
     client.open();
 
@@ -655,8 +654,8 @@ describe("SSE transport selection", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     stubFetch();
     const client = new EventSourceClient({
-      url: TEST_URL,
       headers: { Authorization: "Bearer token" },
+      url: TEST_URL,
     });
 
     client.open();
@@ -669,8 +668,8 @@ describe("SSE transport selection", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     stubFetch();
     const client = new EventSourceClient({
-      url: TEST_URL,
       initialLastEventId: "42",
+      url: TEST_URL,
     });
 
     client.open();
@@ -694,8 +693,8 @@ describe("SSE transport selection", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const fetchMock = stubFetch();
     const client = new EventSourceClient({
-      url: TEST_URL,
       transport: "fetch",
+      url: TEST_URL,
     });
 
     client.open();
@@ -709,9 +708,9 @@ describe("SSE transport selection", () => {
   it("native mode rejects a method it cannot issue", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const client = new EventSourceClient({
-      url: TEST_URL,
       method: "POST",
       transport: "native",
+      url: TEST_URL,
     });
 
     expect(() => client.open()).toThrow(
@@ -723,9 +722,9 @@ describe("SSE transport selection", () => {
   it("native mode rejects custom headers", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const client = new EventSourceClient({
-      url: TEST_URL,
       headers: { "X-Trace": "1" },
       transport: "native",
+      url: TEST_URL,
     });
 
     expect(() => client.open()).toThrow("custom headers");
@@ -733,8 +732,8 @@ describe("SSE transport selection", () => {
 
   it("native mode requires an EventSource implementation", () => {
     const client = new EventSourceClient({
-      url: TEST_URL,
       transport: "native",
+      url: TEST_URL,
     });
 
     expect(() => client.open()).toThrow(
@@ -745,8 +744,8 @@ describe("SSE transport selection", () => {
   it("fetch mode requires a fetch implementation", () => {
     vi.stubGlobal("fetch", undefined);
     const client = new EventSourceClient({
-      url: TEST_URL,
       transport: "fetch",
+      url: TEST_URL,
     });
 
     expect(() => client.open()).toThrow("requires a fetch implementation");
@@ -762,11 +761,11 @@ describe("SSE transport selection", () => {
   it("uses runtime.eventSource when no EventSource global is available", () => {
     vi.stubGlobal("EventSource", undefined);
     const client = new EventSourceClient({
-      url: TEST_URL,
-      transport: "native",
       runtime: {
         eventSource: FakeEventSource as unknown as typeof EventSource,
       },
+      transport: "native",
+      url: TEST_URL,
     });
 
     client.open();
@@ -782,9 +781,9 @@ describe("SSE transport selection", () => {
       () => new Promise<Response>(() => {})
     );
     const client = new EventSourceClient({
-      url: TEST_URL,
-      transport: "fetch",
       runtime: { fetch: fetchMock },
+      transport: "fetch",
+      url: TEST_URL,
     });
 
     client.open();
@@ -797,9 +796,9 @@ describe("SSE transport selection", () => {
   it("does not forward the runtime option into the request init", () => {
     const fetchMock = stubFetch();
     const client = new EventSourceClient({
-      url: TEST_URL,
-      transport: "fetch",
       runtime: { fetch: fetchMock },
+      transport: "fetch",
+      url: TEST_URL,
     });
 
     client.open();

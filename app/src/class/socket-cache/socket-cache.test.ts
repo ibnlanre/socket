@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { SocketCache } from "./index";
 
 describe("SocketCache", () => {
@@ -11,14 +12,14 @@ describe("SocketCache", () => {
 
   // Mock global storage tools for Cache API testing
   type MockCache = {
-    match: ReturnType<typeof vi.fn>;
-    put: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
     keys: ReturnType<typeof vi.fn>;
+    match: ReturnType<typeof vi.fn>;
+    put: ReturnType<typeof vi.fn>;
   };
   type MockCacheStorage = {
-    open: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
+    open: ReturnType<typeof vi.fn>;
   };
   let mockCacheStorage: MockCacheStorage;
   let mockCache: MockCache;
@@ -28,15 +29,15 @@ describe("SocketCache", () => {
 
     // Set up standard mock responses for native Cache API calls
     mockCache = {
-      match: vi.fn().mockResolvedValue(undefined),
-      put: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(false),
       keys: vi.fn().mockResolvedValue([]),
+      match: vi.fn().mockResolvedValue(undefined),
+      put: vi.fn().mockResolvedValue(undefined),
     };
 
     mockCacheStorage = {
-      open: vi.fn().mockResolvedValue(mockCache),
       delete: vi.fn().mockResolvedValue(true),
+      open: vi.fn().mockResolvedValue(mockCache),
     };
 
     // Safely inject mock cache onto globalThis scope
@@ -340,7 +341,6 @@ describe("SocketCache", () => {
     const createStorage = () => {
       const stores = new Map<string, Map<string, Response>>();
       const storage = {
-        stores,
         delete: vi.fn(async (name: string) => stores.delete(name)),
         open: vi.fn(async (name: string) => {
           const entries = stores.get(name) ?? new Map<string, Response>();
@@ -354,6 +354,7 @@ describe("SocketCache", () => {
             },
           };
         }),
+        stores,
       };
       vi.stubGlobal("caches", storage);
       return storage;
@@ -372,8 +373,8 @@ describe("SocketCache", () => {
       const storage = createStorage();
       const cache = new SocketCache<{ count: number }>({
         ...defaults,
-        decryptData: false,
         decrypt,
+        decryptData: false,
         encrypt,
         setStateAction: (next, current) => ({
           count: (current?.count ?? 0) + next.count,
@@ -395,8 +396,8 @@ describe("SocketCache", () => {
       const storage = createStorage();
       const cache = new SocketCache({
         ...defaults,
-        decryptData: false,
         decrypt,
+        decryptData: false,
         encrypt,
       });
       await cache.initialize("/items");

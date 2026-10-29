@@ -1,7 +1,8 @@
+import type { WebSocketConstructor } from "@/types/runtime";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Socket } from "@/class/socket";
-import type { WebSocketConstructor } from "@/types/runtime";
 
 import { SocketGate } from ".";
 
@@ -86,19 +87,22 @@ describe("SocketGate", () => {
 /** A transport the test opens and drops by hand. */
 class Transport extends EventTarget {
   static instances: Transport[] = [];
-  readyState = 0;
-  bufferedAmount = 0;
   binaryType = "blob";
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
+  bufferedAmount = 0;
   onclose: ((event: CloseEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onopen: ((event: Event) => void) | null = null;
+  readyState = 0;
   send = vi.fn();
   readonly url: string;
   constructor(url: string) {
     super();
     this.url = url;
     Transport.instances.push(this);
+  }
+  close() {
+    this.readyState = 3;
   }
   connect() {
     this.readyState = 1;
@@ -110,8 +114,8 @@ class Transport extends EventTarget {
     Object.defineProperty(event, "target", { value: this });
     this.onclose?.(event);
   }
-  close() {
-    this.readyState = 3;
+  fail() {
+    this.onerror?.(new Event("error"));
   }
 }
 
@@ -159,6 +163,33 @@ describe("sockets sharing a gate", () => {
     second.open();
     await vi.waitFor(() => expect(Transport.instances).toHaveLength(1));
     Transport.instances[0].drop();
+    await vi.waitFor(() => expect(Transport.instances).toHaveLength(2));
+  });
+
+  it("keep a failing handshake's turn until it has closed", async () => {
+    const gate = new SocketGate();
+    const first = create(gate, "a", { retry: false });
+    const second = create(gate, "b");
+    first.open();
+    second.open();
+    await vi.waitFor(() => expect(Transport.instances).toHaveLength(1));
+    // An error comes before the close: the next must not begin yet.
+    Transport.instances[0].fail();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(Transport.instances).toHaveLength(1);
+    Transport.instances[0].drop();
+    await vi.waitFor(() => expect(Transport.instances).toHaveLength(2));
+  });
+
+  it("hand the turn on when a socket is closed mid-handshake", async () => {
+    const gate = new SocketGate();
+    const first = create(gate, "a");
+    const second = create(gate, "b");
+    first.open();
+    second.open();
+    await vi.waitFor(() => expect(Transport.instances).toHaveLength(1));
+    // This transport never reports its close; closing the socket still ends the turn.
+    first.close();
     await vi.waitFor(() => expect(Transport.instances).toHaveLength(2));
   });
 

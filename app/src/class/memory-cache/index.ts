@@ -8,12 +8,6 @@ import type { CacheLike } from "@/types/socket/cache-like";
 export class MemoryCache implements CacheLike {
   #entries = new Map<string, Response>();
 
-  #key = (request: RequestInfo | URL): string => {
-    if (typeof request === "string") return request;
-    if ("url" in request) return request.url;
-    return String(request);
-  };
-
   delete = async (request: RequestInfo | URL): Promise<boolean> =>
     this.#entries.delete(this.#key(request));
 
@@ -28,5 +22,11 @@ export class MemoryCache implements CacheLike {
     response: Response
   ): Promise<void> => {
     this.#entries.set(this.#key(request), response.clone());
+  };
+
+  #key = (request: RequestInfo | URL): string => {
+    if (typeof request === "string") return request;
+    if ("url" in request) return request.url;
+    return String(request);
   };
 }

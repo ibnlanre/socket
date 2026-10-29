@@ -1,1 +1,1 @@
-export type SocketTimeout = ReturnType<typeof setTimeout> | number | undefined;
+export type SocketTimeout = number | ReturnType<typeof setTimeout> | undefined;

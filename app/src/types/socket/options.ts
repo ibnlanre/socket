@@ -2,11 +2,6 @@ import type { SocketSelector } from "./selector";
 
 export type UseSocketOptions<Get = unknown, State = Get, Params = never> = {
   /**
-   * The URL params used for the connection.
-   */
-  params?: Params;
-
-  /**
    * Whether to enable the WebSocket connection or not
    *
    * @default true
@@ -21,6 +16,11 @@ export type UseSocketOptions<Get = unknown, State = Get, Params = never> = {
    * is real data. Read once, when the subscription starts.
    */
   initialData?: Get;
+
+  /**
+   * The URL params used for the connection.
+   */
+  params?: Params;
 
   /**
    * A function to select a part of the state returned by the hook.

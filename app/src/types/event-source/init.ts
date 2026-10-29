@@ -11,6 +11,14 @@ export interface Init extends RequestInit {
    */
   headers?: HeadersInit;
   /**
+   * The last event ID to use for the Server-Sent Events connection
+   *
+   * @description The last event ID is used to resume the connection from a specific event
+   * @default null
+   */
+  initialLastEventId?: null | string;
+
+  /**
    * The method to use for the Server-Sent Events connection
    *
    * @description The method is used to fetch the data from the server
@@ -20,12 +28,4 @@ export interface Init extends RequestInit {
    * @see https://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html
    */
   method?: MethodInit;
-
-  /**
-   * The last event ID to use for the Server-Sent Events connection
-   *
-   * @description The last event ID is used to resume the connection from a specific event
-   * @default null
-   */
-  initialLastEventId?: string | null;
 }

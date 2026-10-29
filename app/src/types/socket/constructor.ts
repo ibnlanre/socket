@@ -1,4 +1,3 @@
-import type { SocketGate } from "@/class/socket-gate";
 import type { RuntimeAdapters } from "../runtime";
 import type { SocketCacheOptions } from "./cache-options";
 import type { SocketDataHandlingOptions } from "./data-handling-options";
@@ -9,6 +8,7 @@ import type { SocketProtocolIdentifier } from "./protocol-identifier";
 import type { SocketQueueOptions } from "./queue-options";
 import type { SocketReconnectOptions } from "./reconnect-options";
 import type { SocketSchema } from "./schema";
+import type { SocketGate } from "@/class/socket-gate";
 
 export interface SocketConstructor<
   Get = unknown,
@@ -17,33 +17,11 @@ export interface SocketConstructor<
   ParamsInput = Params,
 >
   extends
-    SocketDataHandlingOptions<Get>,
     SocketCacheOptions,
+    SocketDataHandlingOptions<Get>,
     SocketLoggingOptions,
-    SocketReconnectOptions,
-    SocketQueueOptions {
-  /** Runs before every transport attempt; does not change pool/cache identity. */
-  prepareConnection?: SocketPrepareConnection;
-
-  /**
-   * Paces this socket's handshakes with others' (`SocketGate`): it waits for a
-   * turn before each attempt, retries included, so the sockets sharing a gate
-   * never begin more than its `concurrency` handshakes at once to one server.
-   */
-  gate?: SocketGate;
-
-  /**
-   * Environment implementations to use instead of ambient globals.
-   *
-   * Injected adapters win over globals. Global lookups happen when a connection
-   * is attempted, so a runtime without `WebSocket` only fails on `open()` — and
-   * with an actionable error rather than a `ReferenceError`.
-   */
-  runtime?: RuntimeAdapters;
-
-  /** Structured operational events without direct payload/URL fields. Schema errors may contain validation details. */
-  onDiagnostic?: (event: SocketDiagnostic) => void;
-
+    SocketQueueOptions,
+    SocketReconnectOptions {
   /**
    * The base URL to use for the WebSocket connection
    *
@@ -56,27 +34,30 @@ export interface SocketConstructor<
    *
    * @default "blob"
    */
-  binaryType?: "blob" | "arraybuffer";
+  binaryType?: "arraybuffer" | "blob";
 
   /**
-   * The URL to connect to
+   * Paces this socket's handshakes with others' (`SocketGate`): it waits for a
+   * turn before each attempt, retries included, so the sockets sharing a gate
+   * never begin more than its `concurrency` handshakes at once to one server.
    */
-  url: string;
+  gate?: SocketGate;
 
   /**
    * Validates and optionally transforms incoming websocket messages.
    */
   messageSchema?: SocketSchema<unknown, Get>;
 
+  /** Structured operational events without direct payload/URL fields. Schema errors may contain validation details. */
+  onDiagnostic?: (event: SocketDiagnostic) => void;
+
   /**
    * Validates and optionally transforms URL params used for the connection.
    */
   paramsSchema?: SocketSchema<ParamsInput, Params>;
 
-  /**
-   * Validates and optionally transforms outbound messages before send.
-   */
-  sendSchema?: SocketSchema<Post, unknown>;
+  /** Runs before every transport attempt; does not change pool/cache identity. */
+  prepareConnection?: SocketPrepareConnection;
 
   /**
    * The protocols to use for the WebSocket connection
@@ -87,4 +68,23 @@ export interface SocketConstructor<
    * @default []
    */
   protocols?: SocketProtocolIdentifier | SocketProtocolIdentifier[];
+
+  /**
+   * Environment implementations to use instead of ambient globals.
+   *
+   * Injected adapters win over globals. Global lookups happen when a connection
+   * is attempted, so a runtime without `WebSocket` only fails on `open()` — and
+   * with an actionable error rather than a `ReferenceError`.
+   */
+  runtime?: RuntimeAdapters;
+
+  /**
+   * Validates and optionally transforms outbound messages before send.
+   */
+  sendSchema?: SocketSchema<Post, unknown>;
+
+  /**
+   * The URL to connect to
+   */
+  url: string;
 }

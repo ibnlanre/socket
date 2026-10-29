@@ -1,12 +1,12 @@
 export interface SocketConnectionPreparation {
-  url: string;
+  attempt: number;
   protocols: string | string[];
   signal: AbortSignal;
-  attempt: number;
+  url: string;
 }
 
 export type SocketPrepareConnection = (
   context: SocketConnectionPreparation
 ) =>
-  | { url?: string; protocols?: string | string[] }
-  | Promise<{ url?: string; protocols?: string | string[] }>;
+  | Promise<{ protocols?: string | string[]; url?: string; }>
+  | { protocols?: string | string[]; url?: string; };

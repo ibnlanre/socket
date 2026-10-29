@@ -8,13 +8,17 @@ Paced handshakes, and stopped sockets: begin connections to a server one after a
 
 ### Added
 
-- `SocketGate`: paces handshakes, no more than `concurrency` (default 1) at once to any one server, the rest queued in order. Pass the same gate as `gate` to every socket or client that talks to a server that stalls or drops several handshakes begun together. A turn lasts from just before the transport is created until the handshake opens, closes or errors, or `timeout` (default 10 seconds) passes; retries take their turn like any other attempt. A socket waiting for its turn reports `fetchStatus: "preparing"`. Each origin has its own queue unless `lane` maps several to one, as for hosts behind one proxy.
+- `SocketGate`: paces handshakes, no more than `concurrency` (default 1) at once to any one server, the rest queued in order. Pass the same gate as `gate` to every socket or client that talks to a server that stalls or drops several handshakes begun together. A turn lasts from just before the transport is created until the handshake opens or closes, or the socket is closed, or `timeout` (default 10 seconds) passes (an error alone does not end it: the close that follows does); retries take their turn like any other attempt. A socket waiting for its turn reports `fetchStatus: "preparing"`. Each origin has its own queue unless `lane` maps several to one, as for hosts behind one proxy.
 
-- `isExhausted` on a socket's state and on `useSocket`'s result: the socket stopped after a failure it will not retry (its retries used up, or `retry` off), and waits closed until `open()`.
+- `isExhausted` on a socket's state and on `useSocket`'s result: the socket stopped after a failure it will not retry (its retries used up, or `retry` off), and waits closed until `open()`. It stops waiting when closed on purpose or when its last subscriber leaves.
 - `Socket#observe(listener)`: watch a socket's state, and its subscribers coming and going, without subscribing. An observer neither keeps the connection open nor stops it closing when idle.
 - `Socket#hasSubscribers()`: whether anything subscribes to the socket now.
-- `SocketClient#exhausted()`: the pooled sockets that have stopped and are still read; `SocketClient#subscribe(listener)`: notice when the pool's sockets change; `SocketClient#reconnect({ stagger })`: reopen the stopped ones, one after another.
-- `useExhaustedSockets(clients, { stagger })`: one count of stopped sockets across several clients, with `reconnect()` and `isReconnecting`, for an app-wide "live updates have stopped" notice. `reconnectExhausted(clients, { stagger })` is the same outside React.
+- `SocketClient#exhausted()`: the pooled sockets that have stopped; `SocketClient#observe(listener)`: notice when the pool's sockets change; `SocketClient#reconnect({ stagger })`: reopen the stopped ones, one after another, resolving once each has connected or stopped again, with how many connected.
+- `useExhaustedSockets(clients, { stagger })`: one count of stopped sockets across several clients, with `reconnect()` and `isReconnecting` (true until each reopened socket has connected or stopped again), for an app-wide "live updates have stopped" notice. `reconnectExhausted(clients, { stagger })` is the same outside React.
+
+### Changed
+
+- `open()` reports `fetchStatus: "preparing"` at once, while the stored copy is read, as the lifecycle guide already described; before, it stayed `"idle"` until the connection began.
 
 ### Fixed
 

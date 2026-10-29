@@ -1,25 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Socket, readSocketSnapshot } from ".";
-
 import type { WebSocketConstructor } from "@/types/runtime";
 
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { readSocketSnapshot, Socket } from ".";
+
 class Transport extends EventTarget {
-  static OPEN = 1;
   static CLOSED = 3;
   static instances: Transport[] = [];
-  readyState = 0;
-  bufferedAmount = 0;
+  static OPEN = 1;
   binaryType = "blob";
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
+  bufferedAmount = 0;
   onclose: ((event: CloseEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onopen: ((event: Event) => void) | null = null;
+  readyState = 0;
   send = vi.fn();
   readonly url: string;
   constructor(url: string) {
     super();
     this.url = url;
     Transport.instances.push(this);
+  }
+  close() {
+    this.readyState = 3;
   }
   connect() {
     this.readyState = 1;
@@ -30,27 +34,24 @@ class Transport extends EventTarget {
       new MessageEvent("message", { data: JSON.stringify(data) })
     );
   }
-  close() {
-    this.readyState = 3;
-  }
 }
 const sockets: Socket<unknown, unknown>[] = [];
-function create(options: object = {}) {
-  const socket = new Socket<unknown, unknown>({
-    url: "wss://example.com/ws",
-    disableCache: true,
-    log: [],
-    ...options,
-  });
-  sockets.push(socket);
-  return socket;
-}
 async function connect(socket: Socket<unknown, unknown>) {
   socket.open();
   await vi.waitFor(() => expect(socket.ws).not.toBeNull());
   const transport = socket.ws as unknown as Transport;
   transport.connect();
   return transport;
+}
+function create(options: object = {}) {
+  const socket = new Socket<unknown, unknown>({
+    disableCache: true,
+    log: [],
+    url: "wss://example.com/ws",
+    ...options,
+  });
+  sockets.push(socket);
+  return socket;
 }
 beforeEach(() => {
   Transport.instances = [];
@@ -72,7 +73,7 @@ describe("connection lifecycle", () => {
       return { value };
     });
     const socket = create({
-      messageSchema: { "~standard": { version: 1, vendor: "test", validate } },
+      messageSchema: { "~standard": { validate, vendor: "test", version: 1 } },
     });
     const transport = await connect(socket);
     const values: unknown[] = [];
@@ -92,8 +93,6 @@ describe("connection lifecycle", () => {
     const socket = create({
       messageSchema: {
         "~standard": {
-          version: 1,
-          vendor: "test",
           validate: async (value: unknown) => {
             if (value === "old")
               await new Promise<void>((resolve) => {
@@ -101,6 +100,8 @@ describe("connection lifecycle", () => {
               });
             return { value };
           },
+          vendor: "test",
+          version: 1,
         },
       },
     });
@@ -161,7 +162,7 @@ describe("connection lifecycle", () => {
   });
   it("waits for browser buffers and emits diagnostics without exposing payloads", async () => {
     const diagnostic = vi.fn();
-    const socket = create({ onDiagnostic: diagnostic, maxBufferedAmount: 10 });
+    const socket = create({ maxBufferedAmount: 10, onDiagnostic: diagnostic });
     const transport = await connect(socket);
     transport.bufferedAmount = 11;
     await socket.send({ token: "private" });
@@ -187,11 +188,11 @@ describe("reconnection backoff", () => {
     return transport;
   };
   const backoff = {
+    maxJitterValue: 1,
+    minJitterValue: 1,
     retry: true,
     retryCount: 10,
     retryDelay: 5,
-    minJitterValue: 1,
-    maxJitterValue: 1,
   };
 
   it("keeps counting failures while a server accepts and then drops each connection", async () => {
@@ -213,8 +214,8 @@ describe("reconnection backoff", () => {
   it("gives up after retryCount even when every attempt opens", async () => {
     const socket = create({
       ...backoff,
-      retryCount: 2,
       maxRetryDelay: "10 seconds",
+      retryCount: 2,
     });
     let transport = await connect(socket);
     drop(transport);
@@ -230,8 +231,8 @@ describe("reconnection backoff", () => {
   it("marks a socket that gave up as exhausted, and open() starts it again", async () => {
     const socket = create({
       ...backoff,
-      retryCount: 1,
       maxRetryDelay: "10 seconds",
+      retryCount: 1,
     });
     let transport = await connect(socket);
     drop(transport);
@@ -255,8 +256,8 @@ describe("reconnection backoff", () => {
   it("stops being exhausted once closed on purpose", async () => {
     const socket = create({
       ...backoff,
-      retryCount: 0,
       maxRetryDelay: "10 seconds",
+      retryCount: 0,
     });
     drop(await connect(socket));
     expect(socket.isExhausted).toBe(true);
@@ -342,9 +343,9 @@ it("bounds incoming validation while preserving the overflow error", async () =>
     maxPendingMessages: 1,
     messageSchema: {
       "~standard": {
-        version: 1,
-        vendor: "test",
         validate: () => new Promise(() => {}),
+        vendor: "test",
+        version: 1,
       },
     },
   });

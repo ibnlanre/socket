@@ -1,4 +1,3 @@
-import { server } from "@/mocks/node";
 import {
   afterAll,
   afterEach,
@@ -9,6 +8,9 @@ import {
   vi,
 } from "vitest";
 import { z } from "zod";
+
+import { server } from "@/mocks/node";
+
 import { Socket } from "./index";
 beforeAll(() => server.listen());
 afterEach(() => server.resetHandlers());
@@ -37,8 +39,8 @@ describe("Socket", () => {
     it("should apply placeholderData before connecting", () => {
       const placeholder = { message: "loading…" };
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         placeholderData: placeholder,
+        url: "wss://echo.websocket.org",
       });
       expect(client.value).toEqual(placeholder);
       expect(client.isPlaceholderData).toBe(true);
@@ -92,8 +94,8 @@ describe("Socket", () => {
     });
     it("should apply the configured binary type to the WebSocket", async () => {
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         binaryType: "arraybuffer",
+        url: "wss://echo.websocket.org",
       });
       client.open();
       await client.waitUntil("open");
@@ -160,10 +162,10 @@ describe("Socket", () => {
   describe("retry", () => {
     it("should transition to idle after a clean close with a specific code", async () => {
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         retry: true,
         retryCount: 2,
         retryOnSpecificCloseCodes: [3000],
+        url: "wss://echo.websocket.org",
       });
       client.open();
       await client.waitUntil("open");
@@ -173,10 +175,10 @@ describe("Socket", () => {
     });
     it("should increment failureCount and enter disconnected state on an unclean close", async () => {
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         retry: true,
         retryCount: 3,
         retryOnSpecificCloseCodes: [3001],
+        url: "wss://echo.websocket.org",
       });
       client.open();
       await client.waitUntil("open");
@@ -197,8 +199,8 @@ describe("Socket", () => {
     });
     it("should not retry when retry is disabled", async () => {
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         retry: false,
+        url: "wss://echo.websocket.org",
       });
       client.open();
       await client.waitUntil("open");
@@ -219,8 +221,8 @@ describe("Socket", () => {
       const received: string[] = [];
       let lastValueStr = "";
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         sendSchema: z.object({ event: z.string() }),
+        url: "wss://echo.websocket.org",
       });
       // Queue three payloads before the socket opens
       await client.send({ event: "first" });
@@ -253,9 +255,9 @@ describe("Socket", () => {
       let echoCount = 0;
       let lastValueStr = "";
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         deduplicationWindow: 200,
         sendSchema: z.object({ event: z.string() }),
+        url: "wss://echo.websocket.org",
       });
       const unsub = client.subscribe((state) => {
         const str = JSON.stringify(state.value);
@@ -283,9 +285,9 @@ describe("Socket", () => {
     });
     it("should dedup within the window after a queued payload is flushed on open", async () => {
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         deduplicationWindow: 200,
         sendSchema: z.object({ event: z.string() }),
+        url: "wss://echo.websocket.org",
       });
       // Queue before open — sentAt will be recorded during flush
       await client.send({ event: "ping" });
@@ -297,9 +299,9 @@ describe("Socket", () => {
     });
     it("should accept deduplicationWindow as a UnitValue string", async () => {
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         deduplicationWindow: "50 milliseconds",
         sendSchema: z.object({ event: z.string() }),
+        url: "wss://echo.websocket.org",
       });
       client.open();
       await client.waitUntil("open");
@@ -315,9 +317,9 @@ describe("Socket", () => {
       const received: string[] = [];
       let lastValueStr = "";
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         deduplicationWindow: 50,
         sendSchema: z.object({ event: z.string() }),
+        url: "wss://echo.websocket.org",
       });
       const trackEcho = (state: typeof client) => {
         const str = JSON.stringify(state.value);
@@ -366,14 +368,14 @@ describe("Socket", () => {
   describe("send — schema validation", () => {
     it("should await async send validation", async () => {
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         sendSchema: {
           "~standard": {
-            version: 1,
-            vendor: "test",
             validate: () => Promise.resolve({ value: {} }),
+            vendor: "test",
+            version: 1,
           },
         } as never,
+        url: "wss://echo.websocket.org",
       });
       await expect(client.send({ event: "ping" } as never)).resolves.toBe(true);
       client.close();
@@ -446,8 +448,8 @@ describe("Socket", () => {
     it("should not register bfcache listeners when reconnectOnPageRestore is false", async () => {
       const addEventListenerSpy = vi.spyOn(window, "addEventListener");
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         reconnectOnPageRestore: false,
+        url: "wss://echo.websocket.org",
       });
       client.open();
       await client.waitUntil("open");
@@ -461,8 +463,8 @@ describe("Socket", () => {
     it("should not register network listener when reconnectOnNetworkRestore is false", async () => {
       const addEventListenerSpy = vi.spyOn(window, "addEventListener");
       const client = new Socket({
-        url: "wss://echo.websocket.org",
         reconnectOnNetworkRestore: false,
+        url: "wss://echo.websocket.org",
       });
       client.open();
       await client.waitUntil("open");

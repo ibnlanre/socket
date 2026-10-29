@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { extractOrigin } from "./index";
 
 describe("extractOrigin", () => {

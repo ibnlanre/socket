@@ -1,1 +1,1 @@
-export type SocketConnectionEvent = "open" | "message" | "close" | "error";
+export type SocketConnectionEvent = "close" | "error" | "message" | "open";

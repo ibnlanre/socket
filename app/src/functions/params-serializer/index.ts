@@ -1,10 +1,10 @@
-import { isEmpty } from "./is-empty";
-import { isNull } from "./is-null";
-import { isUndefined } from "./is-undefined";
-
 import type { ConnectionParams } from "@/types/connection-params";
 import type { ExcludedValues } from "@/types/excluded-values";
 import type { PrimitiveType } from "@/types/primitive-type";
+
+import { isEmpty } from "./is-empty";
+import { isNull } from "./is-null";
+import { isUndefined } from "./is-undefined";
 
 /**
  * Serializes the parameters object into a query string

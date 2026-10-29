@@ -1,15 +1,18 @@
-import { Socket } from "@/class/socket";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
-import { StrictMode } from "react";
+
+import { Socket } from "@/class/socket";
+
 import { SocketClient } from ".";
 
 const configuration = {
   baseURL: "wss://example.com",
-  url: "/ws",
   disableCache: true,
+  url: "/ws",
 };
 
 describe("connection identity", () => {
@@ -29,7 +32,7 @@ describe("connection identity", () => {
       configuration
     );
     const socket = await client.get({ a: "hello world", b: "&+/é" });
-    expect(await client.get({ b: "&+/é", a: "hello world" })).toBe(socket);
+    expect(await client.get({ a: "hello world", b: "&+/é" })).toBe(socket);
     expect(
       new URL(socket.path, configuration.baseURL).searchParams.get("b")
     ).toBe("&+/é");
@@ -45,7 +48,7 @@ describe("connection identity", () => {
       return { value: { room: String(value).toLowerCase() } };
     });
     const paramsSchema: StandardSchemaV1<string, { room: string }> = {
-      "~standard": { version: 1, vendor: "test", validate },
+      "~standard": { validate, vendor: "test", version: 1 },
     };
     const client = new SocketClient({ ...configuration, paramsSchema });
     const controller = new AbortController();
@@ -67,9 +70,9 @@ describe("connection identity", () => {
   it("infers schema input and output independently", async () => {
     const client = new SocketClient({
       ...configuration,
+      messageSchema: z.string().transform(Number),
       paramsSchema: z.string().transform((room) => ({ room })),
       sendSchema: z.string().transform((content) => ({ content })),
-      messageSchema: z.string().transform(Number),
     });
     const socket = await client.get("general");
     expectTypeOf(socket.value).toEqualTypeOf<number | undefined>();
@@ -99,8 +102,8 @@ describe("connection identity", () => {
     const validate = vi.fn(() => ({ issues: [{ message: "unused" }] }));
     const client = new SocketClient({
       ...configuration,
+      paramsSchema: { "~standard": { validate, vendor: "test", version: 1 } },
       placeholderData: 2,
-      paramsSchema: { "~standard": { version: 1, vendor: "test", validate } },
     });
     const hook = renderHook(() =>
       client.useSocket({ enabled: false, select: (value) => (value ?? 0) * 2 })
@@ -118,12 +121,12 @@ describe("connection identity", () => {
       ...configuration,
       paramsSchema: {
         "~standard": {
-          version: 1,
-          vendor: "test",
           validate: () =>
             new Promise<{ value: { room: string } }>((done) => {
               resolve = done;
             }),
+          vendor: "test",
+          version: 1,
         },
       },
     });

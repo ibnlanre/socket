@@ -1,47 +1,47 @@
+export type TimeUnit = LittleTime | PluralTimeUnit | SingularTimeUnit;
+
+export type Unit = Capitalize<TimeUnit> | TimeUnit | Uppercase<TimeUnit>;
+
+export type UnitValue = `${number}${Unit}` | `${number} ${Unit}` | number;
+
+type LittleTime = "d" | "h" | "m" | "mo" | "ms" | "s" | "w" | "y";
+
 type PluralTime =
-  | "milliseconds"
-  | "seconds"
-  | "minutes"
-  | "hours"
   | "days"
-  | "weeks"
+  | "hours"
+  | "milliseconds"
+  | "minutes"
   | "months"
+  | "seconds"
+  | "weeks"
   | "years";
-
-type TruncatedPluralTime =
-  | "msecs"
-  | "secs"
-  | "mins"
-  | "hrs"
-  | "dys"
-  | "wks"
-  | "mos"
-  | "yrs";
-
+type PluralTimeUnit = PluralTime | TruncatedPluralTime;
 type SingularTime =
-  | "millisecond"
-  | "second"
-  | "minute"
-  | "hour"
   | "day"
-  | "week"
+  | "hour"
+  | "millisecond"
+  | "minute"
   | "month"
+  | "second"
+  | "week"
   | "year";
 
-type TruncatedSingularTime =
-  | "msec"
-  | "sec"
-  | "min"
-  | "hr"
-  | "dy"
-  | "wk"
-  | "mth"
-  | "yr";
-
-type LittleTime = "ms" | "s" | "m" | "h" | "d" | "w" | "mo" | "y";
 type SingularTimeUnit = SingularTime | TruncatedSingularTime;
-type PluralTimeUnit = PluralTime | TruncatedPluralTime;
-
-export type TimeUnit = LittleTime | SingularTimeUnit | PluralTimeUnit;
-export type Unit = TimeUnit | Capitalize<TimeUnit> | Uppercase<TimeUnit>;
-export type UnitValue = number | `${number}${Unit}` | `${number} ${Unit}`;
+type TruncatedPluralTime =
+  | "dys"
+  | "hrs"
+  | "mins"
+  | "mos"
+  | "msecs"
+  | "secs"
+  | "wks"
+  | "yrs";
+type TruncatedSingularTime =
+  | "dy"
+  | "hr"
+  | "min"
+  | "msec"
+  | "mth"
+  | "sec"
+  | "wk"
+  | "yr";

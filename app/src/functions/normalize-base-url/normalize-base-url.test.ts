@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { normalizeBaseURL } from "./index";
 
 describe("normalizeBaseURL", () => {

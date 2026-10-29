@@ -1,1 +1,1 @@
-export type SocketData = MessageEvent<string | Blob | ArrayBuffer>;
+export type SocketData = MessageEvent<ArrayBuffer | Blob | string>;

@@ -1,13 +1,14 @@
-import { MemoryCache } from "@/class/memory-cache";
-import { CacheEncodingHeader } from "@/constants/cache-encoding-header";
-import { getCacheStorage } from "@/functions/get-cache-storage";
-import { isExpired } from "@/functions/is-expired";
-import { isJSON } from "@/functions/is-json";
 import type { RuntimeAdapters } from "@/types/runtime";
 import type { CacheLike } from "@/types/socket/cache-like";
 import type { CachePersistence } from "@/types/socket/cache-persistence";
 import type { SocketCipher } from "@/types/socket/cipher";
 import type { SocketSetStateAction } from "@/types/socket/set-state-action";
+
+import { MemoryCache } from "@/class/memory-cache";
+import { CacheEncodingHeader } from "@/constants/cache-encoding-header";
+import { getCacheStorage } from "@/functions/get-cache-storage";
+import { isExpired } from "@/functions/is-expired";
+import { isJSON } from "@/functions/is-json";
 
 /**
  * How a stored entry was written, so a read knows whether to decrypt it.
@@ -23,7 +24,7 @@ type SocketCacheConstructor<State = unknown> = {
   decryptData: boolean;
   disableCache: boolean;
   encrypt?: SocketCipher;
-  fallback?: "none" | "memory";
+  fallback?: "memory" | "none";
   maxCacheAge: number;
   origin: string;
   runtime?: RuntimeAdapters;
@@ -40,11 +41,15 @@ export class SocketCache<State = unknown> {
   /** The backend in use; resolved by `initialize()`. */
   persistence: CachePersistence = "none";
 
+  get value(): State | undefined {
+    return this.#state;
+  }
+
   #decrypt?: SocketCipher;
   #decryptData: boolean;
   #disableCache: boolean;
   #encrypt?: SocketCipher;
-  #fallback: "none" | "memory";
+  #fallback: "memory" | "none";
   #maxCacheAge: number;
   #memory: MemoryCache | undefined;
   #observers: Set<(value: State) => void> = new Set();
@@ -76,38 +81,6 @@ export class SocketCache<State = unknown> {
     this.#runtime = runtime;
     this.#setStateAction = setStateAction;
   }
-
-  #notifyObservers = (): void => {
-    // #state is always assigned before #notifyObservers runs (see set/initialize).
-    const state = this.#state as State;
-    for (const observer of this.#observers) {
-      observer(state);
-    }
-  };
-
-  #decode = (data: State, encoding: string | null): State | undefined => {
-    switch (encoding) {
-      case "plain":
-        return data;
-      case "cipher":
-        // Unreadable without the counterpart to `encrypt`.
-        return this.#decrypt ? (this.#decrypt(data) as State) : undefined;
-      default:
-        // A message as received, including entries stored before the header.
-        return this.decrypt(data) as State;
-    }
-  };
-
-  #encode = (message: string, state: State): [string, CacheEncoding] => {
-    if (this.#encrypt) return [JSON.stringify(this.#encrypt(state)), "cipher"];
-    if (this.#setStateAction) return [JSON.stringify(state), "plain"];
-    return [message, "wire"];
-  };
-
-  // Opened by name each time, so a deleted store is never written to through
-  // a handle held from before.
-  #open = async (): Promise<CacheLike | undefined> =>
-    this.#storage ? this.#storage.open(this.#origin) : this.#memory;
 
   /** Deletes the store, every path in it; the held state stays. */
   clear = async (): Promise<void> => {
@@ -178,13 +151,6 @@ export class SocketCache<State = unknown> {
     }
   };
 
-  subscribe = (observer: (value: State) => void): (() => void) => {
-    this.#observers.add(observer);
-    return () => {
-      this.#observers.delete(observer);
-    };
-  };
-
   remove = async (path: string): Promise<boolean> => {
     const cache = await this.#open();
     if (!cache) return false;
@@ -237,11 +203,50 @@ export class SocketCache<State = unknown> {
       const cache = await this.#open();
       await cache?.put(path, response);
     });
+
     this.#writes = write.catch(() => {});
     await write;
   };
 
-  get value(): State | undefined {
-    return this.#state;
-  }
+  subscribe = (observer: (value: State) => void): (() => void) => {
+    this.#observers.add(observer);
+    return () => {
+      this.#observers.delete(observer);
+    };
+  };
+
+  #decode = (data: State, encoding: null | string): State | undefined => {
+    switch (encoding) {
+      case "plain": {
+        return data;
+      }
+      case "cipher": {
+        // Unreadable without the counterpart to `encrypt`.
+        return this.#decrypt ? (this.#decrypt(data) as State) : undefined;
+      }
+      default: {
+        // A message as received, including entries stored before the header.
+        return this.decrypt(data) as State;
+      }
+    }
+  };
+
+  #encode = (message: string, state: State): [string, CacheEncoding] => {
+    if (this.#encrypt) return [JSON.stringify(this.#encrypt(state)), "cipher"];
+    if (this.#setStateAction) return [JSON.stringify(state), "plain"];
+    return [message, "wire"];
+  };
+
+  #notifyObservers = (): void => {
+    // #state is always assigned before #notifyObservers runs (see set/initialize).
+    const state = this.#state as State;
+    for (const observer of this.#observers) {
+      observer(state);
+    }
+  };
+
+  // Opened by name each time, so a deleted store is never written to through
+  // a handle held from before.
+  #open = async (): Promise<CacheLike | undefined> =>
+    this.#storage ? this.#storage.open(this.#origin) : this.#memory;
 }

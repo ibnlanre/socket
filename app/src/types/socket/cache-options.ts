@@ -2,6 +2,17 @@ import type { UnitValue } from "../time-unit";
 
 export type SocketCacheOptions = {
   /**
+   * What to do when the runtime has no Cache Storage.
+   *
+   * `"none"` stops caching. `"memory"` opts into a non-persistent cache, so
+   * the data is available for the life of the instance but does not survive a
+   * reload — inspect `SocketCache.persistence` to see which backend is live.
+   *
+   * @default "none"
+   */
+  cacheFallback?: "memory" | "none";
+
+  /**
    * The key to use for caching the data
    *
    * @description The default key is the origin of the WebSocket connection
@@ -21,17 +32,6 @@ export type SocketCacheOptions = {
    * @default false
    */
   disableCache?: boolean;
-
-  /**
-   * What to do when the runtime has no Cache Storage.
-   *
-   * `"none"` stops caching. `"memory"` opts into a non-persistent cache, so
-   * the data is available for the life of the instance but does not survive a
-   * reload — inspect `SocketCache.persistence` to see which backend is live.
-   *
-   * @default "none"
-   */
-  cacheFallback?: "none" | "memory";
 
   /**
    * The maximum age of the cache data

@@ -1,3 +1,7 @@
+export type HeadersInit = Headers | HeadersRecord | HeadersTuple;
+
+export type HeadersRecord = Record<Header, string>;
+export type HeadersTuple = [Header, string][];
 type Header =
   | "A-IM"
   | "Accept"
@@ -28,17 +32,17 @@ type Header =
   | "Content-Security-Policy"
   | "Content-Security-Policy-Report-Only"
   | "Content-Type"
-  | "Cookie"
   | "Cookie2"
+  | "Cookie"
   | "Cross-Origin-Embedder-Policy"
   | "Cross-Origin-Opener-Policy"
   | "Cross-Origin-Resource-Policy"
-  | "DNT"
   | "Date"
   | "Device-Memory"
   | "Digest"
-  | "ETag"
+  | "DNT"
   | "Early-Data"
+  | "ETag"
   | "Expect"
   | "Expect-CT"
   | "Expires"
@@ -81,8 +85,8 @@ type Header =
   | "Sec-WebSocket-Version"
   | "Server"
   | "Server-Timing"
-  | "Set-Cookie"
   | "Set-Cookie2"
+  | "Set-Cookie"
   | "SourceMap"
   | "Strict-Transport-Security"
   | "TE"
@@ -96,9 +100,9 @@ type Header =
   | "Vary"
   | "Via"
   | "Viewport-Width"
-  | "WWW-Authenticate"
   | "Warning"
   | "Width"
+  | "WWW-Authenticate"
   | "X-Content-Type-Options"
   | "X-DNS-Prefetch-Control"
   | "X-Forwarded-For"
@@ -107,7 +111,3 @@ type Header =
   | "X-Frame-Options"
   | "X-XSS-Protection"
   | (string & {});
-
-export type HeadersRecord = Record<Header, string>;
-export type HeadersTuple = [Header, string][];
-export type HeadersInit = HeadersTuple | HeadersRecord | Headers;

@@ -12,6 +12,7 @@ import {
   vi,
 } from "vitest";
 import { z } from "zod";
+
 import { SocketClient } from "./index";
 const testWsHandler = ws.link("wss://test.example.com/ws/test");
 const testWsHandlerWithParams = ws.link("wss://test.example.com/ws/test*");
@@ -49,9 +50,9 @@ const server = setupServer(
     client.send(
       JSON.stringify({
         message: `Connected user ${userId} to room ${room}`,
-        userId,
         room,
         timestamp: Date.now(),
+        userId,
       })
     );
     client.addEventListener("message", (event) => {
@@ -59,19 +60,19 @@ const server = setupServer(
         const data = JSON.parse(event.data as string);
         client.send(
           JSON.stringify({
-            userId,
-            room,
             echo: data,
+            room,
             timestamp: Date.now(),
+            userId,
           })
         );
       } catch {
         client.send(
           JSON.stringify({
             error: "Invalid JSON",
-            userId,
             room,
             timestamp: Date.now(),
+            userId,
           })
         );
       }
@@ -79,25 +80,25 @@ const server = setupServer(
   })
 );
 type TestData = {
-  message: string;
-  timestamp: number;
   echo?: {
     event: string;
   };
-  userId?: string | null;
-  room?: string | null;
+  message: string;
+  room?: null | string;
+  timestamp: number;
+  userId?: null | string;
 };
 type TestParams = {
-  userId?: string;
   room?: string;
+  userId?: string;
 };
 async function connectManagedSocket(socket: {
+  fetchStatus: string;
   open: () => void;
   subscribe: (
     listener: (state: { fetchStatus: string }) => void,
     immediate?: boolean
   ) => () => void;
-  fetchStatus: string;
 }) {
   let resolveConnected: (() => void) | null = null;
   const connected = new Promise<void>((resolve) => {
@@ -118,13 +119,13 @@ async function connectManagedSocket(socket: {
 describe("SocketClient", () => {
   const mockConfig = {
     baseURL: "wss://test.example.com",
-    url: "/ws/test",
     retry: true,
     retryCount: 3,
+    url: "/ws/test",
   };
   const paramsSchema = z.object({
-    userId: z.string().optional(),
     room: z.string().optional(),
+    userId: z.string().optional(),
   });
   let client = new SocketClient<TestData, never, TestParams>(mockConfig);
   beforeAll(() => {
@@ -148,7 +149,7 @@ describe("SocketClient", () => {
       expect(await client.get()).toBeDefined();
     });
     it("should reuse the same socket for the same params", async () => {
-      const params = { userId: "123", room: "chat" };
+      const params = { room: "chat", userId: "123" };
       const socket1 = await client.get(params);
       const socket2 = await client.get(params);
       expect(socket1).toBe(socket2);
@@ -301,8 +302,8 @@ describe("SocketClient", () => {
       });
       const { result } = renderHook(() =>
         binaryTypeClient.useSocket({
-          params: { userId: "123" },
           enabled: false,
+          params: { userId: "123" },
           select: (data) => {
             if (!data) return "waiting";
             return data;
@@ -317,10 +318,10 @@ describe("SocketClient", () => {
     });
     it("should open once enabled becomes true", async () => {
       let enabled = false;
-      const { result, rerender } = renderHook(() =>
+      const { rerender, result } = renderHook(() =>
         client.useSocket({
-          params: { userId: "123" },
           enabled,
+          params: { userId: "123" },
         })
       );
       expect(result.current.fetchStatus).toBe("idle");
@@ -351,7 +352,7 @@ describe("SocketClient", () => {
     });
     it("should handle param changes correctly", async () => {
       let params = { userId: "123" };
-      const { result, rerender } = renderHook(() =>
+      const { rerender, result } = renderHook(() =>
         client.useSocket({ params })
       );
       const firstSocket = await client.get(params);
@@ -381,7 +382,7 @@ describe("SocketClient", () => {
     it("should apply selector transformations", async () => {
       const { result } = renderHook(() =>
         client.useSocket({
-          params: { userId: "123", room: "chat" },
+          params: { room: "chat", userId: "123" },
           select: (data) => data?.message?.toUpperCase() || "",
         })
       );
@@ -468,9 +469,9 @@ describe("SocketClient", () => {
         ...mockConfig,
         paramsSchema: {
           "~standard": {
-            version: 1,
-            vendor: "test",
             validate: () => Promise.resolve({ value: {} }),
+            vendor: "test",
+            version: 1,
           },
         } as never,
       });
@@ -482,11 +483,11 @@ describe("SocketClient", () => {
     it("should validate incoming messages with zod", async () => {
       const schemaClient = new SocketClient({
         ...mockConfig,
-        paramsSchema,
         messageSchema: z.object({
           message: z.string(),
           timestamp: z.number(),
         }),
+        paramsSchema,
       });
       const { result } = renderHook(() =>
         schemaClient.useSocket({ params: { userId: "123" } })
@@ -521,16 +522,16 @@ describe("SocketClient", () => {
     it("should infer params, message, and send types from schemas", async () => {
       const schemaClient = new SocketClient({
         ...mockConfig,
-        paramsSchema: z.object({
-          userId: z.string().optional(),
-          room: z.string().optional(),
-        }),
-        sendSchema: z.object({
-          event: z.string(),
-        }),
         messageSchema: z.object({
           message: z.string(),
           timestamp: z.number(),
+        }),
+        paramsSchema: z.object({
+          room: z.string().optional(),
+          userId: z.string().optional(),
+        }),
+        sendSchema: z.object({
+          event: z.string(),
         }),
       });
       await schemaClient.get({ userId: "123" });
@@ -547,18 +548,18 @@ describe("SocketClient", () => {
     it("should queue sends made before the socket opens", async () => {
       const schemaClient = new SocketClient({
         ...mockConfig,
-        sendSchema: z.object({
-          event: z.string(),
-        }),
         messageSchema: z.object({
-          timestamp: z.number(),
-          message: z.string().optional(),
-          error: z.string().optional(),
           echo: z
             .object({
               event: z.string(),
             })
             .optional(),
+          error: z.string().optional(),
+          message: z.string().optional(),
+          timestamp: z.number(),
+        }),
+        sendSchema: z.object({
+          event: z.string(),
         }),
       });
       const socket = await schemaClient.get();
@@ -578,7 +579,7 @@ describe("SocketClient", () => {
       schemaClient.clear();
     });
     it("should expose imperative actions on the hook result", async () => {
-      const params = { userId: "123", room: "chat" };
+      const params = { room: "chat", userId: "123" };
       const { result } = renderHook(() => client.useSocket({ params }));
       await waitFor(
         () => {
@@ -607,13 +608,13 @@ describe("SocketClient", () => {
     const sendConfig = {
       ...mockConfig,
       deduplicationWindow: 100,
-      sendSchema: z.object({ event: z.string() }),
       messageSchema: z.object({
-        timestamp: z.number(),
-        message: z.string().optional(),
-        error: z.string().optional(),
         echo: z.object({ event: z.string() }).optional(),
+        error: z.string().optional(),
+        message: z.string().optional(),
+        timestamp: z.number(),
       }),
+      sendSchema: z.object({ event: z.string() }),
     };
     it("should send the payload and return true on first call", async () => {
       const schemaClient = new SocketClient(sendConfig);

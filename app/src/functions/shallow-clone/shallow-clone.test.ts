@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { shallowClone } from "./index";
 
 describe("shallowClone", () => {
@@ -21,18 +22,18 @@ describe("shallowClone", () => {
   it("should copy property descriptors", () => {
     const obj = {};
     Object.defineProperty(obj, "a", {
+      configurable: true,
+      enumerable: true,
       value: 1,
       writable: false,
-      enumerable: true,
-      configurable: true,
     });
     const clone = shallowClone(obj);
     const descriptor = Object.getOwnPropertyDescriptor(clone, "a");
     expect(descriptor).toEqual({
+      configurable: true,
+      enumerable: true,
       value: 1,
       writable: false,
-      enumerable: true,
-      configurable: true,
     });
   });
 

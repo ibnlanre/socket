@@ -1,15 +1,15 @@
+export type SocketDiagnostic = SocketDiagnosticDetails & { timestamp: number };
+
 export type SocketDiagnosticDetails =
   | {
-      type: "connection";
-      phase: "preparing" | "connecting" | "open" | "closed";
-    }
-  | { type: "retry"; attempt: number; delay: number }
-  | {
-      type: "queue";
+      action: "deduplicated" | "dropped" | "expired" | "queued" | "sent";
       size: number;
-      action: "queued" | "sent" | "expired" | "dropped" | "deduplicated";
+      type: "queue";
     }
-  | { type: "validation"; direction: "incoming" | "outgoing"; error: Error }
-  | { type: "cache"; action: "hit" | "error"; error?: Error };
-
-export type SocketDiagnostic = SocketDiagnosticDetails & { timestamp: number };
+  | { action: "error" | "hit"; error?: Error; type: "cache"; }
+  | { attempt: number; delay: number; type: "retry"; }
+  | { direction: "incoming" | "outgoing"; error: Error; type: "validation"; }
+  | {
+      phase: "closed" | "connecting" | "open" | "preparing";
+      type: "connection";
+    };

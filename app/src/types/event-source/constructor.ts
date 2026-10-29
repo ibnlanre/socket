@@ -1,4 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+
 import type { ReconnectionPolicy } from "../reconnection-policy";
 import type { RuntimeAdapters } from "../runtime";
 import type { Init } from "./init";
@@ -7,14 +8,33 @@ import type { EventSourceTransportMode } from "./transport";
 export interface EventSourceClientOptions<Data = unknown>
   extends Init, ReconnectionPolicy {
   /**
-   * The URL to connect to
+   * The base URL to use for the Server-Sent Events connection
    *
-   * @see https://developer.mozilla.org/en-US/docs/Web/API/EventSource/EventSource
+   * @description The base URL is used to resolve relative URLs in the `EventSource` constructor
+   * @default ""
    */
-  url: string;
+  baseURL?: string;
 
   /** Maximum queued native events awaiting validation. @default 1000 */
   maxPendingMessages?: number;
+
+  /**
+   * A Standard Schema to validate parsed JSON message data before dispatching.
+   *
+   * When provided, the raw SSE data buffer is JSON-parsed and validated
+   * against this schema. Only valid messages are dispatched to listeners.
+   * Invalid messages are silently dropped.
+   */
+  messageSchema?: StandardSchemaV1<unknown, Data>;
+
+  /**
+   * Environment implementations to use instead of ambient globals.
+   *
+   * Injected adapters win over globals and are resolved when the connection
+   * opens, so importing or constructing the client never depends on the
+   * runtime providing `EventSource` or `fetch`.
+   */
+  runtime?: RuntimeAdapters;
 
   /**
    * How to select the Server-Sent Events transport.
@@ -32,28 +52,9 @@ export interface EventSourceClientOptions<Data = unknown>
   transport?: EventSourceTransportMode;
 
   /**
-   * Environment implementations to use instead of ambient globals.
+   * The URL to connect to
    *
-   * Injected adapters win over globals and are resolved when the connection
-   * opens, so importing or constructing the client never depends on the
-   * runtime providing `EventSource` or `fetch`.
+   * @see https://developer.mozilla.org/en-US/docs/Web/API/EventSource/EventSource
    */
-  runtime?: RuntimeAdapters;
-
-  /**
-   * The base URL to use for the Server-Sent Events connection
-   *
-   * @description The base URL is used to resolve relative URLs in the `EventSource` constructor
-   * @default ""
-   */
-  baseURL?: string;
-
-  /**
-   * A Standard Schema to validate parsed JSON message data before dispatching.
-   *
-   * When provided, the raw SSE data buffer is JSON-parsed and validated
-   * against this schema. Only valid messages are dispatched to listeners.
-   * Invalid messages are silently dropped.
-   */
-  messageSchema?: StandardSchemaV1<unknown, Data>;
+  url: string;
 }

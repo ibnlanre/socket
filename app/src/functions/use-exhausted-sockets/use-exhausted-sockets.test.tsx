@@ -1,28 +1,32 @@
+import type { WebSocketConstructor } from "@/types/runtime";
+
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SocketClient } from "@/class/socket-client";
-import type { WebSocketConstructor } from "@/types/runtime";
 
-import { reconnectExhausted } from "../reconnect-exhausted";
 import { useExhaustedSockets } from ".";
+import { reconnectExhausted } from "../reconnect-exhausted";
 
 /** A transport the test opens and drops by hand. */
 class Transport extends EventTarget {
   static instances: Transport[] = [];
-  readyState = 0;
-  bufferedAmount = 0;
   binaryType = "blob";
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
+  bufferedAmount = 0;
   onclose: ((event: CloseEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onopen: ((event: Event) => void) | null = null;
+  readyState = 0;
   send = vi.fn();
   readonly url: string;
   constructor(url: string) {
     super();
     this.url = url;
     Transport.instances.push(this);
+  }
+  close() {
+    this.readyState = 3;
   }
   connect() {
     this.readyState = 1;
@@ -31,9 +35,6 @@ class Transport extends EventTarget {
   drop() {
     this.readyState = 3;
     this.onclose?.(new CloseEvent("close", { code: 1006, wasClean: false }));
-  }
-  close() {
-    this.readyState = 3;
   }
 }
 
@@ -74,46 +75,112 @@ afterEach(() => {
   clients.splice(0).forEach((each) => each.dispose());
 });
 
+/** Connect every transport created from `from` on. */
+function connectFrom(from: number) {
+  Transport.instances.slice(from).forEach((transport) => transport.connect());
+}
+
 describe("SocketClient: stopped sockets", () => {
-  it("lists the sockets that stopped and are still read", async () => {
+  it("lists the sockets that stopped, until nothing reads them", async () => {
     const chat = client("chat");
     const { socket, unsubscribe } = await stopped(chat, "a");
     expect(chat.exhausted()).toEqual([socket]);
 
-    // Nothing reads it any more: nothing to offer to reconnect.
+    // Nothing reads it any more: nothing waits for it to be reopened.
     unsubscribe();
+    expect(socket.isExhausted).toBe(false);
     expect(chat.exhausted()).toEqual([]);
   });
 
-  it("tells its listeners when a socket stops", async () => {
+  it("lists a stopped socket opened without subscribers", async () => {
+    const chat = client("chat");
+    const socket = await chat.get({ room: "a" });
+    socket.open();
+    await waitFor(() => expect(socket.ws).not.toBeNull());
+    (socket.ws as unknown as Transport).drop();
+    expect(chat.exhausted()).toEqual([socket]);
+  });
+
+  it("tells its observers when a socket stops", async () => {
     const chat = client("chat");
     const listener = vi.fn();
-    chat.subscribe(listener);
+    chat.observe(listener);
     await stopped(chat, "a");
     expect(listener).toHaveBeenCalled();
   });
 
-  it("reopens its stopped sockets, one after another", async () => {
+  it("reopens its stopped sockets, and resolves once they connect", async () => {
     const chat = client("chat");
     const first = await stopped(chat, "a");
     const second = await stopped(chat, "b");
     const opened = Transport.instances.length;
 
-    await expect(chat.reconnect({ stagger: 5 })).resolves.toBe(2);
+    const pending = chat.reconnect({ stagger: 5 });
     await waitFor(() => expect(Transport.instances.length).toBe(opened + 2));
+    connectFrom(opened);
+
+    await expect(pending).resolves.toBe(2);
     expect(first.socket.isExhausted).toBe(false);
     expect(second.socket.isExhausted).toBe(false);
     expect(chat.exhausted()).toEqual([]);
   });
+
+  it("counts only those that connect; one that fails again stops again", async () => {
+    const chat = client("chat");
+    await stopped(chat, "a");
+    const failing = await stopped(chat, "b");
+    const opened = Transport.instances.length;
+
+    const pending = chat.reconnect();
+    await waitFor(() => expect(Transport.instances.length).toBe(opened + 2));
+    Transport.instances[opened].connect();
+    Transport.instances[opened + 1].drop();
+
+    await expect(pending).resolves.toBe(1);
+    expect(chat.exhausted()).toEqual([failing.socket]);
+  });
+
+  it("still reopens the rest when one is disposed meanwhile", async () => {
+    const chat = client("chat");
+    const gone = await stopped(chat, "a");
+    await stopped(chat, "b");
+    const opened = Transport.instances.length;
+    const sockets = chat.exhausted();
+    gone.socket.dispose();
+
+    const pending = reconnectExhausted([{ exhausted: () => sockets }]);
+    await waitFor(() => expect(Transport.instances.length).toBe(opened + 1));
+    connectFrom(opened);
+    await expect(pending).resolves.toBe(1);
+  });
 });
+
+/** A stand-in stopped socket that records when it was opened, and connects at once. */
+function stand(name: string, order: string[]) {
+  const observers = new Set<() => void>();
+  const socket = {
+    isConnected: false,
+    isExhausted: true,
+    isIdle: true,
+    observe: (listener: () => void) => {
+      observers.add(listener);
+      return () => observers.delete(listener);
+    },
+    open: () => {
+      order.push(`${name}@${Date.now()}`);
+      Object.assign(socket, { isConnected: true, isExhausted: false, isIdle: false });
+      observers.forEach((listener) => listener());
+    },
+  };
+  return socket;
+}
 
 describe("reconnectExhausted", () => {
   it("waits stagger between one socket and the next, across clients", async () => {
     const order: string[] = [];
-    const at = (name: string) => ({ open: () => order.push(`${name}@${Date.now()}`) });
     vi.useFakeTimers();
     const pending = reconnectExhausted(
-      [{ exhausted: () => [at("a"), at("b")] }, { exhausted: () => [at("c")] }],
+      [{ exhausted: () => [stand("a", order), stand("b", order)] }, { exhausted: () => [stand("c", order)] }],
       { stagger: 100 }
     );
     expect(order).toHaveLength(1);
@@ -138,10 +205,20 @@ describe("useExhaustedSockets", () => {
     });
     expect(result.current.count).toBe(2);
 
-    await act(async () => {
-      await result.current.reconnect();
+    const opened = Transport.instances.length;
+    let pending!: Promise<number>;
+    act(() => {
+      pending = result.current.reconnect();
     });
-    await waitFor(() => expect(result.current.count).toBe(0));
+    await waitFor(() => expect(Transport.instances.length).toBe(opened + 2));
+    // Still reconnecting until the handshakes end.
+    expect(result.current.isReconnecting).toBe(true);
+
+    await act(async () => {
+      connectFrom(opened);
+      await pending;
+    });
+    expect(result.current.count).toBe(0);
     expect(result.current.isReconnecting).toBe(false);
   });
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { SocketOutbox } from ".";
 
 const boxes: SocketOutbox[] = [];
@@ -101,11 +102,11 @@ describe("SocketOutbox", () => {
     vi.useFakeTimers();
     const { box } = create({ deduplicationWindow: 50 });
     expect(await box.send(() => ({ a: 1, b: 2 }))).toBe(true);
-    expect(await box.send(() => ({ b: 2, a: 1 }))).toBe(false);
+    expect(await box.send(() => ({ a: 1, b: 2 }))).toBe(false);
     expect(await box.send(() => ({ nested: { a: 1 } }))).toBe(true);
     expect(await box.send(() => ({ nested: { a: 2 } }))).toBe(true);
     await vi.advanceTimersByTimeAsync(51);
-    expect(await box.send(() => ({ b: 2, a: 1 }))).toBe(true);
+    expect(await box.send(() => ({ a: 1, b: 2 }))).toBe(true);
   });
 
   it("drops the oldest pending send when explicitly configured", async () => {

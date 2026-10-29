@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
-
 import type { UnitValue } from "@/types/time-unit";
+
+import { describe, expect, it } from "vitest";
 
 import { time } from "./index";
 

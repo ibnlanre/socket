@@ -1,3 +1,6 @@
+/** The concrete transport selected for a connection. */
+export type EventSourceTransport = "fetch" | "native";
+
 /**
  * How the client selects its Server-Sent Events transport.
  *
@@ -7,7 +10,4 @@
  *   error rather than a silent downgrade.
  * - `"fetch"` always streams through `fetch`.
  */
-export type EventSourceTransportMode = "auto" | "native" | "fetch";
-
-/** The concrete transport selected for a connection. */
-export type EventSourceTransport = "native" | "fetch";
+export type EventSourceTransportMode = "auto" | "fetch" | "native";
